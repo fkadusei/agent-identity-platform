@@ -33,6 +33,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -47,6 +48,15 @@ from app.common.telemetry import instrument_fastapi, setup_telemetry
 app = FastAPI(title="agent-identity-platform API")
 setup_telemetry("api")
 instrument_fastapi(app)
+# Dev convenience: the Vite dev server (localhost:5173) is a different origin
+# from the API, so without this a browser fetch fails with "Failed to fetch".
+# In production the UI is served same-origin, so this never applies.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(auth_router)
 app.include_router(admin_router)
 _store = ApprovalStore()

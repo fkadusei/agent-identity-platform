@@ -3,11 +3,15 @@ import react from "@vitejs/plugin-react";
 
 // In production the UI is served by the API (same origin), so requests are
 // relative. In dev, proxy the API paths to a locally port-forwarded API.
+// Every API prefix must be listed here, or dev-mode calls silently miss the API.
 export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
     proxy: {
+      "/auth": "http://localhost:8080",
+      "/enroll": "http://localhost:8080",
+      "/admin": "http://localhost:8080",
       "/demo": "http://localhost:8080",
       "/tasks": "http://localhost:8080",
       "/approvals": "http://localhost:8080",
