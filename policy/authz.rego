@@ -40,6 +40,14 @@ refund_tool := "refunds.issue"
 auto_refund_limit := 50        # <= this: allowed outright
 approval_refund_limit := 500   # <= this (and > auto): needs approval; above: denied
 
+# The bundle revision, injected at build time as data.agentnhi.policy_version
+# (see scripts/build-bundle.sh) and recorded with every decision — so you can
+# always answer "which policy revision decided this?". Falls back to "dev" when
+# the raw file is run directly (e.g. `opa test policy/`).
+default policy_version := "dev"
+
+policy_version := data.agentnhi.policy_version if data.agentnhi.policy_version
+
 # ---------------------------------------------------------------------------
 # Predicates
 # ---------------------------------------------------------------------------

@@ -56,7 +56,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] Observability — OpenTelemetry traces spanning agent → gateway → tools →
       policy, with identity attributes on the decision span; collector + Jaeger
       in-cluster and collector metrics for Prometheus (`docs/observability.md`)
-- [ ] Policy lifecycle (bundle CI, versioning, staged rollout, decision logs)
+- [x] Policy lifecycle — versioned OPA bundle (revision stamped into every
+      decision, audit event, span and decision log), staged-rollout process
+      (`docs/policy-lifecycle.md`)
 - [ ] Agent guardrails + evals; rate and cost limits
 - [ ] Supply chain: SBOM, image scan, **cosign (keyless Sigstore) signing +
       verification**, admission policy (ADR-0010)

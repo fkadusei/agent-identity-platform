@@ -137,12 +137,16 @@ kubectl -n $NS rollout status deploy/keycloak --timeout=300s >/dev/null
 ok "keycloak ready (realm agent-platform imported)"
 
 say "5. OPA"
-kubectl -n $NS create configmap opa-policy \
-  --from-file=policy.rego=policy/authz.rego \
+# Build the versioned bundle (revision stamped into every decision) and mount it.
+POLICY_REVISION=$(./scripts/build-bundle.sh)
+kubectl -n $NS create configmap opa-bundle \
+  --from-file=authz.rego=dist/bundle/authz.rego \
+  --from-file=data.json=dist/bundle/data.json \
+  --from-file=.manifest=dist/bundle/.manifest \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl apply -f "$MANIFESTS/opa/" >/dev/null
 kubectl -n $NS rollout status deploy/opa --timeout=120s >/dev/null
-ok "opa serving the allow/deny/require-approval policy"
+ok "opa serving policy bundle revision $POLICY_REVISION"
 
 say "6. observability"
 kubectl apply -f "$MANIFESTS/observability/" >/dev/null

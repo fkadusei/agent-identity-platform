@@ -95,6 +95,7 @@ class ToolEnforcer:
             )
             current.set_attribute("decision", decision.decision.value)
             current.set_attribute("reason", decision.reason)
+            current.set_attribute("policy_version", decision.policy_version or "dev")
 
         if decision.decision is Decision.DENY:
             audit(
@@ -104,6 +105,7 @@ class ToolEnforcer:
                 tool=tool_name,
                 decision=decision.decision.value,
                 reason=decision.reason,
+                policy_version=decision.policy_version,
             )
             return ToolResult(Outcome.DENIED, tool_name, decision.reason, decision.decision.value)
 
@@ -123,6 +125,7 @@ class ToolEnforcer:
                     sub=delegation.user,
                     tool=tool_name,
                     reason=decision.reason,
+                    policy_version=decision.policy_version,
                 )
                 return ToolResult(
                     Outcome.APPROVAL_REQUIRED,
@@ -150,6 +153,7 @@ class ToolEnforcer:
             tool=tool_name,
             decision=decision.decision.value,
             reason=decision.reason,
+            policy_version=decision.policy_version,
         )
         return ToolResult(
             Outcome.OK,

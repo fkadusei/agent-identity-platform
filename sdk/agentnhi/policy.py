@@ -33,6 +33,7 @@ class PolicyResult:
     decision: Decision
     reason: str
     raw: dict | None = None
+    policy_version: str | None = None
 
     @property
     def allowed(self) -> bool:
@@ -80,4 +81,4 @@ class PolicyClient:
             return PolicyResult(Decision.DENY, "policy returned no valid decision — denying")
 
         reason = result.get("reason") or f"policy decision: {decision.value}"
-        return PolicyResult(decision, reason, result)
+        return PolicyResult(decision, reason, result, result.get("policy_version"))
