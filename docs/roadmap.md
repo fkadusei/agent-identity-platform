@@ -60,8 +60,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       decision, audit event, span and decision log), staged-rollout process
       (`docs/policy-lifecycle.md`)
 - [ ] Agent guardrails + evals; rate and cost limits
-- [ ] Supply chain: SBOM, image scan, **cosign (keyless Sigstore) signing +
-      verification**, admission policy (ADR-0010)
+- [x] Supply chain: SBOM + image scan (already in CI), **cosign (keyless
+      Sigstore) signing + verification**, Kyverno admission policy
+      (`docs/supply-chain.md`, ADR-0010)
 - [ ] Operator user guide
 - [ ] **Gate:** threat model addressed; dashboards live; secret audit clean
 

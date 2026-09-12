@@ -42,6 +42,12 @@ npm-debug.log*
 yarn-error.log*
 
 # ---------------------------------------------------------------------------
+# Signing (cosign)
+# ---------------------------------------------------------------------------
+# The local demo signing key. Production signs keyless in CI — no key exists.
+.cosign/
+
+# ---------------------------------------------------------------------------
 # Local runtime state / data (synthetic fixtures only; keep out of git)
 # ---------------------------------------------------------------------------
 data/
