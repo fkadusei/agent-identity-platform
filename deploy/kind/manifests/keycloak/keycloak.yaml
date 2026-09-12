@@ -11,9 +11,9 @@
 #
 # start-dev is a DEMO setting (no TLS, ephemeral H2 database).
 #
-# trivy:ignore:AVD-KSV-0014  Keycloak's dev-mode Quarkus augmentation writes
-# transformed bytecode into /opt/keycloak/lib/quarkus, so a read-only root
-# filesystem cannot be used here. The root FS is otherwise locked down.
+# NOTE: a read-only root filesystem cannot be used for Keycloak — its dev-mode
+# Quarkus augmentation writes transformed bytecode into /opt/keycloak/lib/quarkus.
+# That single control is excepted (scoped) in .trivyignore.yaml.
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
