@@ -24,7 +24,7 @@ import rego.v1
 # ---------------------------------------------------------------------------
 # Configuration — the parts a reviewer would change.
 # ---------------------------------------------------------------------------
-trusted_agent := "spiffe://acme.com/ns/agent-nhi/sa/agent"
+trusted_agent := "spiffe://acme.com/ns/agent-platform/sa/agent"
 
 # Tools a support rep may use freely.
 low_risk_tools := {

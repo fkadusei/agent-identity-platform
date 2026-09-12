@@ -1,0 +1,12 @@
+# Scoped exceptions for Trivy (used via the action's `trivyignores` input).
+#
+# Keep this list as small and as specific as possible: each entry is scoped to a
+# path and carries a statement explaining why the control cannot be applied.
+misconfigurations:
+  - id: AVD-KSV-0014
+    paths:
+      - "deploy/kind/manifests/keycloak/keycloak.yaml"
+    statement: >-
+      Keycloak's dev-mode Quarkus augmentation writes transformed bytecode into
+      /opt/keycloak/lib/quarkus, so readOnlyRootFilesystem cannot be enabled for
+      this container. Every other container in the repository sets it.

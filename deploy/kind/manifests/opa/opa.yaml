@@ -1,0 +1,72 @@
+# =============================================================================
+# OPA — policy engine. Serves the allow/deny decision at /v1/data/agentnhi/authz.
+# The policy itself is loaded from the opa-policy ConfigMap, which setup.sh
+# creates from opa/policy.rego in this repo (single source of truth — the same
+# file CI tests).
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  namespace: agent-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: opa
+          image: openpolicyagent/opa:0.68.0
+          args:
+            - run
+            - --server
+            - --addr=0.0.0.0:8181
+            - /policy/policy.rego
+          ports:
+            - containerPort: 8181
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: policy
+              mountPath: /policy
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: policy
+          configMap:
+            name: opa-policy
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  namespace: agent-platform
+spec:
+  selector:
+    app: opa
+  ports:
+    - name: http
+      port: 8181
+      targetPort: 8181

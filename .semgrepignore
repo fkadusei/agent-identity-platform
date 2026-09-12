@@ -1,0 +1,11 @@
+# Semgrep ignore list.
+#
+# The SPIRE agent requires host access BY DESIGN: it attests workloads by
+# querying the kubelet, which needs hostPID, hostNetwork, and a privileged
+# container. These are requirements of the identity daemon, not oversights.
+# They are the same settings SPIFFE's own quickstart ships.
+#
+# Everything else in this repository is scanned normally.
+deploy/kind/manifests/spire/
+docker/spire-agent.Dockerfile
+docker/spire-server.Dockerfile

@@ -1,0 +1,96 @@
+# =============================================================================
+# Keycloak — OAuth 2.0 / OIDC Authorization Server.
+#
+# Roles:
+#   1. Issues user tokens (alice and manager log in via direct grant).
+#   2. Authenticates the AGENT as a client using its JWT-SVID
+#      (client_id IS the SPIFFE ID; signature verified against the JWKS served
+#      by SPIRE's OIDC discovery provider — no shared secret for the agent).
+#   3. Performs RFC 8693 Standard Token Exchange: user token in -> audience-
+#      scoped, 5-minute token out, carrying the delegation binding (sub + azp).
+#
+# start-dev is a DEMO setting (no TLS, ephemeral H2 database).
+#
+# NOTE: a read-only root filesystem cannot be used for Keycloak — its dev-mode
+# Quarkus augmentation writes transformed bytecode into /opt/keycloak/lib/quarkus.
+# That single control is excepted (scoped) in .trivyignore.yaml.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: agent-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.6.4
+          args:
+            - start-dev
+            - --import-realm                 # imports /opt/keycloak/data/import/*
+          env:
+            # DEMO-ONLY admin credentials. Never a real password — this cluster
+            # is disposable. See docs/threat-model.md.
+            - name: KEYCLOAK_ADMIN
+              value: admin
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              value: admin
+          ports:
+            - containerPort: 8080
+            - containerPort: 9000
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            # Nested mounts: the import dir comes from the ConfigMap, while the
+            # rest of the data dir (H2 database) is writable and ephemeral.
+            - name: kc-data
+              mountPath: /opt/keycloak/data
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              # start-dev serves health on 8080 (no curl in the image); the
+              # realm endpoint is a reliable signal.
+              path: /realms/agent-platform
+              port: 8080
+            initialDelaySeconds: 25
+            periodSeconds: 10
+      volumes:
+        - name: kc-data
+          emptyDir: {}                  # ephemeral H2; demo only
+        - name: realm
+          configMap:
+            name: keycloak-realm        # created by scripts/setup.sh from realm.json
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: agent-platform
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

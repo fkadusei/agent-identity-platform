@@ -3,8 +3,8 @@ package agentnhi.authz
 
 import rego.v1
 
-AGENT := "spiffe://acme.com/ns/agent-nhi/sa/agent"
-ROGUE := "spiffe://acme.com/ns/agent-nhi/sa/rogue"
+AGENT := "spiffe://acme.com/ns/agent-platform/sa/agent"
+ROGUE := "spiffe://acme.com/ns/agent-platform/sa/rogue"
 
 base := {"agent": AGENT, "user": "alice", "roles": ["support_rep"], "tool": "crm.customer.read"}
 

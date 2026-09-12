@@ -126,3 +126,8 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           scanners: vuln,secret,config
+          # The SPIRE agent needs host access by design; see .semgrepignore.
+          skip-dirs: deploy/kind/manifests/spire
+          skip-files: docker/spire-agent.Dockerfile,docker/spire-server.Dockerfile
+          # Scoped, documented exceptions (see .trivyignore.yaml).
+          trivyignores: .trivyignore.yaml

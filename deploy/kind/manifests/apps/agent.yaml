@@ -1,0 +1,96 @@
+# =============================================================================
+# The agent service.
+#
+# Holds the LangGraph run state in memory, so a paused (approval-required) run
+# can be resumed via POST /resume. It fetches a JWT-SVID from the Workload API
+# and exchanges the rep's token per call — it holds no static credential.
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agent
+  namespace: agent-platform
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent
+  namespace: agent-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: agent
+  template:
+    metadata:
+      labels:
+        app: agent
+    spec:
+      serviceAccountName: agent
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: agent
+          image: agent-platform/agent:demo
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: KC_ISSUER
+              value: http://keycloak:8080/realms/agent-platform
+            - name: SPIFFE_SOCKET
+              value: unix:///run/spire/sockets/agent.sock
+            - name: AGENT_SPIFFE_ID
+              value: spiffe://acme.com/ns/agent-platform/sa/agent
+            - name: TOOL_SERVER_URL
+              value: http://tools:8000
+            - name: APPROVALS_URL
+              value: http://api:8080
+            - name: LLM_PROVIDER
+              value: ollama
+            - name: OLLAMA_URL
+              value: http://host.docker.internal:11434
+            - name: OLLAMA_MODEL
+              value: llama3.2:3b
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          ports:
+            - containerPort: 8081
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /run/spire/sockets
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: spiffe-workload-api
+          hostPath:
+            path: /run/spire/sockets
+            type: Directory
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: agent
+  namespace: agent-platform
+spec:
+  selector:
+    app: agent
+  ports:
+    - name: http
+      port: 8081
+      targetPort: 8081
