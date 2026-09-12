@@ -5,7 +5,8 @@
 ---
 
 - **Project:** agent-identity-platform
-- **Status:** Phase 0 complete · awaiting owner review before Phase 1
+- **Status:** Phase 1 in progress — SDK, policy, simulators, and tool servers
+  done and merged; **next: the LangGraph agent + the API/approvals service**
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
@@ -16,32 +17,53 @@
 cd /Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform
 ./scripts/install-hooks.sh          # enable the secret guard (once per clone)
 ./scripts/scan-secrets.sh           # verify: no secrets in tree or history
-git log --oneline -5                # where we are
+git log --oneline -8                # where we are
 cat docs/roadmap.md                 # what's done / next
 ```
 
-There is no application to run yet — Phase 0 deliberately lands security and
-documentation first.
+Test everything that exists so far:
+
+```sh
+# SDK (identity, exchange, tokens, policy, audit) — 32 tests
+cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip install -e sdk[dev])
+
+# policy — 14 tests
+/tmp/opa test policy/ -v                   # (or: brew install opa)
+
+# app (simulators + tool enforcement + MCP) — 21 tests
+.venv/bin/pip install -e sdk -r requirements-dev.txt
+.venv/bin/python -m pytest
+```
 
 ## Where we are
 
-- **Phase 0 — complete.** Repo scaffolded, security baseline in place and
-  verified, ADRs 0001–0009 recorded, core docs written, pushed to GitHub.
-- **Next: Phase 1** — extract the SDK and build the local app (see roadmap).
+- **Phase 0 — complete.** Security baseline, ADRs 0001–0010, docs, governance.
+- **Phase 1 — in progress.** Merged so far:
+  - `sdk/agentnhi/` — identity, exchange, tokens (`aud`+`azp`), policy
+    (fail-closed), audit (redaction) — 32 tests
+  - `policy/authz.rego` — allow / deny / require-approval matrix — 14 tests
+  - `app/simulators/` — synthetic CRM/orders/payments/ticketing — 10 tests
+  - `app/tools/` — enforcement core + FastAPI and MCP transports — 11 tests
+- **Next in Phase 1:** the LangGraph agent (approval interrupts) and the API
+  (sessions, tasks, approvals store + `/approvals/verify`), then the React UI,
+  kind deployment, attack suite, and user guides.
 
 ## Immediate next task
 
-**Phase 1, step 1: extract `sdk/agentnhi/` from the concepts demo.**
+**Phase 1, next: the approvals service + the LangGraph agent.**
 
-- Source of truth for the logic:
-  `../agent_identity/src/{shared,agent,tool_server,customer_api}/`
-  (repo: `enterprise-agent-nhi`).
-- Package it as an installable, typed, unit-tested library exposing:
-  `identity` (SVID fetch + mTLS), `exchange` (RFC 8693), `tokens`
-  (verify `aud` + `azp`), `policy` (OPA client), `audit` (redaction + structured
-  events).
-- Acceptance: unit tests pass; a smoke test performs an exchange against the
-  local Keycloak and verifies the resulting token.
+1. **Approvals service** (`app/api/`): an in-memory store with
+   `POST /approvals` (create pending), `POST /approvals/{id}/decision`
+   (approve/deny, authenticated approver), and `POST /approvals/verify` (used by
+   the tool server). The tool server already calls `APPROVALS_URL` and fails
+   closed, so this closes the loop.
+2. **Agent** (`app/agent/`): a LangGraph state machine that
+   - plans with the LLM (provider-agnostic),
+   - calls the tool server / MCP with an exchanged token,
+   - on `require_approval` **interrupts**, creates an approval request, and
+     resumes with the approval id when a decision is recorded.
+3. Acceptance: a full run — rep token → exchange → tool call → policy →
+   (approval if needed) → simulator — with the audit trail showing the chain.
 
 ## Decisions made
 

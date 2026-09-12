@@ -27,15 +27,18 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 ## Phase 1 — Reusable core + realistic local app
 
-- [ ] Extract `sdk/agentnhi/` from the concepts demo (typed, unit-tested):
-      SVID fetch, mTLS, token exchange, verification, OPA client, audit
-- [ ] Synthetic simulators: CRM, orders, payments, ticketing
-- [ ] MCP tool servers using the SDK for auth
+- [x] Extract `sdk/agentnhi/` from the concepts demo (typed, unit-tested):
+      SVID fetch, mTLS, token exchange, verification (`aud`+`azp`), OPA client
+      (fail-closed), redaction-safe audit — 32 tests
+- [x] OPA policy matrix (allow / deny / require-approval) + tests — 14 tests
+- [x] Synthetic simulators: CRM, orders, payments, ticketing — 10 tests
+- [x] Tool servers (FastAPI + MCP) behind one enforcement core — 11 tests
+- [ ] Approvals service (`app/api`): pending/decision/verify
 - [ ] LangGraph agent: planner + tool loop + **approval interrupts**
-- [ ] FastAPI: sessions, tasks, approvals, audit query
+- [ ] FastAPI: sessions, tasks, audit query
 - [ ] React UI: task console, approval queue, audit timeline
-- [ ] OPA policy matrix (allow / deny / require-approval) + tests
 - [ ] Extended attack suite (approval bypass, injection, forwarding, escalation)
+- [ ] Local deployment on kind
 - [ ] User guides: overview, support rep, approver
 - [ ] **Gate:** happy path works; all attacks blocked; approval flow demonstrated
 
