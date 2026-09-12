@@ -60,9 +60,11 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 
 ## Open questions / blockers
 
-- **Signed commits** are required but not yet configured on this machine (no GPG
-  key; `user.signingkey` unset; the SSH key is not registered with GitHub). See
-  "Environment" below. Until then, commits are unsigned.
+- **Signed commits** — local signing is configured and verified on this machine
+  (SSH signing; `git log --show-signature` reports a good signature).
+  **Still to confirm:** the key is registered on GitHub as a **Signing Key**, so
+  pushed commits show the "Verified" badge. See "Signed commits (one-time
+  setup)" below.
 - **Branch protection is ENABLED** on `main`: PR-only (0 required approvals, so
   the owner can self-merge), no force-push, no deletions, linear history,
   conversation resolution, enforced for admins.
@@ -81,14 +83,46 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 
 - Local tools used: Docker, `kind`, `kubectl`, `gh`, and (optional) `gitleaks`
   at `/tmp/gitleaks` for local scans.
-- **Enable signed commits** (one-time, manual):
 
-  ```sh
-  git config --global gpg.format ssh
-  git config --global user.signingkey ~/.ssh/id_ed25519.pub
-  git config --global commit.gpgsign true
-  # Add ~/.ssh/id_ed25519.pub to GitHub as a SIGNING key (Settings -> SSH and GPG keys)
-  ```
+### Signed commits (one-time setup)
+
+Commits must be signed. This uses **SSH signing** (simpler than GPG). The same
+SSH key can be registered on GitHub **twice** — once for authentication, once
+for signing — so adding it a second time is normal and expected.
+
+**Step 1 — register the key as a SIGNING key on GitHub.** The option people miss
+is the **"Key type"** dropdown on the *New SSH key* form:
+
+1. Open <https://github.com/settings/ssh/new>
+2. **Title**: e.g. `MacBook signing`
+3. **Key type**: choose **Signing Key**   ← this is the dropdown you were looking for
+4. **Key**: paste the contents of `~/.ssh/id_ed25519.pub`
+5. Click **Add SSH key**
+
+If you already added the key as an *Authentication Key*, add it **again** and
+select *Signing Key* — one key, two registrations. (If you truly see no "Key
+type" dropdown, use the URL above; it exists on the current GitHub web UI. The
+mobile app does not support signing keys.)
+
+**Step 2 — configure git.** Already done on this machine, for reference:
+
+```sh
+git config --global gpg.format ssh
+git config --global user.signingkey /Users/felixadusei/.ssh/id_ed25519.pub  # absolute path: ~ does NOT expand here
+git config --global commit.gpgsign true
+git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers      # enables local verification
+```
+
+**Step 3 — verify.**
+
+```sh
+git log --show-signature -1     # local: expect 'Good "git" signature'
+# after pushing, GitHub shows a green "Verified" badge on the commit
+```
+
+If a pushed commit shows **Unverified**, the signing key is not registered on
+GitHub — redo Step 1. (Signing itself is working locally; that is a separate
+failure mode from the key not being registered.)
 
 ## Known issues / gotchas
 
