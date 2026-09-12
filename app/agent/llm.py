@@ -3,6 +3,10 @@
 The model only ever *proposes* a tool and its arguments. It never decides
 whether the call is permitted — that is policy's job, enforced at the tool
 server.
+
+By default the call goes through the **LLM gateway** over SPIFFE mTLS, so the
+agent holds no model credential. Set `LLM_GATEWAY_URL` to enable that path; the
+direct-provider fallback exists only for development without a gateway.
 """
 from __future__ import annotations
 
@@ -13,6 +17,25 @@ import re
 import httpx
 
 from agentnhi import audit
+
+
+def _tool_manifest(tools: dict) -> str:
+    lines = []
+    for tool in tools.values():
+        required = tool.input_schema.get("required") or []
+        params = ", ".join(required)
+        lines.append(f"- {tool.name}({params}): {tool.description}")
+    return "\n".join(lines)
+
+
+def _prompt(task: str, tools: dict) -> str:
+    return (
+        "You are a customer-support agent. Choose exactly one tool to handle the task.\n"
+        f"Available tools:\n{_tool_manifest(tools)}\n\n"
+        f'Task: "{task}"\n\n'
+        "Reply with ONLY JSON of the form "
+        '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>"}.'
+    )
 
 
 def _extract_args(task: str) -> dict:
@@ -40,70 +63,86 @@ def _fill_gaps(tool, args: dict, task: str) -> dict:
     for key, value in extracted.items():
         if key in properties and args.get(key) in (None, "", 0):
             args[key] = value
-    return args
+    # Coerce to declared types (models often emit numbers as strings).
+    from app.common.schema import coerce_args
+
+    return coerce_args(properties, args)
 
 
-def _tool_manifest(tools: dict) -> str:
-    lines = []
-    for tool in tools.values():
-        required = tool.input_schema.get("required") or []
-        params = ", ".join(required)
-        lines.append(f"- {tool.name}({params}): {tool.description}")
-    return "\n".join(lines)
+def _mtls_client() -> httpx.Client:
+    """An httpx client presenting this workload's X.509-SVID, over the gateway.
+
+    Hostname verification is off because the gateway's identity is a SPIFFE URI
+    SAN, not a DNS name; the chain is still verified against the SPIRE bundle.
+    """
+    from agentnhi.identity import mtls_client_context
+
+    socket = os.environ.get("SPIFFE_SOCKET", "unix:///run/spire/sockets/agent.sock")
+    bundle = os.environ.get("SPIFFE_BUNDLE", "/run/spire/bundle/bundle.crt")
+    ctx = mtls_client_context(socket, ca_cert_path=bundle, verify_hostname=False)
+    return httpx.Client(verify=ctx, timeout=180)
 
 
-def _prompt(task: str, tools: dict) -> str:
-    return (
-        "You are a customer-support agent. Choose exactly one tool to handle the task.\n"
-        f"Available tools:\n{_tool_manifest(tools)}\n\n"
-        f'Task: "{task}"\n\n'
-        "Reply with ONLY JSON of the form "
-        '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>"}.'
+def _chat(prompt: str) -> str:
+    """Return the model's reply, via the gateway when configured."""
+    gateway = os.environ.get("LLM_GATEWAY_URL")
+    if gateway:
+        client = _mtls_client()
+        try:
+            resp = client.post(
+                f"{gateway.rstrip('/')}/v1/chat/completions",
+                json={
+                    "messages": [{"role": "user", "content": prompt}],
+                    "response_format": {"type": "json_object"},
+                },
+            )
+            resp.raise_for_status()
+            return resp.json()["choices"][0]["message"]["content"]
+        finally:
+            client.close()
+
+    # Direct provider — development without a gateway. No credential is held
+    # here unless a hosted provider is configured (the gateway exists to avoid
+    # that; see docs/decisions/ADR-0009).
+    provider = os.environ.get("LLM_PROVIDER", "ollama")
+    if provider == "ollama":
+        url = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
+        model = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+        resp = httpx.post(
+            f"{url}/api/generate",
+            json={"model": model, "prompt": prompt, "stream": False, "format": "json"},
+            timeout=180,
+        )
+        return resp.json()["response"]
+
+    base = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    resp = httpx.post(
+        f"{base}/chat/completions",
+        headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', '')}"},
+        json={
+            "model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+            "messages": [{"role": "user", "content": prompt}],
+            "response_format": {"type": "json_object"},
+        },
+        timeout=60,
     )
+    return resp.json()["choices"][0]["message"]["content"]
 
 
 def decide_tool(task: str, tools: dict, fallback: dict | None = None) -> dict:
     """Return {"tool", "args", "reason"}; falls back deterministically on error."""
-    provider = os.environ.get("LLM_PROVIDER", "ollama")
     fallback = fallback or {
         "tool": "crm.customer.read",
         "args": {"customer_id": "c-100"},
         "reason": "fallback: default lookup",
     }
     try:
-        if provider == "ollama":
-            url = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434")
-            model = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
-            resp = httpx.post(
-                f"{url}/api/generate",
-                json={"model": model, "prompt": _prompt(task, tools), "stream": False, "format": "json"},
-                timeout=120,
-            )
-            content = resp.json()["response"]
-        else:
-            base = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
-            model = os.environ.get("LLM_MODEL", "gpt-4o-mini")
-            resp = httpx.post(
-                f"{base}/chat/completions",
-                headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', '')}"},
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": _prompt(task, tools)}],
-                    "response_format": {"type": "json_object"},
-                },
-                timeout=60,
-            )
-            content = resp.json()["choices"][0]["message"]["content"]
-
+        content = _chat(_prompt(task, tools))
         decision = json.loads(content)
         if decision.get("tool") in tools:
             tool = tools[decision["tool"]]
             args = _fill_gaps(tool, dict(decision.get("args") or {}), task)
-            return {
-                "tool": tool.name,
-                "args": args,
-                "reason": decision.get("reason", ""),
-            }
+            return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])
     except Exception as exc:  # noqa: BLE001 - never block the run on the model
         audit("llm.fallback", reason=str(exc)[:200])

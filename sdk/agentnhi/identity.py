@@ -57,28 +57,49 @@ def fetch_x509_svid(spiffe_socket: str):
         client.close()
 
 
-def mtls_client_context(spiffe_socket: str, ca_cert_path: str | None = None) -> ssl.SSLContext:
-    """Build an mTLS client context from the workload's X.509-SVID.
+def svid_to_pem(svid) -> tuple[bytes, bytes]:
+    """Serialise an X.509-SVID to (cert_chain_pem, private_key_pem)."""
+    cert_pem = b"".join(_pem(c) for c in svid.cert_chain)
+    return cert_pem, _private_key_pem(svid.private_key)
 
-    The SVID is short-lived; callers that hold a long-lived context should
-    rebuild it on rotation (or fetch per request).
+
+def write_mtls_files(spiffe_socket: str) -> tuple[str, str]:
+    """Fetch the X.509-SVID and write it to temp files.
+
+    Returns (cert_path, key_path). Used by services that need files (e.g. to
+    configure a TLS listener), since SVIDs are short-lived and must be fetched
+    from the Workload API rather than read from disk.
     """
     svid = fetch_x509_svid(spiffe_socket)
-    try:
-        cert_pem = b"".join(_pem(c) for c in svid.cert_chain)
-        key_pem = _private_key_pem(svid.private_key)
-    except Exception as exc:  # noqa: BLE001
-        raise IdentityError(f"could not serialise X.509-SVID: {exc}") from exc
+    cert_pem, key_pem = svid_to_pem(svid)
 
     tmp = Path(tempfile.mkdtemp(prefix="agentnhi-svid-"))
     cert_file, key_file = tmp / "cert.pem", tmp / "key.pem"
     cert_file.write_bytes(cert_pem)
     key_file.write_bytes(key_pem)
+    return str(cert_file), str(key_file)
 
+
+def mtls_client_context(
+    spiffe_socket: str,
+    ca_cert_path: str | None = None,
+    verify_hostname: bool = True,
+) -> ssl.SSLContext:
+    """Build an mTLS client context from the workload's X.509-SVID.
+
+    Set ``verify_hostname=False`` when the peer's identity is a SPIFFE URI SAN
+    rather than a DNS name (the usual case). The certificate chain is still
+    verified against the trust bundle either way.
+    """
+    cert_file, key_file = write_mtls_files(spiffe_socket)
     ctx = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
     if ca_cert_path:
         ctx.load_verify_locations(ca_cert_path)
-    ctx.load_cert_chain(certfile=str(cert_file), keyfile=str(key_file))
+    if not verify_hostname:
+        # SPIFFE SVIDs carry a URI SAN (spiffe://...), not a DNS name for the
+        # service, so the default hostname check would always fail.
+        ctx.check_hostname = False
+    ctx.load_cert_chain(certfile=cert_file, keyfile=key_file)
     return ctx
 
 

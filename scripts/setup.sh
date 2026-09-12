@@ -35,7 +35,7 @@ say "2. build + load images"
 docker build -q -f docker/spire-server.Dockerfile -t agent-platform/spire-server-jti:demo . >/dev/null
 docker build -q -f docker/spire-agent.Dockerfile  -t agent-platform/spire-agent-nocache:demo . >/dev/null
 ok "spire-server-jti, spire-agent-nocache"
-for svc in api tools agent; do
+for svc in api tools agent gateway; do
   docker build -q -f "docker/$svc.Dockerfile" -t "agent-platform/$svc:demo" . >/dev/null
   kind load docker-image "agent-platform/$svc:demo" --name agent-platform >/dev/null
   ok "agent-platform/$svc:demo"
@@ -61,19 +61,27 @@ for _ in $(seq 1 12); do
 done
 [ -n "$PARENT_ID" ] || die "no attested SPIRE agent found"
 
-EXISTING_PARENT=$($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$SPIFFE_ID" 2>/dev/null \
-  | awk '/Parent ID/{print $NF; exit}')
-if [ "$EXISTING_PARENT" != "$PARENT_ID" ]; then
-  if [ -n "$EXISTING_PARENT" ]; then
-    ENTRY_ID=$($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$SPIFFE_ID" 2>/dev/null \
-      | awk '/Entry ID/{print $NF; exit}')
-    $SPIRE entry delete -socketPath "$SOCKET" -entryID "$ENTRY_ID" >/dev/null
+# One registration entry per workload identity. The gateway has its own SPIFFE
+# ID so the agent can verify it over mTLS (and vice versa).
+ensure_entry() { # ensure_entry <service-account> <spiffe-id>
+  local sa="$1" id="$2" existing entry
+  existing=$($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$id" 2>/dev/null \
+    | awk '/Parent ID/{print $NF; exit}')
+  if [ "$existing" != "$PARENT_ID" ]; then
+    if [ -n "$existing" ]; then
+      entry=$($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$id" 2>/dev/null \
+        | awk '/Entry ID/{print $NF; exit}')
+      $SPIRE entry delete -socketPath "$SOCKET" -entryID "$entry" >/dev/null
+    fi
+    $SPIRE entry create -socketPath "$SOCKET" \
+      -spiffeID "$id" -parentID "$PARENT_ID" \
+      -selector "k8s:ns:$NS" -selector "k8s:sa:$sa" >/dev/null
   fi
-  $SPIRE entry create -socketPath "$SOCKET" \
-    -spiffeID "$SPIFFE_ID" -parentID "$PARENT_ID" \
-    -selector "k8s:ns:$NS" -selector "k8s:sa:agent" >/dev/null
-fi
-ok "registration entry: $SPIFFE_ID"
+  ok "registration entry: $id (k8s:sa=$sa)"
+}
+
+ensure_entry agent "$SPIFFE_ID"
+ensure_entry gateway "spiffe://acme.com/ns/agent-platform/sa/gateway"
 
 say "4. Keycloak"
 kubectl -n $NS create configmap keycloak-realm \

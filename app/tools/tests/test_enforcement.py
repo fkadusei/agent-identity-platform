@@ -122,3 +122,26 @@ def test_approval_id_is_not_passed_to_the_handler():
     e = enforcer(decision=Decision.REQUIRE_APPROVAL, approvals=True)
     result = e.call("token", "refunds.issue", {"order_id": "o-1001", "amount": 200, "approval_id": "a-1"})
     assert result.outcome is Outcome.OK
+
+
+def test_string_amount_is_coerced_before_policy():
+    # A model may emit "40"; policy must see 40.0, not a string (Rego sorts
+    # strings after numbers, so "40" > 500 would be true).
+    seen: dict = {}
+
+    class CapturingPolicy:
+        def decide(self, **kwargs) -> PolicyResult:
+            seen.update(kwargs)
+            return PolicyResult(Decision.ALLOW, "ok")
+
+    e = ToolEnforcer(
+        settings=Settings(keycloak_issuer="http://kc", audience="mcp-tools", trusted_workload=AGENT),
+        verifier=FakeVerifier(
+            Delegation(user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",))
+        ),
+        policy=CapturingPolicy(),
+        approvals=FakeApprovals(False),
+    )
+    result = e.call("token", "refunds.issue", {"order_id": "o-1001", "amount": "40"})
+    assert result.outcome is Outcome.OK
+    assert seen["context"]["amount"] == 40.0

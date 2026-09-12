@@ -45,9 +45,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 ## Phase 2 — Production hardening
 
-- [ ] TLS/mTLS everywhere; HA SPIRE; persistent storage; hardened Keycloak
+- [~] TLS/mTLS everywhere; HA SPIRE; persistent storage; hardened Keycloak
+      (mTLS done for the agent↔gateway hop; the rest is plaintext in-cluster)
 - [ ] Secret manager + External Secrets (remove every static secret)
-- [ ] LLM gateway authenticated by SPIFFE identity (removes the last secret)
+- [x] **LLM gateway authenticated by SPIFFE identity** — the agent holds no
+      model credential; it reaches the model only over mTLS (`app/gateway/`)
 - [ ] OpenTelemetry end-to-end; Prometheus/Grafana; audit pipeline; alerts
 - [ ] Policy lifecycle (bundle CI, versioning, staged rollout, decision logs)
 - [ ] Agent guardrails + evals; rate and cost limits
@@ -55,6 +57,16 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       verification**, admission policy (ADR-0010)
 - [ ] Operator user guide
 - [ ] **Gate:** threat model addressed; dashboards live; secret audit clean
+
+## Backlog / known gaps
+
+- **UI polish** (owner feedback): the console/approvals flow should be more
+  intuitive — a clearer "what just happened" summary per run, inline approval
+  actions from the result card, and surfacing the delegation chain
+  (agent → user → tool) alongside each result.
+- TLS for the remaining in-cluster hops (only agent↔gateway is mTLS today).
+- Per-agent rate and cost limits on the gateway.
+- The tools' in-memory simulator state resets on restart (fine for the demo).
 
 ## Phase 3 — Deploy and adoption
 
