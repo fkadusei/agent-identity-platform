@@ -96,6 +96,10 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 4. SBOM + filesystem scan — runs once Dockerfiles exist.
+  #
+  # Image signing (cosign, keyless Sigstore) lands in Phase 2, once images are
+  # pushed to a registry: it needs `id-token: write` for the workflow OIDC
+  # identity and adds `cosign sign` / `cosign verify`. See ADR-0010.
   # ---------------------------------------------------------------------------
   supply-chain:
     runs-on: ubuntu-latest

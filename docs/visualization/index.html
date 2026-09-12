@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" data-theme-choice="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Identity Platform — 3D Architecture</title>
+<!-- Apply persisted theme BEFORE first paint to avoid a flash. Tiny inline head script. -->
+<script>
+(function () {
+  try {
+    var choice = localStorage.getItem("aip-theme") || "auto";
+    var mode = choice;
+    if (choice === "auto") {
+      mode = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+    }
+    var el = document.documentElement;
+    el.setAttribute("data-theme", mode);
+    el.setAttribute("data-theme-choice", choice);
+    el.style.colorScheme = mode;
+  } catch (e) {
+    document.documentElement.setAttribute("data-theme", "dark");
+  }
+})();
+</script>
+<style>
+  /* ---------- palettes ---------- */
+  :root{
+    --blue:#4da3ff; --purple:#b088ff; --green:#4dffb8; --orange:#ffb84d; --red:#ff5d5d;
+    --panel-blur: blur(5px);
+  }
+  html[data-theme="dark"]{
+    color-scheme:dark;
+    --bg:#0d1117; --panel:rgba(22,27,34,.92); --border:#30363d;
+    --text:#e6edf3; --dim:#8b949e; --code-bg:#0b0f14; --code-ink:#4dffb8;
+    --bottombar:linear-gradient(transparent, rgba(13,17,23,.95) 45%);
+    --shadow:0 6px 24px rgba(0,0,0,.45);
+  }
+  html[data-theme="light"]{
+    color-scheme:light;
+    --bg:#eef1f6; --panel:rgba(255,255,255,.93); --border:#c7d0dd;
+    --text:#1b2430; --dim:#5b6675; --code-bg:#f4f7fb; --code-ink:#0f7a52;
+    --bottombar:linear-gradient(transparent, rgba(238,241,246,.96) 45%);
+    --shadow:0 6px 24px rgba(30,50,80,.14);
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html,body{ height:100%; overflow:hidden; background:var(--bg); color:var(--text);
+    font-family:"SF Mono",Menlo,Consolas,"Courier New",monospace;
+    transition:background .25s ease, color .25s ease; }
+  #scene{ position:fixed; inset:0; display:block; touch-action:none; cursor:grab; }
+  #scene:active{ cursor:grabbing; }
+
+  /* ---------- header ---------- */
+  #header{ position:fixed; top:14px; left:16px; max-width:min(760px,60vw); pointer-events:none; z-index:5; }
+  #header h1{ font-size:15px; font-weight:600; letter-spacing:.2px; }
+  #header p{ font-size:11px; color:var(--dim); margin-top:4px; }
+
+  /* ---------- theme toggle (top-right corner) ---------- */
+  #theme{ position:fixed; top:14px; right:16px; display:flex; gap:2px; z-index:7;
+    background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:3px;
+    backdrop-filter:var(--panel-blur); box-shadow:var(--shadow); }
+  #theme button{ border:none; background:transparent; color:var(--dim); font:inherit; font-size:11px;
+    padding:5px 9px; border-radius:5px; cursor:pointer; text-align:center; transition:background .15s,color .15s; }
+  #theme button:hover{ color:var(--text); }
+  #theme button.active{ background:var(--blue); color:#06121f; font-weight:700; }
+
+  /* ---------- left control panel ---------- */
+  #panel{ position:fixed; top:80px; left:16px; width:218px; display:flex; flex-direction:column; gap:8px; z-index:5; }
+  button.ctl{ background:var(--panel); border:1px solid var(--border); color:var(--text);
+    font:inherit; font-size:12px; padding:8px 10px; border-radius:6px; cursor:pointer;
+    text-align:left; transition:border-color .15s, color .15s, background .15s; backdrop-filter:var(--panel-blur); }
+  button.ctl:hover{ border-color:var(--blue); }
+  #playBtn{ border-color:#2f81f7; color:var(--blue); font-weight:600; }
+  #playBtn.playing{ border-color:var(--green); color:var(--green); }
+  #defBtn.active{ border-color:var(--red); color:var(--red); background:rgba(255,93,93,.08); }
+  #viewBtn.active{ border-color:var(--purple); color:var(--purple); }
+  .stepRow{ display:flex; gap:8px; }
+  .stepRow button{ flex:1; text-align:center; }
+  #hint{ font-size:10.5px; color:var(--dim); line-height:1.55; padding:2px 2px 0; }
+
+  /* ---------- bottom caption ---------- */
+  #bottombar{ position:fixed; left:0; right:0; bottom:0; display:flex; justify-content:center;
+    padding:12px 16px 14px; background:var(--bottombar); pointer-events:none; z-index:5; }
+  #caption{ pointer-events:auto; max-width:720px; width:min(720px,64vw); background:var(--panel);
+    border:1px solid var(--border); border-left:3px solid var(--blue); border-radius:8px;
+    padding:10px 14px; backdrop-filter:var(--panel-blur); box-shadow:var(--shadow); }
+  #capTitle{ font-size:12px; font-weight:600; color:var(--blue); margin-bottom:4px; }
+  #capBody{ font-size:11.5px; color:var(--dim); line-height:1.6; white-space:pre-line; }
+
+  /* ---------- legend (bottom-left) ---------- */
+  #legend{ position:fixed; left:16px; bottom:16px; background:var(--panel); border:1px solid var(--border);
+    border-radius:8px; padding:10px 12px; font-size:10.5px; color:var(--dim); z-index:5;
+    backdrop-filter:var(--panel-blur); box-shadow:var(--shadow); }
+  #legend h4{ font-size:10px; color:var(--text); margin-bottom:6px; letter-spacing:.6px; }
+  #legend .row{ display:flex; align-items:center; gap:7px; margin:3px 0; }
+  #legend .sw{ width:10px; height:10px; border-radius:2px; flex:none; }
+  #legend .ln{ width:16px; height:0; border-top:2px solid; flex:none; }
+  #legend .ln.dash{ border-top-style:dashed; }
+
+  /* ---------- right info panel ---------- */
+  #info{ position:fixed; top:64px; right:16px; width:308px; background:var(--panel);
+    border:1px solid var(--border); border-radius:8px; padding:14px; display:none; z-index:6;
+    backdrop-filter:var(--panel-blur); box-shadow:var(--shadow); }
+  #info h3{ font-size:13px; margin-bottom:8px; padding-right:22px; }
+  #info p{ font-size:11.5px; color:var(--dim); line-height:1.65; }
+  #info .cfgLabel{ font-size:10px; color:var(--dim); margin-top:12px; letter-spacing:.5px; text-transform:uppercase; }
+  #info code{ display:block; font-size:11px; color:var(--code-ink); background:var(--code-bg);
+    border:1px solid var(--border); border-radius:5px; padding:6px 8px; margin-top:5px; white-space:pre-line; }
+  #infoClose{ position:absolute; top:8px; right:10px; border:none; background:none; color:var(--dim);
+    font-size:14px; padding:2px 6px; cursor:pointer; }
+  #infoClose:hover{ color:var(--text); }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div id="header">
+  <h1>Agent Identity Platform — SPIFFE · OAuth token exchange · OPA · human-in-the-loop</h1>
+  <p>Click a component. Play the flow. Toggle defences.</p>
+</div>
+
+<div id="theme" role="group" aria-label="Theme">
+  <button data-mode="auto" title="Follow system theme">Auto</button>
+  <button data-mode="light" title="Light theme">Light</button>
+  <button data-mode="dark" title="Dark theme">Dark</button>
+</div>
+
+<div id="panel">
+  <button class="ctl" id="playBtn">▶ Play flow</button>
+  <div class="stepRow">
+    <button class="ctl" id="prevBtn" title="Previous hop">◀ Step</button>
+    <button class="ctl" id="nextBtn" title="Next hop">Step ▶</button>
+  </div>
+  <button class="ctl" id="viewBtn">▦ View: 3D</button>
+  <button class="ctl" id="defBtn">⚠ Defences</button>
+  <div id="hint">Left-drag rotate · wheel zoom · right-drag pan.<br>Click any node for its repo config.</div>
+</div>
+
+<div id="legend">
+  <h4>LEGEND</h4>
+  <div class="row"><span class="sw" style="background:var(--blue)"></span>Identity &amp; people</div>
+  <div class="row"><span class="sw" style="background:var(--purple)"></span>Agent</div>
+  <div class="row"><span class="sw" style="background:var(--green)"></span>Tools &amp; policy</div>
+  <div class="row"><span class="sw" style="background:var(--orange)"></span>Data &amp; oversight</div>
+  <div class="row"><span class="ln" style="border-color:var(--blue)"></span>Identity</div>
+  <div class="row"><span class="ln" style="border-color:var(--green)"></span>Authorized</div>
+  <div class="row"><span class="ln dash" style="border-color:var(--red)"></span>Blocked</div>
+  <div class="row"><span class="ln" style="border-color:var(--orange); opacity:.5"></span>Audit</div>
+</div>
+
+<div id="info">
+  <button id="infoClose">✕</button>
+  <h3 id="infoTitle"></h3>
+  <p id="infoDesc"></p>
+  <div class="cfgLabel">Config in repo:</div>
+  <code id="infoCfg"></code>
+</div>
+
+<div id="bottombar">
+  <div id="caption">
+    <div id="capTitle">Customer-support &amp; refunds copilot</div>
+    <div id="capBody">A support rep delegates to an AI agent carrying a SPIFFE identity — no API keys, every tool call authorized by policy, high-risk actions approved by a human, tokens never forwarded, everything audited.
+Press ▶ to walk the 8-hop trust flow, or ⚠ to see how attacks are blocked.</div>
+  </div>
+</div>
+
+<script src="vendor/three.min.js"></script>
+<script>
+"use strict";
+/* =====================================================================================
+ * Agent Identity Platform — interactive 3D architecture visualization.
+ * Single file, file://-safe: global THREE (UMD r149), no modules, no fetch, no CDN.
+ *
+ * EDIT THIS DATA TO UPDATE THE DIAGRAM — everything in the scene comes from SCENE_DATA.
+ * =================================================================================== */
+const SCENE_DATA = {
+  /* Four stacked translucent planes (top → bottom). */
+  planes: [
+    { id: "people", name: "IDENTITY & PEOPLE", y:  7, color: 0x4da3ff, css: "#4da3ff" },
+    { id: "agent",  name: "AGENT",             y:  3, color: 0xb088ff, css: "#b088ff" },
+    { id: "tools",  name: "TOOLS & POLICY",    y: -1, color: 0x4dffb8, css: "#4dffb8" },
+    { id: "data",   name: "DATA & OVERSIGHT",  y: -5, color: 0xffb84d, css: "#ffb84d" }
+  ],
+
+  /* Nodes. `config` is shown in the side panel when a node is clicked. */
+  nodes: [
+    /* ---- IDENTITY & PEOPLE ---- */
+    { id: "user", plane: "people", x: -7.2, z: 0, label: "Support rep",
+      desc: "Signs in via OIDC and delegates to the agent. The rep never hands over credentials — the agent acts on their behalf through OAuth token exchange.",
+      config: "—" },
+    { id: "keycloak", plane: "people", x: -2.4, z: 0, label: "Keycloak",
+      desc: "OIDC login + OAuth 2.0 token exchange (RFC 8693, Standard Token Exchange V2). Issues short-lived, audience-bound tokens carrying the delegation binding (sub = the rep, azp = the agent).",
+      config: "infra/" },
+    { id: "spire", plane: "people", x: 2.4, z: 0, label: "SPIRE",
+      desc: "Issues short-lived SPIFFE identities (SVIDs) after Kubernetes attests the workload. No static credentials anywhere.",
+      config: "infra/" },
+    { id: "approver", plane: "people", x: 7.2, z: 0, label: "Approver (manager)",
+      desc: "Reviews and approves high-risk actions. An authenticated identity; approvals are audited; no self-approval.",
+      config: "—" },
+
+    /* ---- AGENT ---- */
+    { id: "agent", plane: "agent", x: -3, z: 0, size: 1.2, label: "Agent runtime (LangGraph)",
+      desc: "Stateful workflow; the LLM proposes which tool to use, policy decides whether. Pauses (interrupts) for approvals and resumes. Holds zero secrets.",
+      config: "app/agent/" },
+    { id: "gateway", plane: "agent", x: 3, z: 0, label: "LLM gateway (Phase 2)",
+      desc: "Inside the trust domain; authenticates the agent by its SPIFFE identity and holds the model provider key, so the agent holds no secret. Redacts before egress.",
+      config: "infra/" },
+    { id: "rogue", plane: "agent", x: 6.6, z: 2.4, hidden: true, label: "Rogue workload", color: 0xff5d5d,
+      desc: "An unregistered workload with no SPIRE registration entry and no valid attestation. It can ask for an identity, but SPIRE refuses — no identity, no token.",
+      config: "—" },
+
+    /* ---- TOOLS & POLICY ---- */
+    { id: "mcp", plane: "tools", x: -3, z: 0, label: "MCP tool servers",
+      desc: "The policy enforcement point. Verifies the token (signature, audience, and the workload it was issued to), asks OPA, and performs its OWN token exchange downstream. Never forwards the inbound token.",
+      config: "app/tools/" },
+    { id: "opa", plane: "tools", x: 3, z: 0, label: "OPA",
+      desc: "Deny-by-default policy with three outcomes: allow, deny, require-approval. Rules are code: reviewed, tested, changed without redeploys.",
+      config: "policy/" },
+
+    /* ---- DATA & OVERSIGHT ---- */
+    { id: "sim", plane: "data", x: -6, z: 0, label: "Simulators",
+      desc: "Synthetic CRM / orders / payments / ticketing (swap for real sandboxes later). Never real customer, card, or personal data.",
+      config: "app/simulators/" },
+    { id: "approvals", plane: "data", x: 0, z: 0, label: "Approvals store",
+      desc: "Pending approvals and decisions; the agent's run resumes idempotently when a decision is recorded.",
+      config: "app/api/" },
+    { id: "audit", plane: "data", x: 6, z: 0, label: "Audit + OpenTelemetry",
+      desc: "Every step emits one identity-keyed record (spiffe_id, sub, azp, tool, decision). No secrets or PII.",
+      config: "sdk/agentnhi/" }
+  ],
+
+  /* Numbered trust flow, played one hop at a time. blue = identity, green = authorized. */
+  flows: [
+    { from: "user", to: "keycloak", color: 0x4da3ff, css: "#4da3ff",
+      label: "1. Rep signs in (OIDC) → user token",
+      explain: "The support rep authenticates with OIDC (authorization code + PKCE). Keycloak issues a user token representing the rep's identity — credentials are never shared with the agent." },
+    { from: "spire", to: "agent", color: 0x4da3ff, css: "#4da3ff",
+      label: "2. Workload attestation → SVID (no secrets)",
+      explain: "SPIRE attests the agent's Kubernetes workload (namespace + service account) and issues a short-lived SVID. No static credentials, nothing to steal or rotate by hand." },
+    { from: "agent", to: "keycloak", color: 0x4da3ff, css: "#4da3ff", lift: 1.4,
+      label: "3. RFC 8693 token exchange: SVID + rep token → scoped token (sub=rep, azp=agent, aud=mcp)",
+      explain: "The agent authenticates as its SPIFFE identity and exchanges the rep's token via RFC 8693 Standard Token Exchange V2. The result is short-lived, audience-bound to the MCP servers, and carries the delegation binding: sub = the rep, azp = the agent." },
+    { from: "agent", to: "mcp", color: 0x4dffb8, css: "#4dffb8",
+      label: "4. Tool call with the scoped token",
+      explain: "The agent calls an MCP tool with the scoped token. The MCP server verifies the signature, the audience, and the workload the token was issued to." },
+    { from: "mcp", to: "opa", color: 0x4dffb8, css: "#4dffb8",
+      label: "5. Policy check: (agent, rep, tool) → allow / deny / require-approval",
+      explain: "The MCP server asks OPA: may this agent, acting for this rep, call this tool? Deny-by-default, with three outcomes — allow, deny, or require-approval. Rules are code: reviewed and tested." },
+    { from: "mcp", to: "sim", color: 0x4dffb8, css: "#4dffb8", lift: 1.6,
+      label: "6. If allowed: the MCP server does its OWN exchange → simulator (the original token is never forwarded)",
+      explain: "For downstream calls the MCP server performs its own token exchange, scoped to the simulator. The inbound token is never forwarded — the audience and azp would not match anyway." },
+    { from: "agent", to: "approver", color: 0x4da3ff, css: "#4da3ff", lift: 3.2,
+      label: "7. If approval is required: the run PAUSES, the approver decides, then the run resumes and the tool executes",
+      explain: "High-risk actions (e.g. a large refund) require human approval. The agent's run pauses via a LangGraph interrupt; an authenticated approver records a decision; the run resumes idempotently and only then does the tool execute. No self-approval." },
+    { from: "agent", to: "gateway", color: 0x4da3ff, css: "#4da3ff",
+      label: "8. LLM calls go through the identity-authenticated gateway (the agent holds no key)",
+      explain: "The agent authenticates to the LLM gateway with its SPIFFE identity. The gateway holds the model provider key and redacts PII before egress, so the agent never holds a secret and no sensitive data leaves." }
+  ],
+
+  /* Faint static edges: everything emits one identity-keyed audit record (thin orange). */
+  auditFrom: ["user", "keycloak", "spire", "approver", "agent", "gateway", "mcp", "opa", "sim", "approvals"],
+
+  /* Defence mode: red dashed edges whose pulse is blocked partway with a burst. */
+  attacks: [
+    { badge: "A1", tag: "attestation", from: "rogue", to: "spire", lift: 2.0,
+      caption: "Rogue workload: no attestation match → no identity, no token." },
+    { badge: "A2", tag: "replay", from: "mcp", to: "sim", lift: 3.4,
+      caption: "Token forwarding: audience/azp mismatch → refused." },
+    { badge: "A3", tag: "injection", from: "agent", to: "opa", lift: -2.4,
+      caption: "Prompt injection: the model asks for a forbidden tool → policy denies it." },
+    { badge: "A4", tag: "bypass", from: "agent", to: "approvals", lift: 2.4,
+      caption: "Approval bypass: no recorded approval → the tool refuses to run." },
+    { badge: "A5", tag: "PII", from: "agent", to: "gateway", lift: 3.2,
+      caption: "Data egress: PII is redacted before it leaves; synthetic data only." }
+  ]
+};
+
+/* ================================ helpers ================================ */
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const cssColor = (hex) => "#" + hex.toString(16).padStart(6, "0");
+
+/* Theme-aware palettes for the 3D scene (keep accents, adjust bg/labels). */
+const PALETTES = {
+  dark:  { bg: 0x0d1117, text: "#e6edf3", dim: "#8b949e", light: false },
+  light: { bg: 0xeef1f6, text: "#1b2430", dim: "#5b6675", light: true }
+};
+/* Darker accent variants used for UI text on the light background. */
+const INK = { "#4da3ff": "#1f6fd6", "#b088ff": "#7a4fd0", "#4dffb8": "#0f8a5c", "#ffb84d": "#b5761a", "#ff5d5d": "#d33a3a" };
+
+const themeSprites = [];   // sprites whose colour follows the theme
+const additiveMats = [];   // additive materials, switched to normal blending on light theme
+const nodeMats = [];       // node box materials (emissive tweak per theme)
+
+function registerSprite(sprite, role, accent) {
+  sprite.userData.role = role;
+  sprite.userData.accent = accent || "#ffffff";
+  themeSprites.push(sprite);
+  return sprite;
+}
+function registerAdditive(mat, baseOpacity) {
+  mat.userData.baseOpacity = baseOpacity;
+  additiveMats.push(mat);
+  return mat;
+}
+
+/* Soft radial glow texture (white; tinted per-sprite via material colour). */
+function makeGlowTexture() {
+  const c = document.createElement("canvas"); c.width = c.height = 128;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.25, "rgba(255,255,255,.55)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
+  const t = new THREE.CanvasTexture(c); t.encoding = THREE.sRGBEncoding;
+  return t;
+}
+
+/* Canvas-texture text sprite, drawn white then tinted per theme role. */
+function makeTextSprite(text, opts) {
+  opts = opts || {};
+  const size = opts.size || 40, weight = opts.weight || 600, scale = opts.scale || 0.0052;
+  const font = weight + " " + size + "px Menlo, Consolas, monospace";
+  const pad = 20;
+  const c = document.createElement("canvas"), ctx = c.getContext("2d");
+  ctx.font = font;
+  const w = Math.ceil(ctx.measureText(text).width) + pad * 2, h = size + pad * 2;
+  c.width = w * 2; c.height = h * 2;
+  ctx.scale(2, 2); ctx.font = font;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.shadowColor = "rgba(0,0,0,.85)"; ctx.shadowBlur = 5;
+  ctx.fillStyle = "#ffffff"; ctx.fillText(text, w / 2, h / 2);
+  const tex = new THREE.CanvasTexture(c);
+  tex.encoding = THREE.sRGBEncoding; tex.minFilter = THREE.LinearFilter;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  s.scale.set(w * scale, h * scale, 1);
+  return registerSprite(s, opts.role || "text", opts.accent);
+}
+
+/* Numbered circular badge (hop markers) / red ✗ blocked marker. */
+function makeBadgeSprite(text, colorCss, opts) {
+  opts = opts || {};
+  const c = document.createElement("canvas"); c.width = c.height = 128;
+  const ctx = c.getContext("2d");
+  ctx.lineWidth = 7; ctx.strokeStyle = colorCss;
+  ctx.fillStyle = opts.xMark ? "rgba(13,17,23,.85)" : colorCss;
+  ctx.shadowColor = colorCss; ctx.shadowBlur = 14;
+  ctx.beginPath(); ctx.arc(64, 64, 48, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+  if (opts.xMark) {
+    ctx.lineWidth = 12; ctx.lineCap = "round"; ctx.strokeStyle = colorCss;
+    ctx.beginPath();
+    ctx.moveTo(42, 42); ctx.lineTo(86, 86);
+    ctx.moveTo(86, 42); ctx.lineTo(42, 86);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = "#0d1117"; ctx.font = "700 52px Menlo, Consolas, monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(text, 64, 67);
+  }
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  s.scale.set(0.62, 0.62, 1);
+  return s;
+}
+
+/* Translucent rounded plane with soft glowing border, drawn on a canvas texture. */
+function makePlaneMesh(width, depth, colorCss) {
+  const c = document.createElement("canvas"); c.width = 1024; c.height = 512;
+  const ctx = c.getContext("2d");
+  const x = 26, y = 26, w = 972, h = 460, r = 46;
+  const rr = () => {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  };
+  rr(); ctx.fillStyle = colorCss + "12"; ctx.fill();
+  ctx.strokeStyle = colorCss + "22"; ctx.lineWidth = 1;
+  for (let gx = x + 64; gx < x + w; gx += 64) { ctx.beginPath(); ctx.moveTo(gx, y); ctx.lineTo(gx, y + h); ctx.stroke(); }
+  for (let gy = y + 64; gy < y + h; gy += 64) { ctx.beginPath(); ctx.moveTo(x, gy); ctx.lineTo(x + w, gy); ctx.stroke(); }
+  ctx.shadowColor = colorCss; ctx.shadowBlur = 26;
+  ctx.strokeStyle = colorCss; ctx.lineWidth = 5;
+  rr(); ctx.stroke(); rr(); ctx.stroke();
+  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = 4;
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  return mesh;
+}
+
+/* ============================ renderer / scene ============================ */
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 300);
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xffffff, 0.9);
+sun.position.set(6, 16, 10);
+scene.add(sun);
+
+const glowTex = makeGlowTexture();
+const PLANE_W = 20, PLANE_D = 9.5;
+const planeById = {}, nodeById = {};
+const nodeMeshes = [];
+
+/* ========================= build scene from data ========================= */
+SCENE_DATA.planes.forEach((p) => {
+  planeById[p.id] = p;
+  const mesh = makePlaneMesh(PLANE_W, PLANE_D, p.css);
+  mesh.position.y = p.y;
+  scene.add(mesh);
+  const tag = makeTextSprite(p.name, { size: 30, color: p.css, scale: 0.0042, weight: 700, role: "accent", accent: p.css });
+  tag.position.set(-PLANE_W / 2 + 1.7, p.y + 0.12, PLANE_D / 2 - 0.6);
+  scene.add(tag);
+});
+
+SCENE_DATA.nodes.forEach((n) => {
+  const plane = planeById[n.plane];
+  const accent = n.color !== undefined ? n.color : plane.color;
+  const accentCss = cssColor(accent);
+  const s = n.size || 1;
+  const geo = new THREE.BoxGeometry(1.7 * s, 1.05 * s, 1.7 * s);
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(accent).multiplyScalar(0.32),
+    emissive: accent, emissiveIntensity: 0.22, roughness: 0.35, metalness: 0.15
+  });
+  nodeMats.push(mat);
+  const box = new THREE.Mesh(geo, mat);
+  const y = plane.y + (1.05 * s) / 2 + 0.02;
+  box.position.set(n.x, y, n.z);
+  box.userData.nodeId = n.id;
+
+  const edges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color: accent, transparent: true, opacity: 0.95 })
+  );
+  box.add(edges);
+
+  const glowMat = new THREE.SpriteMaterial({
+    map: glowTex, color: accent, transparent: true, opacity: 0.3,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  registerAdditive(glowMat, 0.3);
+  const glow = new THREE.Sprite(glowMat);
+  glow.scale.set(4.2 * s, 4.2 * s, 1);
+  glow.position.copy(box.position);
+
+  const label = makeTextSprite(n.label, { role: "text" });
+  label.position.set(n.x, y + (1.05 * s) / 2 + 0.55, n.z);
+
+  const group = new THREE.Group();
+  group.add(box, glow, label);
+  group.visible = !n.hidden;
+  scene.add(group);
+  nodeMeshes.push(box);
+  nodeById[n.id] = { data: n, box: box, edges: edges, glow: glow, label: label, group: group, pos: box.position.clone(), accent: accent };
+});
+
+/* Curved edge between two node centres (arc lifts by `lift`, else by distance). */
+function edgeCurve(fromId, toId, lift) {
+  const a = nodeById[fromId].pos, b = nodeById[toId].pos;
+  const mid = a.clone().add(b).multiplyScalar(0.5);
+  mid.y += lift !== undefined ? lift : a.distanceTo(b) * 0.15;
+  return new THREE.QuadraticBezierCurve3(a, mid, b);
+}
+function glowTube(curve, color, radius, opacity) {
+  const mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: opacity, blending: THREE.AdditiveBlending, depthWrite: false });
+  registerAdditive(mat, opacity);
+  return new THREE.Mesh(new THREE.TubeGeometry(curve, 48, radius, 8, false), mat);
+}
+
+/* Trust-flow hops: glowing tube + halo + numbered badge + ambient pulses. */
+const flowEdges = SCENE_DATA.flows.map((f, i) => {
+  const curve = edgeCurve(f.from, f.to, f.lift);
+  const tube = glowTube(curve, f.color, 0.045, 0.55);
+  const halo = glowTube(curve, f.color, 0.13, 0.10);
+  const badge = makeBadgeSprite(String(i + 1), f.css);
+  badge.position.copy(curve.getPointAt(0.5)); badge.position.y += 0.42;
+  scene.add(tube, halo, badge);
+  const pulses = [0, 0.5].map((off) => {
+    const pmat = new THREE.SpriteMaterial({ map: glowTex, color: f.color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false });
+    registerAdditive(pmat, 0.85);
+    const p = new THREE.Sprite(pmat);
+    p.scale.set(0.55, 0.55, 1);
+    p.userData.t = off;
+    scene.add(p);
+    return p;
+  });
+  return { data: f, curve: curve, tube: tube, halo: halo, badge: badge, pulses: pulses };
+});
+
+/* Everything → audit: thin orange lines. */
+{
+  const auditPos = nodeById["audit"].pos;
+  SCENE_DATA.auditFrom.forEach((id) => {
+    if (!nodeById[id]) return;
+    const geo = new THREE.BufferGeometry().setFromPoints([nodeById[id].pos, auditPos]);
+    scene.add(new THREE.Line(geo, new THREE.LineBasicMaterial({ color: 0xffb84d, transparent: true, opacity: 0.13 })));
+  });
+}
+
+/* Defence mode: red dashed edges, blocked pulse + burst, ✗ marker, tag + badge. */
+const defGroup = new THREE.Group();
+defGroup.visible = false;
+scene.add(defGroup);
+const attackAnims = SCENE_DATA.attacks.map((a, i) => {
+  const curve = edgeCurve(a.from, a.to, a.lift);
+  const geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(60));
+  const line = new THREE.Line(geo, new THREE.LineDashedMaterial({ color: 0xff5d5d, dashSize: 0.28, gapSize: 0.2, transparent: true, opacity: 0.9 }));
+  line.computeLineDistances();
+  const block = curve.getPointAt(0.5);
+  const xMark = makeBadgeSprite("", "#ff5d5d", { xMark: true });
+  xMark.position.copy(block);
+  const badge = makeBadgeSprite(a.badge, "#ff5d5d");
+  badge.position.copy(block).add(new THREE.Vector3(0.78, 0.52, 0));
+  const tag = makeTextSprite(a.tag, { size: 30, color: "#ff5d5d", scale: 0.0042, weight: 700, role: "accent", accent: "#ff5d5d" });
+  tag.position.copy(block).add(new THREE.Vector3(0.95, -0.5, 0));
+  const pulseMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff5d5d, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  registerAdditive(pulseMat, 1);
+  const pulse = new THREE.Sprite(pulseMat);
+  pulse.scale.set(0.6, 0.6, 1);
+  const burstMat = new THREE.SpriteMaterial({ map: glowTex, color: 0xff8080, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  registerAdditive(burstMat, 1);
+  const burst = new THREE.Sprite(burstMat);
+  burst.position.copy(block);
+  defGroup.add(line, xMark, badge, tag, pulse, burst);
+  return { curve: curve, pulse: pulse, burst: burst, t: -i * 0.7 };   // staggered phase
+});
+
+/* ================= mini orbit controls (r149 UMD-safe) ================= */
+const controls = (() => {
+  const target = new THREE.Vector3(0, 1.0, 0);
+  const cur = { r: 30, phi: 1.1, theta: 0.55 }, goal = { r: 30, phi: 1.1, theta: 0.55 };
+  const panGoal = target.clone();
+  const pointers = new Map();
+  let pinch = 0, moved = 0, lastInteract = -10, elapsed = 0, onTap = null;
+
+  canvas.addEventListener("pointerdown", (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, btn: e.button });
+    moved = 0; lastInteract = elapsed;
+    if (pointers.size === 2) {
+      const p = [...pointers.values()];
+      pinch = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    }
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    moved += Math.abs(dx) + Math.abs(dy); lastInteract = elapsed;
+    if (pointers.size === 2) {                         // pinch zoom + two-finger pan
+      const q = [...pointers.values()];
+      const d = Math.hypot(q[0].x - q[1].x, q[0].y - q[1].y);
+      if (pinch > 0) goal.r = clamp(goal.r * pinch / d, 10, 70);
+      pinch = d; pan(dx * 0.5, dy * 0.5);
+    } else if (p.btn === 2) pan(dx, dy);               // right-drag pan
+    else {                                             // left-drag rotate
+      goal.theta -= dx * 0.005;
+      goal.phi = clamp(goal.phi - dy * 0.005, 0.04, Math.PI / 2 + 0.25);
+    }
+  });
+  const pan = (dx, dy) => {
+    const s = goal.r * 0.0011;
+    const right = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+    const up = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 1);
+    panGoal.addScaledVector(right, -dx * s).addScaledVector(up, dy * s);
+    panGoal.y = clamp(panGoal.y, -6, 9);
+  };
+  window.addEventListener("pointerup", (e) => {
+    if (pointers.has(e.pointerId) && moved < 6 && onTap) onTap(e);
+    pointers.delete(e.pointerId);
+  });
+  canvas.addEventListener("wheel", (e) => {
+    e.preventDefault(); lastInteract = elapsed;
+    goal.r = clamp(goal.r * Math.exp(e.deltaY * 0.001), 10, 70);
+  }, { passive: false });
+  canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+  return {
+    goal: goal,
+    idle: () => elapsed - lastInteract > 4 && pointers.size === 0,
+    tick: (dt) => { elapsed += dt; },
+    setOnTap: (fn) => { onTap = fn; },
+    update: (dt, autoOrbit) => {
+      if (autoOrbit) goal.theta += dt * 0.05;
+      const k = 1 - Math.pow(0.0001, dt);              // exponential damping
+      cur.r += (goal.r - cur.r) * k;
+      cur.phi += (goal.phi - cur.phi) * k;
+      cur.theta += (goal.theta - cur.theta) * k;
+      target.lerp(panGoal, k);
+      camera.position.setFromSpherical(new THREE.Spherical(cur.r, cur.phi, cur.theta)).add(target);
+      camera.lookAt(target);
+    }
+  };
+})();
+
+/* ============================== theme ============================== */
+const themeButtons = Array.prototype.slice.call(document.querySelectorAll("#theme button"));
+let currentThemeLight = false;
+let themeChoice = "auto";
+try { themeChoice = localStorage.getItem("aip-theme") || "auto"; } catch (e) { themeChoice = "auto"; }
+
+function ink(css) { return currentThemeLight ? (INK[css] || css) : css; }
+
+function applyTheme(theme) {
+  const pal = PALETTES[theme] || PALETTES.dark;
+  currentThemeLight = pal.light;
+  renderer.setClearColor(pal.bg, 1);
+  document.documentElement.setAttribute("data-theme", theme);
+  document.documentElement.style.colorScheme = theme;
+
+  themeSprites.forEach((s) => {
+    const role = s.userData.role;
+    if (role === "accent") s.material.color.set(s.userData.accent);
+    else if (role === "dim") s.material.color.set(pal.dim);
+    else s.material.color.set(pal.text);
+  });
+  additiveMats.forEach((m) => {
+    m.blending = pal.light ? THREE.NormalBlending : THREE.AdditiveBlending;
+    m.opacity = pal.light ? m.userData.baseOpacity * 0.7 : m.userData.baseOpacity;
+    m.needsUpdate = true;
+  });
+  nodeMats.forEach((m) => { m.emissiveIntensity = pal.light ? 0.16 : 0.22; });
+}
+function resolveTheme(choice) {
+  if (choice === "auto") {
+    return (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
+  }
+  return choice;
+}
+function setTheme(choice) {
+  themeChoice = choice;
+  try { localStorage.setItem("aip-theme", choice); } catch (e) {}
+  applyTheme(resolveTheme(choice));
+  themeButtons.forEach((b) => b.classList.toggle("active", b.dataset.mode === choice));
+}
+themeButtons.forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.mode)));
+if (window.matchMedia) {
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onChange = () => { if (themeChoice === "auto") applyTheme(resolveTheme("auto")); };
+  if (mq.addEventListener) mq.addEventListener("change", onChange);
+  else if (mq.addListener) mq.addListener(onChange);
+}
+
+/* ============================== UI wiring ============================== */
+const $ = (id) => document.getElementById(id);
+const playBtn = $("playBtn"), defBtn = $("defBtn"), viewBtn = $("viewBtn");
+const capTitle = $("capTitle"), capBody = $("capBody");
+
+let playing = false, currentStep = -1, stepT = 0, defMode = false, is2D = false;
+let savedView = null, oneShot = null, selectedId = null;
+const TRAVEL = 1.7, HOLD = 0.9;
+
+const playPulse = new THREE.Sprite((() => {
+  const m = new THREE.SpriteMaterial({ map: glowTex, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  registerAdditive(m, 1);
+  return m;
+})());
+playPulse.scale.set(0.95, 0.95, 1);
+playPulse.visible = false;
+scene.add(playPulse);
+
+function setCaption(title, body, css) {
+  capTitle.textContent = title;
+  capTitle.style.color = ink(css || "#4da3ff");
+  capBody.textContent = body;
+  $("caption").style.borderLeftColor = ink(css || "#4da3ff");
+}
+function idleCaption() {
+  setCaption("Customer-support & refunds copilot",
+    "A support rep delegates to an AI agent carrying a SPIFFE identity — no API keys, every tool call authorized by policy, high-risk actions approved by a human, tokens never forwarded, everything audited.\n" +
+    "Press ▶ to walk the 8-hop trust flow, or ⚠ to see how attacks are blocked.");
+}
+function highlightStep(idx) {
+  flowEdges.forEach((e, i) => {
+    const active = i === idx;
+    e.tube.material.opacity = active ? 1.0 : 0.45;
+    e.halo.material.opacity = active ? 0.22 : 0.08;
+    e.tube.material.userData.baseOpacity = active ? 1.0 : 0.45;
+    e.halo.material.userData.baseOpacity = active ? 0.22 : 0.08;
+  });
+}
+function showStep(i) {
+  currentStep = i; stepT = 0;
+  const f = SCENE_DATA.flows[i];
+  setCaption("Trust flow — hop " + (i + 1) + " / " + SCENE_DATA.flows.length,
+    f.label + "\n" + f.explain, f.css);
+  highlightStep(i);
+}
+function stopPlayback() {
+  playing = false; playPulse.visible = false; oneShot = null;
+  playBtn.textContent = "▶ Play flow";
+  playBtn.classList.remove("playing");
+}
+
+playBtn.addEventListener("click", () => {
+  if (defMode) defBtn.click();
+  if (playing) { stopPlayback(); return; }
+  playing = true;
+  playBtn.textContent = "⏸ Pause";
+  playBtn.classList.add("playing");
+  showStep(currentStep < 0 ? 0 : currentStep);
+});
+$("prevBtn").addEventListener("click", () => {
+  if (defMode) return;
+  const n = SCENE_DATA.flows.length;
+  const i = ((currentStep < 0 ? 0 : currentStep) - 1 + n) % n;
+  showStep(i);
+  if (!playing) oneShot = { edge: flowEdges[i], t: 0 };
+});
+$("nextBtn").addEventListener("click", () => {
+  if (defMode) return;
+  const n = SCENE_DATA.flows.length;
+  const i = ((currentStep < 0 ? -1 : currentStep) + 1) % n;
+  showStep(i);
+  if (!playing) oneShot = { edge: flowEdges[i], t: 0 };
+});
+
+/* 2D / 3D: tween the camera goal; damping animates the transition smoothly. */
+viewBtn.addEventListener("click", () => {
+  is2D = !is2D;
+  viewBtn.classList.toggle("active", is2D);
+  viewBtn.textContent = is2D ? "▦ View: 2D" : "▦ View: 3D";
+  if (is2D) {
+    savedView = { r: controls.goal.r, phi: controls.goal.phi, theta: controls.goal.theta };
+    controls.goal.phi = 0.05;                        // near top-down
+    controls.goal.r = 34;
+  } else if (savedView) {
+    controls.goal.r = savedView.r; controls.goal.phi = savedView.phi; controls.goal.theta = savedView.theta;
+  }
+});
+
+defBtn.addEventListener("click", () => {
+  defMode = !defMode;
+  defBtn.classList.toggle("active", defMode);
+  defGroup.visible = defMode;
+  nodeById["rogue"].group.visible = defMode;
+  if (defMode) {
+    stopPlayback(); highlightStep(-1);
+    flowEdges.forEach((e) => { e.tube.material.opacity = 0.16; e.halo.material.opacity = 0.04; });
+    setCaption("⚠ Defences — every attack is blocked",
+      SCENE_DATA.attacks.map((a) => a.badge + " · " + a.caption).join("\n"), "#ff5d5d");
+  } else {
+    flowEdges.forEach((e) => { e.tube.material.opacity = 0.55; e.halo.material.opacity = 0.10; });
+    currentStep = -1; idleCaption();
+  }
+});
+
+/* ========================= picking (raycast on tap) ========================= */
+const raycaster = new THREE.Raycaster();
+controls.setOnTap((e) => {
+  const ndc = new THREE.Vector2(
+    (e.clientX / window.innerWidth) * 2 - 1,
+    -(e.clientY / window.innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  const hits = raycaster.intersectObjects(nodeMeshes, false)
+    .filter((h) => nodeById[h.object.userData.nodeId].group.visible);
+  selectNode(hits.length ? hits[0].object.userData.nodeId : null);
+});
+function selectNode(id) {
+  if (selectedId && nodeById[selectedId]) {
+    const prev = nodeById[selectedId];
+    prev.edges.material.color.setHex(prev.accent);
+    prev.glow.material.userData.baseOpacity = 0.3;
+    prev.glow.material.opacity = currentThemeLight ? 0.21 : 0.3;
+  }
+  selectedId = id;
+  if (!id) { $("info").style.display = "none"; return; }
+  const n = nodeById[id];
+  n.edges.material.color.setHex(0xffffff);
+  n.glow.material.userData.baseOpacity = 0.55;
+  n.glow.material.opacity = currentThemeLight ? 0.385 : 0.55;
+  $("infoTitle").textContent = n.data.label;
+  $("infoTitle").style.color = ink(cssColor(n.accent));
+  $("infoDesc").textContent = n.data.desc;
+  $("infoCfg").textContent = n.data.config;
+  $("info").style.display = "block";
+}
+$("infoClose").addEventListener("click", () => selectNode(null));
+
+/* =============================== animate =============================== */
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  controls.tick(dt);
+
+  // Ambient pulses drift along every hop (hidden while a step plays or defences are on).
+  const ambientOn = !playing && !defMode;
+  flowEdges.forEach((e) => e.pulses.forEach((p) => {
+    p.visible = ambientOn;
+    if (!ambientOn) return;
+    p.userData.t = (p.userData.t + dt * 0.22) % 1;
+    p.position.copy(e.curve.getPointAt(p.userData.t));
+  }));
+
+  // Sequenced playback: one pulse travels the active hop, then advance.
+  if (playing && currentStep >= 0) {
+    stepT += dt;
+    const edge = flowEdges[currentStep];
+    const u = clamp(stepT / TRAVEL, 0, 1);
+    playPulse.visible = true;
+    playPulse.position.copy(edge.curve.getPointAt(u));
+    playPulse.material.color.setHex(u > 0.9 ? 0xffffff : edge.data.color);
+    if (stepT > TRAVEL + HOLD) {
+      if (currentStep + 1 < SCENE_DATA.flows.length) showStep(currentStep + 1);
+      else {
+        stopPlayback(); highlightStep(-1); currentStep = -1;
+        setCaption("Trust flow complete ✓",
+          "Eight hops, zero static credentials. Every call carried a short-lived, audience-scoped token; every decision was checked by OPA and written to the audit stream.",
+          "#4dffb8");
+      }
+    }
+  } else if (oneShot) {
+    oneShot.t += dt / TRAVEL;
+    playPulse.visible = oneShot.t < 1;
+    playPulse.material.color.setHex(oneShot.edge.data.color);
+    playPulse.position.copy(oneShot.edge.curve.getPointAt(clamp(oneShot.t, 0, 1)));
+    if (oneShot.t >= 1) oneShot = null;
+  } else {
+    playPulse.visible = false;
+  }
+
+  // Defence mode: red pulses travel partway, then die in a burst at the ✗.
+  if (defMode) {
+    const T1 = 1.2, T2 = 0.45, TOTAL = T1 + T2 + 1.0;
+    attackAnims.forEach((a) => {
+      a.t += dt;
+      if (a.t >= TOTAL) a.t = 0;
+      if (a.t < 0) { a.pulse.visible = a.burst.visible = false; return; }
+      if (a.t < T1) {
+        a.pulse.visible = true; a.burst.visible = false;
+        a.pulse.position.copy(a.curve.getPointAt((a.t / T1) * 0.5));
+      } else if (a.t < T1 + T2) {
+        a.pulse.visible = false; a.burst.visible = true;
+        const u = (a.t - T1) / T2;
+        const s = 0.5 + u * 1.8;
+        a.burst.scale.set(s, s, 1);
+        a.burst.material.opacity = (currentThemeLight ? 0.7 : 1) * (1 - u);
+      } else { a.pulse.visible = a.burst.visible = false; }
+    });
+  }
+
+  controls.update(dt, controls.idle() && !playing && !is2D);   // slow auto-orbit when idle
+  renderer.render(scene, camera);
+}
+
+/* ============================== boot ============================== */
+setTheme(themeChoice);
+idleCaption();
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>

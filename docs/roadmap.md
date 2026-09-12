@@ -15,10 +15,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       `SECURITY.md`
 - [x] CI security workflow (`security.yml`) + repo checks (`ci.yml`)
 - [x] Verified the hook blocks a test secret and gitleaks finds no leaks
-- [x] ADRs 0001–0009 recorded
+- [x] ADRs 0001–0010 recorded
 - [x] `docs/threat-model.md`, `docs/data-handling.md`, `docs/glossary.md`,
       `CONTRIBUTING.md`
 - [x] `docs/real-world-adoption.md` (draft)
+- [x] `docs/visualization/index.html` — interactive 3D architecture (light/dark)
 - [x] `README.md`, `HANDOFF.md`, `LICENSE`
 - [x] Cross-links with `enterprise-agent-nhi`
 - [x] Git repo created and pushed
@@ -46,7 +47,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [ ] OpenTelemetry end-to-end; Prometheus/Grafana; audit pipeline; alerts
 - [ ] Policy lifecycle (bundle CI, versioning, staged rollout, decision logs)
 - [ ] Agent guardrails + evals; rate and cost limits
-- [ ] Supply chain: SBOM, image scan, cosign signing, admission policy
+- [ ] Supply chain: SBOM, image scan, **cosign (keyless Sigstore) signing +
+      verification**, admission policy (ADR-0010)
 - [ ] Operator user guide
 - [ ] **Gate:** threat model addressed; dashboards live; secret audit clean
 
