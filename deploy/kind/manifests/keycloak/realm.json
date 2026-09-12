@@ -1,0 +1,128 @@
+{
+  "realm": "agent-platform",
+  "enabled": true,
+  "accessTokenLifespan": 300,
+  "roles": {
+    "realm": [
+      { "name": "support_rep" },
+      { "name": "manager" },
+      { "name": "privacy" }
+    ]
+  },
+  "users": [
+    {
+      "username": "alice",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Alice",
+      "lastName": "Example",
+      "email": "alice@example.com",
+      "requiredActions": [],
+      "realmRoles": ["support_rep"],
+      "credentials": [
+        { "type": "password", "value": "alice123", "temporary": false }
+      ]
+    },
+    {
+      "username": "manager",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Morgan",
+      "lastName": "Manager",
+      "email": "manager@example.com",
+      "requiredActions": [],
+      "realmRoles": ["manager"],
+      "credentials": [
+        { "type": "password", "value": "manager123", "temporary": false }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "demo-cli",
+      "description": "Stands in for the support rep's app. Its tokens are audienced for the AGENT so the agent may exchange them.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "demo-cli-secret-demo",
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "aud-agent",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "spiffe://acme.com/ns/agent-platform/sa/agent",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "manager-cli",
+      "description": "Stands in for the approver's app. Its tokens carry aud=mcp-tools so the API accepts them.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "manager-cli-secret-demo",
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "aud-tools",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "mcp-tools",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "spiffe://acme.com/ns/agent-platform/sa/agent",
+      "description": "THE AGENT. client_id == SPIFFE ID. Authenticates with a JWT-SVID (client-jwt) verified against SPIRE's JWKS; no client secret. standard.token.exchange.enabled lets it exchange tokens; its audience mapper puts mcp-tools in the result.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-jwt",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "attributes": {
+        "use.jwks.url": "true",
+        "jwks.url": "http://spire-oidc-discovery.agent-platform.svc.cluster.local:11080/keys",
+        "token.endpoint.auth.signing.alg": "ES256",
+        "standard.token.exchange.enabled": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "aud-tools",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "mcp-tools",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "mcp-tools",
+      "description": "Audience for the tool servers (and the API). Resource servers accept only tokens minted for it.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "mcp-tools-secret-demo",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    }
+  ]
+}

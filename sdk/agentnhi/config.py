@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-DEFAULT_ISSUER = "http://keycloak:8080/realms/agent-nhi"
+DEFAULT_ISSUER = "http://keycloak:8080/realms/agent-platform"
 
 
 @dataclass(frozen=True)

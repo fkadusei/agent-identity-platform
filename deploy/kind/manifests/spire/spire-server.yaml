@@ -1,0 +1,274 @@
+# =============================================================================
+# SPIRE Server — the identity root of trust for the demo.
+#
+# What this deploys:
+#   - SPIRE Server (StatefulSet): signs SVIDs, holds the registration registry,
+#     attests nodes via Kubernetes projected service account tokens (k8s_psat).
+#   - OIDC Discovery Provider (sidecar): publishes the JWT-SVID signing keys as
+#     a JWKS over plain HTTP inside the cluster. This is how Keycloak learns to
+#     trust SVIDs WITHOUT any key being copied anywhere.
+#   - k8sbundle notifier: publishes the trust bundle into the "spire-bundle"
+#     ConfigMap so SPIRE agents can bootstrap.
+#
+# Trust domain: acme.com (demo value).
+# Docs: docs/architecture.md#spire-server — docs/runbook.md#spire
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spire-server
+  namespace: agent-platform
+---
+# Lets SPIRE Server validate projected SA tokens of node agents (k8s_psat).
+# It also needs to READ the agent pod/node to confirm the token's origin.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-server-tokenreview
+rules:
+  - apiGroups: ["authentication.k8s.io"]
+    resources: ["tokenreviews"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-server-tokenreview
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spire-server-tokenreview
+subjects:
+  - kind: ServiceAccount
+    name: spire-server
+    namespace: agent-platform
+---
+# Lets the k8sbundle notifier publish the trust bundle into this namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spire-server-bundle
+  namespace: agent-platform
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "create", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spire-server-bundle
+  namespace: agent-platform
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spire-server-bundle
+subjects:
+  - kind: ServiceAccount
+    name: spire-server
+    namespace: agent-platform
+---
+# Placeholder the k8sbundle notifier fills with the trust bundle.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-bundle
+  namespace: agent-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-server
+  namespace: agent-platform
+data:
+  server.conf: |
+    server {
+      bind_address  = "0.0.0.0"
+      bind_port     = "8081"
+      socket_path   = "/run/spire/server/private/api.sock"
+      trust_domain  = "acme.com"
+      data_dir      = "/run/spire/data"
+      log_level     = "INFO"
+
+      # Demo-tuned lifetimes: short SVIDs make rotation visible during the demo.
+      default_x509_svid_ttl = "1h"
+      default_jwt_svid_ttl  = "5m"
+      ca_ttl                = "24h"
+
+      ca_subject = {
+        country      = ["US"]
+        organization = ["ACME-DEMO"]
+        common_name  = "acme.com"
+      }
+
+      # DEMO SIMPLIFICATION — READ ME.
+      # Keycloak's client-JWT validator is happiest when the client assertion's
+      # iss == sub == client_id. Our single demo workload authenticates with its
+      # JWT-SVID, whose sub IS its SPIFFE ID, so we set the issuer to the same
+      # value. In production you would instead use an authorization server that
+      # natively understands SPIFFE issuers (see draft-ietf-oauth-spiffe-client-auth).
+      jwt_issuer = "spiffe://acme.com/ns/agent-platform/sa/agent"
+    }
+
+    plugins {
+      DataStore "sql" {
+        plugin_data {
+          database_type     = "sqlite3"
+          connection_string = "/run/spire/data/datastore.sqlite3"
+        }
+      }
+
+      # Node attestation: the SPIRE agent proves it runs on THIS kind cluster by
+      # presenting its projected service account token, which the server checks
+      # via the TokenReview API.
+      NodeAttestor "k8s_psat" {
+        plugin_data {
+          clusters = {
+            "agent-platform-cluster" = {
+              service_account_allow_list = ["agent-platform:spire-agent"]
+            }
+          }
+        }
+      }
+
+      KeyManager "disk" {
+        plugin_data {
+          keys_path = "/run/spire/data/keys.json"
+        }
+      }
+
+      # Publishes the trust bundle to the spire-bundle ConfigMap above.
+      Notifier "k8sbundle" {
+        plugin_data {
+          namespace = "agent-platform"
+        }
+      }
+
+      # External CredentialComposer plugin (built by docker/spire-server.Dockerfile,
+      # source in spire-plugin/). It adds a unique `jti` claim to every workload
+      # JWT-SVID, which Keycloak's private_key_jwt client authentication requires
+      # (RFC 7523) but SPIRE does not mint by default. Nothing else is changed.
+      CredentialComposer "jti" {
+        plugin_cmd = "/opt/spire/plugins/jti-plugin"
+        plugin_data {}
+      }
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-oidc-discovery-provider
+  namespace: agent-platform
+data:
+  oidc-discovery-provider.conf: |
+    log_level = "info"
+    domains   = ["spire-oidc-discovery.agent-platform.svc.cluster.local"]
+
+    server_api {
+      address = "unix:///run/spire/server/private/api.sock"
+    }
+
+    # DEMO ONLY: serve the JWKS over plain HTTP inside the cluster so Keycloak
+    # (running with ssl-required=none) can fetch it. Production: put this behind
+    # TLS and require HTTPS on the Keycloak client.
+    allow_insecure_scheme = true
+    insecure_addr         = ":11080"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-server
+  namespace: agent-platform
+spec:
+  selector:
+    app: spire-server
+  ports:
+    - name: grpc
+      port: 8081
+      targetPort: 8081
+---
+# Keycloak fetches the JWT-SVID public keys from this service.
+apiVersion: v1
+kind: Service
+metadata:
+  name: spire-oidc-discovery
+  namespace: agent-platform
+spec:
+  selector:
+    app: spire-server
+  ports:
+    - name: http
+      port: 11080
+      targetPort: 11080
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: spire-server
+  namespace: agent-platform
+spec:
+  serviceName: spire-server
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spire-server
+  template:
+    metadata:
+      labels:
+        app: spire-server
+    spec:
+      serviceAccountName: spire-server
+      shareProcessNamespace: true
+      containers:
+        - name: spire-server
+          # Custom image = stock SPIRE server + the `jti` CredentialComposer
+          # plugin. Built and loaded into kind by scripts/setup.sh.
+          image: agent-platform/spire-server-jti:demo
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/run/spire/config/server.conf"]
+          ports:
+            - containerPort: 8081
+          volumeMounts:
+            - name: spire-config
+              mountPath: /run/spire/config
+              readOnly: true
+            - name: spire-data
+              mountPath: /run/spire/data
+            - name: spire-server-socket
+              mountPath: /run/spire/server/private
+          livenessProbe:
+            exec:
+              # Must point at our configured socket, not the CLI default.
+              command:
+                - /opt/spire/bin/spire-server
+                - healthcheck
+                - -socketPath
+                - /run/spire/server/private/api.sock
+            initialDelaySeconds: 15
+            periodSeconds: 30
+        - name: oidc-discovery-provider
+          image: ghcr.io/spiffe/oidc-discovery-provider:1.11.2
+          args: ["-config", "/run/spire/oidc/config/oidc-discovery-provider.conf"]
+          ports:
+            - containerPort: 11080
+          volumeMounts:
+            - name: spire-server-socket
+              mountPath: /run/spire/server/private
+              readOnly: true
+            - name: oidc-config
+              mountPath: /run/spire/oidc/config
+              readOnly: true
+      volumes:
+        - name: spire-config
+          configMap:
+            name: spire-server
+        - name: oidc-config
+          configMap:
+            name: spire-oidc-discovery-provider
+        - name: spire-data
+          emptyDir: {}            # demo-disposable; production: PVC
+        - name: spire-server-socket
+          emptyDir: {}

@@ -5,9 +5,9 @@
 ---
 
 - **Project:** agent-identity-platform
-- **Status:** Phase 1 in progress — SDK, policy, simulators, tool servers,
-  approvals, and the LangGraph agent are done and merged (84 tests);
-  **next: local kind deployment, the React UI, attack suite, and user guides**
+- **Status:** Phase 1 backend **COMPLETE** — it runs on kind end to end (read
+  allowed; $200 refund paused for approval; manager approved; refund issued;
+  all 5 attacks blocked). **Next: the React UI and the plain-language user guides.**
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
@@ -39,7 +39,7 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
 ## Where we are
 
 - **Phase 0 — complete.** Security baseline, ADRs 0001–0010, docs, governance.
-- **Phase 1 — in progress.** Merged so far (84 tests):
+- **Phase 1 — backend complete.** Merged so far (84 tests):
   - `sdk/agentnhi/` — identity, exchange, tokens (`aud`+`azp`), policy
     (fail-closed), audit (redaction) — 32 tests
   - `policy/authz.rego` — allow / deny / require-approval matrix — 14 tests
@@ -47,23 +47,32 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
   - `app/tools/` — enforcement core + FastAPI and MCP transports — 11 tests
   - `app/approvals/` + `app/api/` — approvals store + endpoints — 13 tests
   - `app/agent/` — LangGraph with approval interrupts — 4 tests
-- **Next in Phase 1:** local kind deployment, React UI (console, approval queue,
-  audit timeline), extended attack suite, user guides.
+  - `deploy/kind/` + `scripts/` — SPIRE/Keycloak/OPA + api/tools/agent on kind;
+    `demo.sh` (approval flow) and `attack-tests.sh` (5 attacks blocked)
+- **Next in Phase 1:** React UI (console, approval queue, audit timeline) and
+  the user guides.
 
 ## Immediate next task
 
-**Phase 1, next: run it locally on kind, then build the UI.**
+**Phase 1, next: the React UI (`app/web/`), then the user guides.**
 
-1. **Deployment** (`deploy/kind/`): SPIRE, Keycloak, OPA (mount `policy/`), the
-   API, the tools, and a local LLM. Start from the concepts demo's
-   `enterprise-agent-nhi/k8s/` and its two custom SPIRE builds
-   (`docker/spire-server.Dockerfile` for the `jti` plugin, and
-   `docker/spire-agent.Dockerfile` for the no-cache agent); the SDK's
-   `Settings` already reads the same env names (`KC_ISSUER`, `SPIFFE_SOCKET`,
-   `OPA_URL`, `TOKEN_AUDIENCE`, `TRUSTED_WORKLOAD`).
-2. **End-to-end smoke**: rep token → exchange → tool call → policy →
-   (approval if needed) → simulator, with the audit trail showing the chain.
-3. Then the React UI and the attack suite.
+The backend is done and runs locally:
+
+```sh
+./scripts/setup.sh          # kind + SPIRE + Keycloak + OPA + api/tools/agent
+./scripts/demo.sh           # login -> run -> approval -> resume (works)
+./scripts/attack-tests.sh   # 5 attacks, all blocked
+./scripts/teardown.sh       # delete the cluster
+```
+
+1. **React + Vite UI**: a support-rep console (submit a task, see the agent's
+   plan and result), an approver queue (`GET /approvals?status=pending`,
+   `POST /approvals/{id}/decision`), and an audit timeline.
+2. **User guides** (`docs/guides/`, plain-language HTML): overview, support rep,
+   approver.
+3. Notes for the UI: services are reachable in-cluster at `api:8080`,
+   `agent:8081`, `tools:8000`, `keycloak:8080`. The realm has `alice/alice123`
+   (support_rep) and `manager/manager123` (manager).
 
 ## Decisions made
 

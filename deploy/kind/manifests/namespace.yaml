@@ -1,0 +1,9 @@
+# Everything in this demo lives in one namespace.
+# The SPIRE registration entry for the agent matches on this namespace +
+# the "agent" ServiceAccount (see k8s/spire/ and scripts/setup.sh).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: agent-platform
+  labels:
+    app.kubernetes.io/part-of: enterprise-agent-platform

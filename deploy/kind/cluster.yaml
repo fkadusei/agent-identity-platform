@@ -1,0 +1,10 @@
+# kind cluster for the agent-platform demo.
+# Single node is enough: SPIRE server (StatefulSet), SPIRE agent (DaemonSet),
+# Keycloak, OPA, and the three demo apps all fit comfortably.
+# No host port mappings needed on purpose — demo.sh drives everything via
+# `kubectl exec`. Port-forward commands for browser access are in docs/runbook.md.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: agent-platform
+nodes:
+  - role: control-plane

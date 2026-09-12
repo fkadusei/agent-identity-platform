@@ -1,0 +1,171 @@
+# =============================================================================
+# SPIRE Agent — per-node daemon that attests WORKLOADS and hands out SVIDs.
+#
+# Runs as a DaemonSet. Each agent:
+#   1. Attests itself to SPIRE Server with its projected SA token (k8s_psat).
+#   2. Attests pods on its node by asking the kubelet about them (k8s workload
+#      attestor) — this is what maps a pod to selectors like k8s:ns + k8s:sa.
+#   3. Exposes the SPIFFE Workload API on a hostPath socket that app pods mount.
+#
+# The security property that matters: pods receive identity through the socket
+# with ZERO secrets in their spec — no keys, no tokens, nothing to steal.
+#
+# Docs: docs/architecture.md#spire-agent — docs/runbook.md#spire
+# =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spire-agent
+  namespace: agent-platform
+---
+# Workload attestation reads pod/node metadata from the API server, and the
+# new container locator reads pod info through the kubelet via the node proxy.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: spire-agent-workload-attestor
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "nodes"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["nodes/proxy"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: spire-agent-workload-attestor
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: spire-agent-workload-attestor
+subjects:
+  - kind: ServiceAccount
+    name: spire-agent
+    namespace: agent-platform
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spire-agent
+  namespace: agent-platform
+data:
+  agent.conf: |
+    agent {
+      data_dir           = "/run/spire/data"
+      log_level          = "INFO"
+      socket_path        = "/run/spire/sockets/agent.sock"
+      trust_bundle_path  = "/run/spire/bundle/bundle.crt"
+      trust_domain       = "acme.com"
+      server_address     = "spire-server"
+      server_port        = "8081"
+
+      # Disable JWT-SVID caching so every request mints a fresh SVID — and thus
+      # a fresh `jti`. Keycloak rejects reuse of a client assertion (jti), so a
+      # cached SVID would fail the second token exchange in a session.
+      jwt_svid_cache_max_size = 0
+    }
+
+    plugins {
+      NodeAttestor "k8s_psat" {
+        plugin_data {
+          cluster = "agent-platform-cluster"
+        }
+      }
+
+      KeyManager "memory" {
+        plugin_data {}
+      }
+
+      # kind runs the kubelet with a cert SPIRE can't verify against the system
+      # pool — skip_kubelet_verification is standard for kind demos.
+      # Production: leave this false (default).
+      WorkloadAttestor "k8s" {
+        plugin_data {
+          skip_kubelet_verification = true
+        }
+      }
+
+      WorkloadAttestor "unix" {
+        plugin_data {}
+      }
+    }
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: spire-agent
+  namespace: agent-platform
+spec:
+  selector:
+    matchLabels:
+      app: spire-agent
+  template:
+    metadata:
+      labels:
+        app: spire-agent
+    spec:
+      serviceAccountName: spire-agent
+      hostPID: true
+      # kind runs the kubelet on the node; the k8s workload attestor must reach
+      # it at 127.0.0.1:10250, so the agent shares the host network namespace.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      containers:
+        - name: spire-agent
+          # Custom image = stock SPIRE agent with the JWT-SVID cache disabled
+          # (see docker/spire-agent.Dockerfile): a cached SVID reuses its jti,
+          # and Keycloak rejects reuse of a client assertion.
+          image: agent-platform/spire-agent-nocache:demo
+          imagePullPolicy: IfNotPresent
+          args: ["-config", "/run/spire/config/agent.conf"]
+          securityContext:
+            # Needed to read other pods' container metadata via the kubelet.
+            privileged: true
+          volumeMounts:
+            - name: spire-config
+              mountPath: /run/spire/config
+              readOnly: true
+            - name: spire-bundle
+              mountPath: /run/spire/bundle
+              readOnly: true
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+            - name: spire-agent-data
+              mountPath: /run/spire/data
+            # The k8s_psat node attestor reads its projected SA token from
+            # here and presents it to SPIRE Server (validated via TokenReview).
+            - name: spire-agent-token
+              mountPath: /var/run/secrets/tokens
+              readOnly: true
+          livenessProbe:
+            exec:
+              command: ["/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/run/spire/sockets/agent.sock"]
+            initialDelaySeconds: 15
+            periodSeconds: 30
+      volumes:
+        - name: spire-config
+          configMap:
+            name: spire-agent
+        - name: spire-bundle
+          configMap:
+            name: spire-bundle
+        # App pods mount this same hostPath to reach the Workload API.
+        - name: spire-agent-socket
+          hostPath:
+            path: /run/spire/sockets
+            type: DirectoryOrCreate
+        # Ephemeral on purpose: if the SPIRE server's CA changes (e.g. its data
+        # is reset), a cached agent SVID would be rejected. With emptyDir the
+        # agent always re-attests cleanly on restart. Production: persistent
+        # storage for BOTH server and agent, or a stable upstream CA.
+        - name: spire-agent-data
+          emptyDir: {}
+        - name: spire-agent-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: spire-agent
+                  expirationSeconds: 7200
+                  audience: spire-server

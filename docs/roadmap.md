@@ -37,10 +37,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] LangGraph agent: planner + tool loop + **approval interrupts** — 4 tests
 - [ ] FastAPI: sessions, tasks, audit query
 - [ ] React UI: task console, approval queue, audit timeline
-- [ ] Extended attack suite (approval bypass, injection, forwarding, escalation)
-- [ ] Local deployment on kind
+- [x] Extended attack suite (forwarding, out-of-policy, approval bypass, PII, rogue workload)
+- [x] Local deployment on kind (`scripts/setup.sh` + `deploy/kind/`)
+- [ ] React UI: task console, approval queue, audit timeline
 - [ ] User guides: overview, support rep, approver
-- [ ] **Gate:** happy path works; all attacks blocked; approval flow demonstrated
+- [x] **Gate (backend): happy path works; all attacks blocked; approval flow demonstrated**
 
 ## Phase 2 — Production hardening
 
