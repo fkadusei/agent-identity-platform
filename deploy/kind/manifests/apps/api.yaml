@@ -20,6 +20,11 @@ spec:
       labels:
         app: api
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: api
           image: agent-platform/api:demo
@@ -32,14 +37,27 @@ spec:
             # NOTE: no TRUSTED_WORKLOAD here. The API accepts tokens from both
             # the agent (creating approvals) and human approvers (deciding them),
             # so it enforces the audience but not a single issuing workload.
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
           ports:
             - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /healthz
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service

@@ -47,6 +47,14 @@ spec:
           ports:
             - containerPort: 8080
             - containerPort: 9000
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - name: realm
               mountPath: /opt/keycloak/data/import

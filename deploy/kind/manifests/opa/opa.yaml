@@ -29,6 +29,14 @@ spec:
             - /policy/policy.rego
           ports:
             - containerPort: 8181
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            runAsUser: 1000
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           volumeMounts:
             - name: policy
               mountPath: /policy

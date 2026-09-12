@@ -8,4 +8,6 @@ COPY sdk /workspace/sdk
 RUN pip install --no-cache-dir /workspace/sdk
 COPY app /workspace/app
 ENV PYTHONPATH=/workspace
+RUN useradd --uid 1000 --create-home app
+USER app
 CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8080"]
