@@ -42,7 +42,16 @@ We aim to acknowledge within a few business days.
 | Trivy | CI | vulnerable dependencies and images |
 | dependency audit (`pip-audit`, `npm audit`) | CI | known-vulnerable packages |
 | SBOM (Syft) | CI | software bill of materials |
+| cosign (keyless Sigstore) | CI + deploy (Phase 2) | image signing, verification, provenance |
 | GitHub Advanced Security | GitHub (when enabled) | secret scanning, push protection, CodeQL |
+
+## Supply chain & signing
+
+Container images are **signed keyless with cosign** (Sigstore) using the CI
+workflow's OIDC identity — so there is no long-lived signing key to manage or
+leak. Deployments verify the signature before rollout, and (Phase 2+) an
+admission policy admits only images signed by our workflow identity. See
+[`docs/decisions/ADR-0010-supply-chain-signing-cosign.md`](docs/decisions/ADR-0010-supply-chain-signing-cosign.md).
 
 ## Supported versions
 

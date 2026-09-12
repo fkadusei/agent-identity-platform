@@ -38,6 +38,14 @@ flowchart TB
     SA["SPIRE agent"] -- "SVID (no secrets)" --> AG
 ```
 
+## See it in 3D
+
+Open [`docs/visualization/index.html`](docs/visualization/index.html) in a
+browser (double-click it — no server needed): orbit the layers, press
+**▶ Play flow** to walk the eight hops, click any component for its role, and
+toggle **⚠ Defences** to watch five attacks get blocked. Includes a
+light/dark/auto theme toggle.
+
 ## Security invariants
 
 Held everywhere — code, config, tests, logs, traces, prompts:

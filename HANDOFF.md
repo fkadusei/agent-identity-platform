@@ -56,6 +56,7 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 - ADR-0007 Security baseline and repository governance
 - ADR-0008 Documentation and handoff strategy
 - ADR-0009 Provider-agnostic LLM + identity-authenticated gateway
+- ADR-0010 Supply-chain signing with cosign (keyless Sigstore)
 
 ## Open questions / blockers
 
@@ -111,6 +112,7 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 | `.githooks/pre-commit` | local secret guard |
 | `scripts/scan-secrets.sh` | tree + history scan |
 | `.github/workflows/security.yml` | CI security job |
+| `docs/visualization/index.html` | interactive 3D architecture (open by double-click) |
 
 ## How to verify
 

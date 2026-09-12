@@ -4,8 +4,11 @@
 # The secret scan is the load-bearing one and runs on every push/PR. It is the
 # backstop for the local pre-commit hook (which can be bypassed with --no-verify).
 #
-# NOTE: hashFiles() is only available in step-level expressions, not job-level
-# `if`, so the conditional jobs gate their steps rather than the job.
+# Hardening notes:
+#  - All actions are pinned to a full commit SHA (mutable tags can be silently
+#    repointed by the action owner). The trailing comment records the version.
+#  - No `curl | sh`: tools are installed via pinned actions, not piped to a shell.
+#  - hashFiles() is only available in step-level expressions, not job-level `if`.
 name: security
 
 on:
@@ -24,7 +27,7 @@ jobs:
   secrets:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
         with:
           fetch-depth: 0
 
@@ -57,7 +60,7 @@ jobs:
   sast:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - name: semgrep
         if: ${{ hashFiles('**/*.py', '**/*.ts', '**/*.tsx', '**/*.js') != '' }}
         run: |
@@ -70,9 +73,9 @@ jobs:
   dependencies:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7
         if: ${{ hashFiles('**/requirements*.txt') != '' }}
         with:
           python-version: "3.13"
@@ -83,7 +86,7 @@ jobs:
           find . -name 'requirements*.txt' -not -path '*/node_modules/*' \
             -exec pip-audit -r {} \;
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7
         if: ${{ hashFiles('**/package.json') != '' }}
         with:
           node-version: "22"
@@ -96,23 +99,30 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # 4. SBOM + filesystem scan — runs once Dockerfiles exist.
+  #
+  # Image signing (cosign, keyless Sigstore) lands in Phase 2, once images are
+  # pushed to a registry: it needs `id-token: write` for the workflow OIDC
+  # identity and adds `cosign sign` / `cosign verify`. See ADR-0010.
   # ---------------------------------------------------------------------------
   supply-chain:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: generate SBOM (Syft)
         if: ${{ hashFiles('**/Dockerfile', '**/*.Dockerfile') != '' }}
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
-            | sh -s -- -b /usr/local/bin
-          syft dir:. -o spdx-json > sbom.spdx.json
-          echo "SBOM written ($(wc -c < sbom.spdx.json) bytes)"
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26  # v0.24.2
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom.spdx.json
 
       - name: scan filesystem (Trivy)
         if: ${{ hashFiles('**/Dockerfile', '**/*.Dockerfile') != '' }}
-        run: |
-          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
-            | sh -s -- -b /usr/local/bin
-          trivy fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln,secret,config .
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          scanners: vuln,secret,config
