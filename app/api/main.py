@@ -29,8 +29,11 @@ from fastapi.staticfiles import StaticFiles
 from agentnhi import Settings, TokenRejected, TokenVerifier, audit
 from agentnhi.tokens import Delegation
 from app.approvals import ApprovalStore
+from app.common.telemetry import instrument_fastapi, setup_telemetry
 
 app = FastAPI(title="agent-identity-platform API")
+setup_telemetry("api")
+instrument_fastapi(app)
 _store = ApprovalStore()
 _audit: deque[dict] = deque(maxlen=500)
 _verifier: TokenVerifier | None = None

@@ -18,8 +18,11 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from agentnhi import audit
+from app.common.telemetry import instrument_fastapi, setup_telemetry, span
 
 app = FastAPI(title="LLM gateway")
+setup_telemetry("gateway")
+instrument_fastapi(app)
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
@@ -55,7 +58,8 @@ def chat(req: ChatRequest) -> dict:
         }
         if _wants_json(req):
             payload["format"] = "json"
-        resp = httpx.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=180)
+        with span("llm.provider_call", provider="ollama", model=payload["model"]):
+            resp = httpx.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=180)
         resp.raise_for_status()
         content = resp.json()["response"]
         return {"choices": [{"message": {"role": "assistant", "content": content}}]}
