@@ -5,8 +5,9 @@
 ---
 
 - **Project:** agent-identity-platform
-- **Status:** Phase 1 in progress — SDK, policy, simulators, and tool servers
-  done and merged; **next: the LangGraph agent + the API/approvals service**
+- **Status:** Phase 1 in progress — SDK, policy, simulators, tool servers,
+  approvals, and the LangGraph agent are done and merged (84 tests);
+  **next: local kind deployment, the React UI, attack suite, and user guides**
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
@@ -38,32 +39,31 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
 ## Where we are
 
 - **Phase 0 — complete.** Security baseline, ADRs 0001–0010, docs, governance.
-- **Phase 1 — in progress.** Merged so far:
+- **Phase 1 — in progress.** Merged so far (84 tests):
   - `sdk/agentnhi/` — identity, exchange, tokens (`aud`+`azp`), policy
     (fail-closed), audit (redaction) — 32 tests
   - `policy/authz.rego` — allow / deny / require-approval matrix — 14 tests
   - `app/simulators/` — synthetic CRM/orders/payments/ticketing — 10 tests
   - `app/tools/` — enforcement core + FastAPI and MCP transports — 11 tests
-- **Next in Phase 1:** the LangGraph agent (approval interrupts) and the API
-  (sessions, tasks, approvals store + `/approvals/verify`), then the React UI,
-  kind deployment, attack suite, and user guides.
+  - `app/approvals/` + `app/api/` — approvals store + endpoints — 13 tests
+  - `app/agent/` — LangGraph with approval interrupts — 4 tests
+- **Next in Phase 1:** local kind deployment, React UI (console, approval queue,
+  audit timeline), extended attack suite, user guides.
 
 ## Immediate next task
 
-**Phase 1, next: the approvals service + the LangGraph agent.**
+**Phase 1, next: run it locally on kind, then build the UI.**
 
-1. **Approvals service** (`app/api/`): an in-memory store with
-   `POST /approvals` (create pending), `POST /approvals/{id}/decision`
-   (approve/deny, authenticated approver), and `POST /approvals/verify` (used by
-   the tool server). The tool server already calls `APPROVALS_URL` and fails
-   closed, so this closes the loop.
-2. **Agent** (`app/agent/`): a LangGraph state machine that
-   - plans with the LLM (provider-agnostic),
-   - calls the tool server / MCP with an exchanged token,
-   - on `require_approval` **interrupts**, creates an approval request, and
-     resumes with the approval id when a decision is recorded.
-3. Acceptance: a full run — rep token → exchange → tool call → policy →
-   (approval if needed) → simulator — with the audit trail showing the chain.
+1. **Deployment** (`deploy/kind/`): SPIRE, Keycloak, OPA (mount `policy/`), the
+   API, the tools, and a local LLM. Start from the concepts demo's
+   `enterprise-agent-nhi/k8s/` and its two custom SPIRE builds
+   (`docker/spire-server.Dockerfile` for the `jti` plugin, and
+   `docker/spire-agent.Dockerfile` for the no-cache agent); the SDK's
+   `Settings` already reads the same env names (`KC_ISSUER`, `SPIFFE_SOCKET`,
+   `OPA_URL`, `TOKEN_AUDIENCE`, `TRUSTED_WORKLOAD`).
+2. **End-to-end smoke**: rep token → exchange → tool call → policy →
+   (approval if needed) → simulator, with the audit trail showing the chain.
+3. Then the React UI and the attack suite.
 
 ## Decisions made
 
