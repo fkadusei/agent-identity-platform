@@ -1,8 +1,11 @@
 # =============================================================================
-# OPA — policy engine. Serves the allow/deny decision at /v1/data/agentnhi/authz.
-# The policy itself is loaded from the opa-policy ConfigMap, which setup.sh
-# creates from opa/policy.rego in this repo (single source of truth — the same
-# file CI tests).
+# OPA — policy engine. Serves the decision at /v1/data/agentnhi/authz.
+#
+# The policy is loaded as a **bundle** (authz.rego + data.json + .manifest),
+# built by scripts/build-bundle.sh from policy/authz.rego (the single source of
+# truth CI tests) and mounted from the opa-bundle ConfigMap. The bundle's
+# revision is stamped into every decision, and OPA emits structured decision
+# logs to stdout so each decision is recorded with the revision that made it.
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -31,7 +34,10 @@ spec:
             - run
             - --server
             - --addr=0.0.0.0:8181
-            - /policy/policy.rego
+            - --bundle
+            - /bundles
+            - --log-level=info
+            - --set=decision_logs.console=true
           ports:
             - containerPort: 8181
           securityContext:
@@ -40,8 +46,20 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
-            - name: policy
-              mountPath: /policy
+            # Mount the bundle files individually. A whole-ConfigMap mount adds
+            # Kubernetes' "..data" timestamp directory, which OPA's bundle loader
+            # would try to read as bundle data.
+            - name: bundle
+              mountPath: /bundles/authz.rego
+              subPath: authz.rego
+              readOnly: true
+            - name: bundle
+              mountPath: /bundles/data.json
+              subPath: data.json
+              readOnly: true
+            - name: bundle
+              mountPath: /bundles/.manifest
+              subPath: .manifest
               readOnly: true
             - name: tmp
               mountPath: /tmp
@@ -52,9 +70,9 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
-        - name: policy
+        - name: bundle
           configMap:
-            name: opa-policy
+            name: opa-bundle
         - name: tmp
           emptyDir: {}
 ---
