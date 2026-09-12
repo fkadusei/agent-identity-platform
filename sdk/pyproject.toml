@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentnhi"
+version = "0.1.0"
+description = "Identity and policy plumbing for AI agents: SPIFFE workload identity, OAuth 2.0 token exchange, OPA policy, and redaction-safe audit."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  "pyjwt[crypto]>=2.8",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# SPIFFE workload identity (fetching SVIDs). Optional so the rest of the SDK
+# can be used and tested without it installed.
+spiffe = ["spiffe>=0.3.1"]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["agentnhi*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
