@@ -33,8 +33,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] OPA policy matrix (allow / deny / require-approval) + tests — 14 tests
 - [x] Synthetic simulators: CRM, orders, payments, ticketing — 10 tests
 - [x] Tool servers (FastAPI + MCP) behind one enforcement core — 11 tests
-- [ ] Approvals service (`app/api`): pending/decision/verify
-- [ ] LangGraph agent: planner + tool loop + **approval interrupts**
+- [x] Approvals service (`app/api`): pending/decision/verify — 13 tests
+- [x] LangGraph agent: planner + tool loop + **approval interrupts** — 4 tests
 - [ ] FastAPI: sessions, tasks, audit query
 - [ ] React UI: task console, approval queue, audit timeline
 - [ ] Extended attack suite (approval bypass, injection, forwarding, escalation)
