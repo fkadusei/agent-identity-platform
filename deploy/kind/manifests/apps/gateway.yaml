@@ -40,6 +40,8 @@ spec:
           image: agent-platform/gateway:demo
           imagePullPolicy: IfNotPresent
           env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector:4318
             - name: SPIFFE_SOCKET
               value: unix:///run/spire/sockets/agent.sock
             - name: SPIFFE_BUNDLE

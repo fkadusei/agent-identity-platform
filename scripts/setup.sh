@@ -144,7 +144,13 @@ kubectl apply -f "$MANIFESTS/opa/" >/dev/null
 kubectl -n $NS rollout status deploy/opa --timeout=120s >/dev/null
 ok "opa serving the allow/deny/require-approval policy"
 
-say "6. platform services"
+say "6. observability"
+kubectl apply -f "$MANIFESTS/observability/" >/dev/null
+kubectl -n $NS rollout status deploy/otel-collector --timeout=180s >/dev/null
+kubectl -n $NS rollout status deploy/jaeger --timeout=180s >/dev/null
+ok "otel-collector + jaeger ready (traces carry identity attributes)"
+
+say "7. platform services"
 # The optional provider key: only the gateway consumes it.
 if [ -n "${LLM_API_KEY:-}" ]; then
   kubectl -n $NS create secret generic llm-api-key \
@@ -158,7 +164,7 @@ kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gatewa
   --timeout=240s >/dev/null
 ok "api, tools, agent, gateway ready"
 
-say "7. GATE: the agent pod can fetch its SVID (no secrets involved)"
+say "8. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""
 for _ in $(seq 1 12); do
   OUT=$(kubectl -n $NS exec deploy/agent -- python -c "

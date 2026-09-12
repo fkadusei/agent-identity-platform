@@ -14,9 +14,12 @@ from fastapi import FastAPI, Header, HTTPException
 from app.agent.graph import build_agent, resume_task, run_task
 from app.agent.live import LiveDeps
 from app.common.audit_forward import enable_forwarding
+from app.common.telemetry import instrument_fastapi, setup_telemetry
 
 app = FastAPI(title="agent service")
 enable_forwarding()
+setup_telemetry("agent")
+instrument_fastapi(app)
 _runs: dict[str, Any] = {}
 
 

@@ -53,7 +53,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       (`docs/secrets.md`)
 - [x] **LLM gateway authenticated by SPIFFE identity** — the agent holds no
       model credential; it reaches the model only over mTLS (`app/gateway/`)
-- [ ] OpenTelemetry end-to-end; Prometheus/Grafana; audit pipeline; alerts
+- [x] Observability — OpenTelemetry traces spanning agent → gateway → tools →
+      policy, with identity attributes on the decision span; collector + Jaeger
+      in-cluster and collector metrics for Prometheus (`docs/observability.md`)
 - [ ] Policy lifecycle (bundle CI, versioning, staged rollout, decision logs)
 - [ ] Agent guardrails + evals; rate and cost limits
 - [ ] Supply chain: SBOM, image scan, **cosign (keyless Sigstore) signing +

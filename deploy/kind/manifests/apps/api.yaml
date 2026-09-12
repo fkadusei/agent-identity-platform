@@ -30,6 +30,8 @@ spec:
           image: agent-platform/api:demo
           imagePullPolicy: IfNotPresent
           env:
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://otel-collector:4318
             - name: KC_ISSUER
               value: http://keycloak:8080/realms/agent-platform
             - name: TOKEN_AUDIENCE

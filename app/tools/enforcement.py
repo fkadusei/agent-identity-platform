@@ -21,6 +21,7 @@ from typing import Any
 from agentnhi import Decision, PolicyClient, Settings, TokenRejected, TokenVerifier, audit
 
 from app.common.schema import coerce_args
+from app.common.telemetry import span
 from app.tools.approvals import ApprovalsClient
 from app.tools.catalog import TOOLS, Tool
 
@@ -77,12 +78,23 @@ class ToolEnforcer:
             return ToolResult(Outcome.DENIED, tool_name, "unknown tool")
 
         call_args = _clean_args(tool, args)
-        decision = self._policy.decide(
-            agent=delegation.workload,
-            user=delegation.user,
+        # A span carrying the identity, so a trace answers "which agent, for
+        # which user, and what did policy decide?" — the same question the audit
+        # log answers, but end to end.
+        with span(
+            "policy.decision",
+            spiffe_id=delegation.workload,
+            sub=delegation.user,
             tool=tool_name,
-            context={"roles": list(delegation.roles), **call_args},
-        )
+        ) as current:
+            decision = self._policy.decide(
+                agent=delegation.workload,
+                user=delegation.user,
+                tool=tool_name,
+                context={"roles": list(delegation.roles), **call_args},
+            )
+            current.set_attribute("decision", decision.decision.value)
+            current.set_attribute("reason", decision.reason)
 
         if decision.decision is Decision.DENY:
             audit(
