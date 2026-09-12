@@ -1,16 +1,19 @@
 # =============================================================================
 # Keycloak — OAuth 2.0 / OIDC Authorization Server.
 #
-# Roles in this demo:
-#   1. Issues user tokens (alice logs in via direct grant through demo-cli).
+# Roles:
+#   1. Issues user tokens (alice and manager log in via direct grant).
 #   2. Authenticates the AGENT as a client using its JWT-SVID
 #      (client_id IS the SPIFFE ID; signature verified against the JWKS served
 #      by SPIRE's OIDC discovery provider — no shared secret for the agent).
-#   3. Performs RFC 8693 token exchange: user token in → audience-scoped,
-#      5-minute token out, carrying the delegation chain (sub + act claims).
+#   3. Performs RFC 8693 Standard Token Exchange: user token in -> audience-
+#      scoped, 5-minute token out, carrying the delegation binding (sub + azp).
 #
-# start-dev + --features=token-exchange are DEMO settings.
-# Docs: docs/architecture.md#keycloak — docs/runbook.md#keycloak
+# start-dev is a DEMO setting (no TLS, ephemeral H2 database).
+#
+# trivy:ignore:AVD-KSV-0014  Keycloak's dev-mode Quarkus augmentation writes
+# transformed bytecode into /opt/keycloak/lib/quarkus, so a read-only root
+# filesystem cannot be used here. The root FS is otherwise locked down.
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
@@ -27,16 +30,17 @@ spec:
       labels:
         app: keycloak
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: keycloak
           image: quay.io/keycloak/keycloak:26.6.4
           args:
             - start-dev
             - --import-realm                 # imports /opt/keycloak/data/import/*
-          # Standard Token Exchange (RFC 8693, V2) is enabled by default in
-          # Keycloak 26.2+ and needs NO fine-grained admin permissions — just
-          # the per-client switch set in realm.json. (Legacy V1 exchange, which
-          # DID require fine-grained permissions, is deliberately not enabled.)
           env:
             # DEMO-ONLY admin credentials. Never a real password — this cluster
             # is disposable. See docs/threat-model.md.
@@ -49,28 +53,34 @@ spec:
             - containerPort: 9000
           securityContext:
             allowPrivilegeEscalation: false
-            runAsNonRoot: true
-            runAsUser: 1000
             capabilities:
               drop: ["ALL"]
-            seccompProfile:
-              type: RuntimeDefault
           volumeMounts:
+            # Nested mounts: the import dir comes from the ConfigMap, while the
+            # rest of the data dir (H2 database) is writable and ephemeral.
+            - name: kc-data
+              mountPath: /opt/keycloak/data
             - name: realm
               mountPath: /opt/keycloak/data/import
               readOnly: true
+            - name: tmp
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               # start-dev serves health on 8080 (no curl in the image); the
-              # realm endpoint is a reliable liveness signal.
+              # realm endpoint is a reliable signal.
               path: /realms/agent-platform
               port: 8080
             initialDelaySeconds: 25
             periodSeconds: 10
       volumes:
+        - name: kc-data
+          emptyDir: {}                  # ephemeral H2; demo only
         - name: realm
           configMap:
             name: keycloak-realm        # created by scripts/setup.sh from realm.json
+        - name: tmp
+          emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
