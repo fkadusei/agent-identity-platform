@@ -3,6 +3,9 @@
 #
 # The secret scan is the load-bearing one and runs on every push/PR. It is the
 # backstop for the local pre-commit hook (which can be bypassed with --no-verify).
+#
+# NOTE: hashFiles() is only available in step-level expressions, not job-level
+# `if`, so the conditional jobs gate their steps rather than the job.
 name: security
 
 on:
@@ -48,10 +51,10 @@ jobs:
   # ---------------------------------------------------------------------------
   sast:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('**/*.py', '**/*.ts', '**/*.tsx', '**/*.js') != '' }}
     steps:
       - uses: actions/checkout@v7
       - name: semgrep
+        if: ${{ hashFiles('**/*.py', '**/*.ts', '**/*.tsx', '**/*.js') != '' }}
         run: |
           docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
             semgrep scan --config p/default --error --quiet
@@ -61,9 +64,9 @@ jobs:
   # ---------------------------------------------------------------------------
   dependencies:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('**/requirements*.txt', '**/package.json') != '' }}
     steps:
       - uses: actions/checkout@v7
+
       - uses: actions/setup-python@v7
         if: ${{ hashFiles('**/requirements*.txt') != '' }}
         with:
@@ -74,6 +77,7 @@ jobs:
           python -m pip install --upgrade pip pip-audit
           find . -name 'requirements*.txt' -not -path '*/node_modules/*' \
             -exec pip-audit -r {} \;
+
       - uses: actions/setup-node@v7
         if: ${{ hashFiles('**/package.json') != '' }}
         with:
@@ -86,20 +90,23 @@ jobs:
           done
 
   # ---------------------------------------------------------------------------
-  # 4. SBOM + container scan — runs once Dockerfiles exist.
+  # 4. SBOM + filesystem scan — runs once Dockerfiles exist.
   # ---------------------------------------------------------------------------
   supply-chain:
     runs-on: ubuntu-latest
-    if: ${{ hashFiles('**/Dockerfile', '**/*.Dockerfile') != '' }}
     steps:
       - uses: actions/checkout@v7
+
       - name: generate SBOM (Syft)
+        if: ${{ hashFiles('**/Dockerfile', '**/*.Dockerfile') != '' }}
         run: |
           curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
             | sh -s -- -b /usr/local/bin
           syft dir:. -o spdx-json > sbom.spdx.json
           echo "SBOM written ($(wc -c < sbom.spdx.json) bytes)"
+
       - name: scan filesystem (Trivy)
+        if: ${{ hashFiles('**/Dockerfile', '**/*.Dockerfile') != '' }}
         run: |
           curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
             | sh -s -- -b /usr/local/bin
