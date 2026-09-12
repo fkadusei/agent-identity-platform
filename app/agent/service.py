@@ -13,8 +13,10 @@ from fastapi import FastAPI, Header, HTTPException
 
 from app.agent.graph import build_agent, resume_task, run_task
 from app.agent.live import LiveDeps
+from app.common.audit_forward import enable_forwarding
 
 app = FastAPI(title="agent service")
+enable_forwarding()
 _runs: dict[str, Any] = {}
 
 

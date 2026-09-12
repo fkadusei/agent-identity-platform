@@ -8,10 +8,39 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 import httpx
 
 from agentnhi import audit
+
+
+def _extract_args(task: str) -> dict:
+    """Best-effort arguments pulled from the task text.
+
+    Small models are unreliable at filling tool arguments, and a missing
+    argument would make policy fall through to deny. These are used only to
+    fill gaps the model left, so the run reflects policy rather than the
+    model's formatting.
+    """
+    args: dict = {}
+    ref = re.search(r"\b([oct]-\d+)\b", task)
+    if ref:
+        value = ref.group(1)
+        args[{"o": "order_id", "c": "customer_id", "t": "ticket_id"}[value[0]]] = value
+    amount = re.search(r"(?<![\w-])(\d+(?:\.\d+)?)(?![\w-])", task)
+    if amount:
+        args["amount"] = float(amount.group(1))
+    return args
+
+
+def _fill_gaps(tool, args: dict, task: str) -> dict:
+    properties = tool.input_schema.get("properties") or {}
+    extracted = _extract_args(task)
+    for key, value in extracted.items():
+        if key in properties and args.get(key) in (None, "", 0):
+            args[key] = value
+    return args
 
 
 def _tool_manifest(tools: dict) -> str:
@@ -68,9 +97,11 @@ def decide_tool(task: str, tools: dict, fallback: dict | None = None) -> dict:
 
         decision = json.loads(content)
         if decision.get("tool") in tools:
+            tool = tools[decision["tool"]]
+            args = _fill_gaps(tool, dict(decision.get("args") or {}), task)
             return {
-                "tool": decision["tool"],
-                "args": decision.get("args", {}),
+                "tool": tool.name,
+                "args": args,
                 "reason": decision.get("reason", ""),
             }
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])

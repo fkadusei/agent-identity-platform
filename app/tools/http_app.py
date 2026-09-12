@@ -8,11 +8,13 @@ from __future__ import annotations
 
 from fastapi import FastAPI, Header, HTTPException
 
+from app.common.audit_forward import enable_forwarding
 from app.tools.catalog import TOOLS
 from app.tools.enforcement import Outcome, ToolEnforcer
 from app.tools.wiring import build_enforcer
 
 app = FastAPI(title="agent tools (policy enforcement point)")
+enable_forwarding()
 
 _enforcer: ToolEnforcer | None = None
 

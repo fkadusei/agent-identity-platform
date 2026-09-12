@@ -39,9 +39,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [ ] React UI: task console, approval queue, audit timeline
 - [x] Extended attack suite (forwarding, out-of-policy, approval bypass, PII, rogue workload)
 - [x] Local deployment on kind (`scripts/setup.sh` + `deploy/kind/`)
-- [ ] React UI: task console, approval queue, audit timeline
-- [ ] User guides: overview, support rep, approver
-- [x] **Gate (backend): happy path works; all attacks blocked; approval flow demonstrated**
+- [x] React UI (Vite): task console, approval queue, audit timeline
+- [x] User guides: overview, support rep, approver (plain-language HTML)
+- [x] **Gate: happy path works; all attacks blocked; approval flow demonstrated**
 
 ## Phase 2 — Production hardening
 

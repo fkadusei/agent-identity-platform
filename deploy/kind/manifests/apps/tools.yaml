@@ -39,6 +39,8 @@ spec:
               value: http://opa:8181
             - name: APPROVALS_URL
               value: http://api:8080
+            - name: AUDIT_URL
+              value: http://api:8080
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           ports:

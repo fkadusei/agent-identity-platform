@@ -47,6 +47,8 @@ spec:
               value: http://tools:8000
             - name: APPROVALS_URL
               value: http://api:8080
+            - name: AUDIT_URL
+              value: http://api:8080
             - name: LLM_PROVIDER
               value: ollama
             - name: OLLAMA_URL
