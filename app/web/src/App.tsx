@@ -55,7 +55,7 @@ export default function App() {
       </nav>
 
       <main>
-        {tab === "console" && <Console token={token} />}
+        {tab === "console" && <Console token={token} user={user} />}
         {tab === "approvals" && <Approvals token={token} user={user} />}
         {tab === "audit" && <Audit />}
       </main>
@@ -63,11 +63,13 @@ export default function App() {
   );
 }
 
-function Console({ token }: { token: string }) {
+function Console({ token, user }: { token: string; user: string | null }) {
   const [task, setTask] = useState("Issue a refund of 200 dollars for order o-1001");
   const [outcome, setOutcome] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+
+  const canRun = user === "alice";
 
   const run = async () => {
     setBusy(true);
@@ -94,8 +96,14 @@ function Console({ token }: { token: string }) {
     <section>
       <h2>Ask the agent</h2>
       {!token && <p className="hint">Sign in as alice first.</p>}
+      {token && !canRun && (
+        <p className="hint">
+          The agent acts on behalf of a support rep. Sign in as <b>alice</b> to
+          run tasks; the manager's job is to approve them.
+        </p>
+      )}
       <textarea value={task} onChange={(e) => setTask(e.target.value)} rows={2} />
-      <button disabled={!token || busy} onClick={run}>
+      <button disabled={!canRun || busy} onClick={run}>
         {busy ? "Running…" : "Run"}
       </button>
       {error && <div className="error">{error}</div>}

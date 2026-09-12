@@ -47,11 +47,19 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
         }
 
     def call_tool(state: AgentState) -> dict:
-        outcome = deps.call_tool(state["tool"], state["args"], state.get("approval_id"))
+        # A downstream failure (e.g. the token exchange is refused) must become a
+        # reported error, not an unhandled exception that 500s the request.
+        try:
+            outcome = deps.call_tool(state["tool"], state["args"], state.get("approval_id"))
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "reason": f"tool call failed: {exc}"}
         return {"status": outcome.status, "result": outcome.result or {}, "reason": outcome.reason}
 
     def create_approval(state: AgentState) -> dict:
-        approval = deps.create_approval(state["tool"], state["args"], state.get("reason", ""))
+        try:
+            approval = deps.create_approval(state["tool"], state["args"], state.get("reason", ""))
+        except Exception as exc:  # noqa: BLE001
+            return {"status": "error", "reason": f"could not request approval: {exc}"}
         return {"approval_id": approval["id"]}
 
     def await_decision(state: AgentState) -> dict:
@@ -70,6 +78,9 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
     def after_call(state: AgentState) -> str:
         return "create_approval" if state.get("status") == "approval_required" else END
 
+    def after_create(state: AgentState) -> str:
+        return END if state.get("status") == "error" else "await_decision"
+
     def after_decision(state: AgentState) -> str:
         return "call_tool" if state.get("status") == "approved" else END
 
@@ -84,7 +95,9 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
     graph.add_conditional_edges(
         "call_tool", after_call, {"create_approval": "create_approval", END: END}
     )
-    graph.add_edge("create_approval", "await_decision")
+    graph.add_conditional_edges(
+        "create_approval", after_create, {"await_decision": "await_decision", END: END}
+    )
     graph.add_conditional_edges(
         "await_decision", after_decision, {"call_tool": "call_tool", END: END}
     )
