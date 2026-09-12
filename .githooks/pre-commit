@@ -1,0 +1,37 @@
+#!/bin/sh
+# =============================================================================
+# Pre-commit guard: never commit secrets, API keys, or sensitive files.
+#
+# Enable once per clone (or run scripts/install-hooks.sh):
+#     git config core.hooksPath .githooks
+#
+# Uses gitleaks when available; otherwise falls back to pattern matching.
+# Bypass only if you are certain:  git commit --no-verify
+# =============================================================================
+set -eu
+
+# 1. Refuse sensitive file names outright (the .env.example template is fine).
+staged=$(git diff --cached --name-only --diff-filter=ACMR || true)
+blocked=$(printf '%s\n' "$staged" \
+  | grep -E '(^|/)\.env$|(^|/)\.env\.[^/]+$|\.(pem|key|p12|pfx|jks|keystore|der)$|(^|/)id_(rsa|dsa|ecdsa|ed25519)$|credentials.*\.json$|service-account.*\.json$' \
+  | grep -v '\.env\.example$' || true)
+if [ -n "$blocked" ]; then
+  echo "pre-commit: refusing to commit sensitive-looking files:" >&2
+  printf '    %s\n' $blocked >&2
+  echo "  (the committed template is .env.example; real secrets stay local)" >&2
+  exit 1
+fi
+
+# 2. Scan the staged changes for secret content.
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks git --staged --no-banner --redact -c .gitleaks.toml
+else
+  if git diff --cached -U0 -- . ':!*.example' \
+     | grep -nEI '(sk-[A-Za-z0-9]{16,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|eyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.|(postgres|postgresql|mysql|mongodb|redis)://[^:@[:space:]]+:[^@[:space:]]+@)' >/dev/null; then
+    echo "pre-commit: a possible secret was found in staged changes. Commit blocked." >&2
+    echo "  Install gitleaks for a thorough scan:  brew install gitleaks" >&2
+    exit 1
+  fi
+fi
+
+echo "pre-commit: no secrets detected"

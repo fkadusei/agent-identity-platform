@@ -1,0 +1,106 @@
+# Security workflow: secret scanning (always), plus SAST / dependency / image
+# scans that activate automatically once the relevant files exist.
+#
+# The secret scan is the load-bearing one and runs on every push/PR. It is the
+# backstop for the local pre-commit hook (which can be bypassed with --no-verify).
+name: security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: this workflow only reads the repo.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Secrets — always runs.
+  # ---------------------------------------------------------------------------
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: ensure no .env is committed
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env must never be committed — use .env.example instead"
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::a tracked .env file was found"
+            exit 1
+          fi
+          echo "ok: no .env tracked (.env.example is the committed template)"
+
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_CONFIG: .gitleaks.toml
+
+  # ---------------------------------------------------------------------------
+  # 2. SAST — runs once application code exists.
+  # ---------------------------------------------------------------------------
+  sast:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('**/*.py', '**/*.ts', '**/*.tsx', '**/*.js') != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: semgrep
+        run: |
+          docker run --rm -v "$PWD:/src" -w /src semgrep/semgrep \
+            semgrep scan --config p/default --error --quiet
+
+  # ---------------------------------------------------------------------------
+  # 3. Dependency audit — runs once manifests exist.
+  # ---------------------------------------------------------------------------
+  dependencies:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('**/requirements*.txt', '**/package.json') != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        if: ${{ hashFiles('**/requirements*.txt') != '' }}
+        with:
+          python-version: "3.13"
+      - name: pip-audit
+        if: ${{ hashFiles('**/requirements*.txt') != '' }}
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          find . -name 'requirements*.txt' -not -path '*/node_modules/*' \
+            -exec pip-audit -r {} \;
+      - uses: actions/setup-node@v7
+        if: ${{ hashFiles('**/package.json') != '' }}
+        with:
+          node-version: "22"
+      - name: npm audit
+        if: ${{ hashFiles('**/package.json') != '' }}
+        run: |
+          for pkg in $(find . -name package.json -not -path '*/node_modules/*' -not -path '*/dist/*'); do
+            (cd "$(dirname "$pkg")" && npm audit --audit-level=high)
+          done
+
+  # ---------------------------------------------------------------------------
+  # 4. SBOM + container scan — runs once Dockerfiles exist.
+  # ---------------------------------------------------------------------------
+  supply-chain:
+    runs-on: ubuntu-latest
+    if: ${{ hashFiles('**/Dockerfile', '**/*.Dockerfile') != '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: generate SBOM (Syft)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh \
+            | sh -s -- -b /usr/local/bin
+          syft dir:. -o spdx-json > sbom.spdx.json
+          echo "SBOM written ($(wc -c < sbom.spdx.json) bytes)"
+      - name: scan filesystem (Trivy)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+          trivy fs --exit-code 1 --severity HIGH,CRITICAL --scanners vuln,secret,config .

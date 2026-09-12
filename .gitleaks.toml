@@ -1,0 +1,60 @@
+# gitleaks configuration — used by CI (gitleaks-action) and locally.
+#
+#   Full history      :  gitleaks git -c .gitleaks.toml
+#   Working tree      :  gitleaks dir . -c .gitleaks.toml
+#   Staged (pre-commit):  gitleaks git --staged -c .gitleaks.toml
+#
+# Goal: catch ANY real secret, without tripping on synthetic/demo values that
+# are intentionally present (and clearly labelled) in this repository.
+title = "agent-identity-platform"
+
+[extend]
+useDefault = true
+
+# ---------------------------------------------------------------------------
+# Project-specific secret shapes (in addition to gitleaks' built-in rules)
+# ---------------------------------------------------------------------------
+[[rules]]
+id = "llm-api-key-assignment"
+description = "An API key assigned to an LLM key variable"
+regex = '''(?i)(LLM_API_KEY|OPENAI_API_KEY|ANTHROPIC_API_KEY|AZURE_OPENAI_KEY)\s*[:=]\s*["']?(sk-[A-Za-z0-9_\-]{16,}|[A-Za-z0-9_\-]{32,})'''
+keywords = ["LLM_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "AZURE_OPENAI_KEY"]
+
+[[rules]]
+id = "jwt-token"
+description = "A JWT / JWT-SVID (a live bearer credential must never be committed)"
+regex = '''eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}'''
+keywords = ["eyJ"]
+
+[[rules]]
+id = "database-url-with-password"
+description = "A database connection string containing a password"
+regex = '''(?i)(postgres|postgresql|mysql|mongodb|redis)://[^:@\s]+:[^@\s]+@[^\s"']+'''
+keywords = ["postgres://", "postgresql://", "mysql://", "mongodb://", "redis://"]
+
+[[rules]]
+id = "private-key-block"
+description = "A PEM private key"
+regex = '''-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----'''
+keywords = ["PRIVATE KEY"]
+
+# ---------------------------------------------------------------------------
+# Allowlist: SYNTHETIC / DEMO values only, scoped narrowly.
+# matchCondition = AND means BOTH a listed path AND a listed value must match,
+# so a real secret anywhere else still fails the scan.
+# ---------------------------------------------------------------------------
+[[allowlists]]
+description = "Documented synthetic/demo-only values (disposable local environment)"
+matchCondition = "AND"
+paths = [
+  '''^\.env\.example$''',
+  '''^docs/''',
+  '''^app/simulators/''',
+  '''^deploy/kind/''',
+]
+regexes = [
+  '''demo-cli-secret-demo''',
+  '''tool-server-secret-demo''',
+  '''customer-api-secret-demo''',
+  '''alice123''',
+]

@@ -1,0 +1,64 @@
+# Repository checks that are meaningful from day one and grow with the project.
+# Application tests (pytest, vitest, OPA) are added in Phase 1.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  repo-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: shell syntax
+        run: |
+          fail=0
+          for f in scripts/*.sh; do
+            bash -n "$f" || { echo "::error file=$f::shell syntax error"; fail=1; }
+          done
+          sh -n .githooks/pre-commit || { echo "::error::hook syntax error"; fail=1; }
+          exit $fail
+
+      - name: validate config files
+        run: |
+          python3 - <<'PY'
+          import sys, glob
+          try:
+              import tomllib
+          except ModuleNotFoundError:
+              tomllib = None
+          ok = True
+          if tomllib:
+              for f in glob.glob('*.toml'):
+                  try:
+                      tomllib.load(open(f, 'rb'))
+                      print(f"ok  {f}")
+                  except Exception as e:
+                      print(f"ERR {f}: {e}"); ok = False
+          else:
+              print("tomllib unavailable; skipping TOML validation")
+          sys.exit(0 if ok else 1)
+          PY
+
+      - name: validate workflow YAML
+        run: |
+          python3 - <<'PY'
+          import sys, glob
+          try:
+              import yaml
+          except ModuleNotFoundError:
+              print("pyyaml unavailable; skipping"); sys.exit(0)
+          ok = True
+          for f in glob.glob('.github/workflows/*.yml'):
+              try:
+                  yaml.safe_load(open(f)); print(f"ok  {f}")
+              except Exception as e:
+                  print(f"ERR {f}: {e}"); ok = False
+          sys.exit(0 if ok else 1)
+          PY
