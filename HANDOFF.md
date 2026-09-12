@@ -10,7 +10,10 @@
   git/manifests**, **observability** (OpenTelemetry traces with identity
   attributes → collector → Jaeger), the **policy lifecycle** (versioned bundle;
   every decision names its revision), and **supply chain** (keyless cosign
-  signing + Kyverno admission policy). Next: operator guide.
+  signing + Kyverno admission policy). Also done: **enrollment + role
+  administration** (self-service signup, admin user management, real login,
+  server-side role enforcement — `docs/enrollment-and-roles.md`, ADR-0011).
+  Next: operator guide.
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`

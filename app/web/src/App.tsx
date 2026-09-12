@@ -1,30 +1,49 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  authConfig,
+  createUser,
   decideApproval,
+  deleteUser,
+  enroll,
   getAudit,
+  grantRole,
   listApprovals,
+  listUsers,
   login,
+  resetUserPassword,
   resumeTask,
+  revokeRole,
   runTask,
+  setUserEnabled,
 } from "./api";
 
-type Tab = "console" | "approvals" | "audit";
+type Tab = "console" | "approvals" | "audit" | "admin";
+type Session = { user: string; roles: string[]; token: string };
+
+// The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
+const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
 
 export default function App() {
-  const [user, setUser] = useState<string | null>(null);
-  const [token, setToken] = useState("");
+  const [session, setSession] = useState<Session | null>(null);
   const [tab, setTab] = useState<Tab>("console");
-  const [error, setError] = useState("");
+  const [signupEnabled, setSignupEnabled] = useState(false);
+  const [mode, setMode] = useState<"login" | "enroll">("login");
 
-  const doLogin = async (u: string) => {
-    setError("");
-    try {
-      const r = await login(u);
-      setUser(r.user);
-      setToken(r.access_token);
-    } catch (e) {
-      setError(String(e));
-    }
+  useEffect(() => {
+    authConfig()
+      .then((c) => setSignupEnabled(c.signup_enabled))
+      .catch(() => {});
+  }, []);
+
+  const has = (role: string) => !!session?.roles.includes(role);
+  const isAdmin = has("platform_admin");
+  const canApprove = has("manager") || isAdmin;
+  const tabs: Tab[] = ["console", "approvals", "audit", ...(isAdmin ? (["admin"] as Tab[]) : [])];
+
+  const signOut = () => {
+    setSession(null);
+    setTab("console");
+    setMode("login");
   };
 
   return (
@@ -38,45 +57,195 @@ export default function App() {
           </p>
         </div>
         <div className="who">
-          <span>{user ? <>signed in as <b>{user}</b></> : "not signed in"}</span>
-          <button onClick={() => doLogin("alice")}>Sign in as alice</button>
-          <button onClick={() => doLogin("manager")}>as manager</button>
+          {session ? (
+            <>
+              <span>
+                signed in as <b>{session.user}</b>
+                {session.roles.length ? <> · {session.roles.join(", ")}</> : <> · no roles</>}
+              </span>
+              <button onClick={signOut}>Sign out</button>
+            </>
+          ) : (
+            <span>{mode === "login" ? "sign in to continue" : "create an account"}</span>
+          )}
         </div>
       </header>
 
-      {error && <div className="error">{error}</div>}
-
-      <nav>
-        {(["console", "approvals", "audit"] as Tab[]).map((t) => (
-          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-            {t[0].toUpperCase() + t.slice(1)}
-          </button>
+      {!session &&
+        (mode === "login" ? (
+          <Login
+            onLogin={setSession}
+            onEnroll={() => setMode("enroll")}
+            signupEnabled={signupEnabled}
+          />
+        ) : (
+          <Enroll onDone={() => setMode("login")} onCancel={() => setMode("login")} />
         ))}
-      </nav>
 
-      <main>
-        {tab === "console" && <Console token={token} user={user} />}
-        {tab === "approvals" && <Approvals token={token} user={user} />}
-        {tab === "audit" && <Audit />}
-      </main>
+      {session && (
+        <>
+          <nav>
+            {tabs.map((t) => (
+              <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
+                {t[0].toUpperCase() + t.slice(1)}
+              </button>
+            ))}
+          </nav>
+
+          <main>
+            {tab === "console" && <Console session={session} />}
+            {tab === "approvals" && <Approvals session={session} canApprove={canApprove} />}
+            {tab === "audit" && <Audit />}
+            {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} />}
+          </main>
+        </>
+      )}
     </div>
   );
 }
 
-function Console({ token, user }: { token: string; user: string | null }) {
+function Login({
+  onLogin,
+  onEnroll,
+  signupEnabled,
+}: {
+  onLogin: (s: Session) => void;
+  onEnroll: () => void;
+  signupEnabled: boolean;
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      onLogin(await login(username, password));
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="authcard">
+      <h2>Sign in</h2>
+      <form onSubmit={submit}>
+        <input
+          placeholder="username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoComplete="username"
+        />
+        <input
+          type="password"
+          placeholder="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+        <button disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+      </form>
+      {error && <div className="error">{error}</div>}
+      <p className="hint">
+        Demo accounts — <b>alice</b>/alice123 (support rep), <b>manager</b>/manager123
+        (approver), <b>admin</b>/admin123 (platform admin).
+      </p>
+      {signupEnabled && (
+        <p className="hint">
+          No account?{" "}
+          <button type="button" className="link" onClick={onEnroll}>
+            Create one
+          </button>{" "}
+          — an admin will grant you a role.
+        </p>
+      )}
+    </section>
+  );
+}
+
+function Enroll({ onDone, onCancel }: { onDone: () => void; onCancel: () => void }) {
+  const [form, setForm] = useState({
+    username: "",
+    email: "",
+    firstName: "",
+    lastName: "",
+    password: "",
+  });
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm({ ...form, [k]: e.target.value });
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      await enroll(form);
+      setDone(true);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  if (done) {
+    return (
+      <section className="authcard">
+        <h2>Account created</h2>
+        <p className="hint">
+          Your account has <b>no roles</b> yet. Ask an admin to grant you access, then sign in.
+        </p>
+        <button onClick={onDone}>Back to sign in</button>
+      </section>
+    );
+  }
+
+  return (
+    <section className="authcard">
+      <h2>Create an account</h2>
+      <form onSubmit={submit}>
+        <input placeholder="username" value={form.username} onChange={set("username")} />
+        <input placeholder="email" value={form.email} onChange={set("email")} />
+        <input placeholder="first name" value={form.firstName} onChange={set("firstName")} />
+        <input placeholder="last name" value={form.lastName} onChange={set("lastName")} />
+        <input
+          type="password"
+          placeholder="password (min 8)"
+          value={form.password}
+          onChange={set("password")}
+        />
+        <button>Create account</button>
+      </form>
+      {error && <div className="error">{error}</div>}
+      <p className="hint">
+        New accounts start with <b>no roles</b> and can do nothing until an admin grants one.
+      </p>
+      <button type="button" className="link" onClick={onCancel}>
+        Back to sign in
+      </button>
+    </section>
+  );
+}
+
+function Console({ session }: { session: Session }) {
   const [task, setTask] = useState("Issue a refund of 200 dollars for order o-1001");
   const [outcome, setOutcome] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const canRun = user === "alice";
+  const canRun = session.roles.includes("support_rep");
 
   const run = async () => {
     setBusy(true);
     setError("");
     setOutcome(null);
     try {
-      setOutcome(await runTask(task, token));
+      setOutcome(await runTask(task, session.token));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -95,11 +264,10 @@ function Console({ token, user }: { token: string; user: string | null }) {
   return (
     <section>
       <h2>Ask the agent</h2>
-      {!token && <p className="hint">Sign in as alice first.</p>}
-      {token && !canRun && (
+      {!canRun && (
         <p className="hint">
-          The agent acts on behalf of a support rep. Sign in as <b>alice</b> to
-          run tasks; the manager's job is to approve them.
+          The agent acts on behalf of a support rep. Sign in as a user with the{" "}
+          <b>support_rep</b> role to run tasks; approvers decide them.
         </p>
       )}
       <textarea value={task} onChange={(e) => setTask(e.target.value)} rows={2} />
@@ -128,7 +296,7 @@ function Console({ token, user }: { token: string; user: string | null }) {
   );
 }
 
-function Approvals({ token, user }: { token: string; user: string | null }) {
+function Approvals({ session, canApprove }: { session: Session; canApprove: boolean }) {
   const [items, setItems] = useState<any[]>([]);
   const [error, setError] = useState("");
 
@@ -148,7 +316,7 @@ function Approvals({ token, user }: { token: string; user: string | null }) {
 
   const decide = async (id: string, approved: boolean) => {
     try {
-      await decideApproval(id, approved, token);
+      await decideApproval(id, approved, session.token);
       refresh();
     } catch (e) {
       setError(String(e));
@@ -158,7 +326,11 @@ function Approvals({ token, user }: { token: string; user: string | null }) {
   return (
     <section>
       <h2>Approval queue</h2>
-      {user !== "manager" && <p className="hint">Sign in as manager to approve or deny.</p>}
+      {!canApprove && (
+        <p className="hint">
+          Deciding requires the <b>manager</b> (or platform_admin) role.
+        </p>
+      )}
       {error && <div className="error">{error}</div>}
       {items.length === 0 && <p className="hint">Nothing pending.</p>}
       {items.map((a) => (
@@ -172,10 +344,10 @@ function Approvals({ token, user }: { token: string; user: string | null }) {
           <div className="row">
             <span className="muted">requested by {a.user}</span>
             <div>
-              <button disabled={user !== "manager"} onClick={() => decide(a.id, true)}>
+              <button disabled={!canApprove} onClick={() => decide(a.id, true)}>
                 Approve
               </button>
-              <button disabled={user !== "manager"} onClick={() => decide(a.id, false)}>
+              <button disabled={!canApprove} onClick={() => decide(a.id, false)}>
                 Deny
               </button>
             </div>
@@ -183,6 +355,166 @@ function Approvals({ token, user }: { token: string; user: string | null }) {
         </div>
       ))}
     </section>
+  );
+}
+
+function Admin({ token, self }: { token: string; self: string }) {
+  const [users, setUsers] = useState<any[]>([]);
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      setUsers(await listUsers(token));
+    } catch (e) {
+      setError(String(e));
+    }
+  }, [token]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const toggleRole = async (u: any, role: string, held: boolean) => {
+    try {
+      held ? await revokeRole(u.id, role, token) : await grantRole(u.id, role, token);
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const toggleEnabled = async (u: any) => {
+    try {
+      await setUserEnabled(u.id, !u.enabled, token);
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const reset = async (u: any) => {
+    const pw = window.prompt(`New password for ${u.username} (min 8):`);
+    if (!pw) return;
+    try {
+      await resetUserPassword(u.id, pw, token);
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const remove = async (u: any) => {
+    if (!window.confirm(`Delete ${u.username}? This cannot be undone.`)) return;
+    try {
+      await deleteUser(u.id, token);
+      refresh();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  return (
+    <section>
+      <div className="row">
+        <h2>Users</h2>
+        <button onClick={() => setCreating(!creating)}>{creating ? "Cancel" : "New user"}</button>
+      </div>
+      {error && <div className="error">{error}</div>}
+      {creating && (
+        <CreateUser
+          token={token}
+          onCreated={() => {
+            setCreating(false);
+            refresh();
+          }}
+        />
+      )}
+      <table className="users">
+        <thead>
+          <tr>
+            <th>user</th>
+            <th>roles</th>
+            <th>status</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((u) => (
+            <tr key={u.id}>
+              <td>
+                <b>{u.username}</b>
+                <br />
+                <span className="muted">{u.email}</span>
+              </td>
+              <td>
+                {ASSIGNABLE.map((r) => (
+                  <label key={r} className="role">
+                    <input
+                      type="checkbox"
+                      checked={u.roles.includes(r)}
+                      onChange={() => toggleRole(u, r, u.roles.includes(r))}
+                    />{" "}
+                    {r}
+                  </label>
+                ))}
+              </td>
+              <td>{u.enabled ? "enabled" : <span className="muted">disabled</span>}</td>
+              <td className="actions">
+                <button onClick={() => toggleEnabled(u)}>{u.enabled ? "Disable" : "Enable"}</button>
+                <button onClick={() => reset(u)}>Reset password</button>
+                <button disabled={u.username === self} onClick={() => remove(u)}>
+                  Delete
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function CreateUser({ token, onCreated }: { token: string; onCreated: () => void }) {
+  const [form, setForm] = useState({ username: "", email: "", password: "" });
+  const [roles, setRoles] = useState<string[]>([]);
+  const [error, setError] = useState("");
+
+  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm({ ...form, [k]: e.target.value });
+  const toggle = (r: string) =>
+    setRoles(roles.includes(r) ? roles.filter((x) => x !== r) : [...roles, r]);
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+    try {
+      await createUser({ ...form, roles }, token);
+      onCreated();
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  return (
+    <form className="createuser" onSubmit={submit}>
+      <input placeholder="username" value={form.username} onChange={set("username")} />
+      <input placeholder="email" value={form.email} onChange={set("email")} />
+      <input
+        type="password"
+        placeholder="password (min 8)"
+        value={form.password}
+        onChange={set("password")}
+      />
+      <div>
+        {ASSIGNABLE.map((r) => (
+          <label key={r} className="role">
+            <input type="checkbox" checked={roles.includes(r)} onChange={() => toggle(r)} /> {r}
+          </label>
+        ))}
+      </div>
+      <button>Create</button>
+      {error && <div className="error">{error}</div>}
+    </form>
   );
 }
 

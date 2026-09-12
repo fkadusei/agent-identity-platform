@@ -2,11 +2,14 @@
   "realm": "agent-platform",
   "enabled": true,
   "accessTokenLifespan": 300,
+  "registrationAllowed": false,
+  "passwordPolicy": "length(8)",
   "roles": {
     "realm": [
       { "name": "support_rep" },
       { "name": "manager" },
-      { "name": "privacy" }
+      { "name": "privacy" },
+      { "name": "platform_admin" }
     ]
   },
   "users": [
@@ -35,12 +38,77 @@
       "credentials": [
         { "type": "password", "value": "manager123", "temporary": false }
       ]
+    },
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Ada",
+      "lastName": "Admin",
+      "email": "admin@example.com",
+      "requiredActions": [],
+      "realmRoles": ["platform_admin"],
+      "credentials": [
+        { "type": "password", "value": "admin123", "temporary": false }
+      ]
+    },
+    {
+      "username": "service-account-platform-admin",
+      "enabled": true,
+      "serviceAccountClientId": "platform-admin",
+      "clientRoles": {
+        "realm-management": ["manage-users", "view-users", "query-users", "view-realm"]
+      }
     }
   ],
   "clients": [
     {
+      "clientId": "portal",
+      "description": "The web app's client. Real users sign in here (server-side password grant); tokens carry aud=agent AND aud=mcp-tools so the same session can run tasks and approve. Roles gate what the UI offers, and the API enforces them.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${PORTAL_SECRET}",
+      "serviceAccountsEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocolMappers": [
+        {
+          "name": "aud-agent",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "spiffe://acme.com/ns/agent-platform/sa/agent",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "aud-tools",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "mcp-tools",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "platform-admin",
+      "description": "Service account the API uses to call Keycloak's Admin API for enrollment and role management. Least privilege: manage-users + read roles only. Its service-account roles are declared below.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "${ADMIN_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": false
+    },
+    {
       "clientId": "demo-cli",
-      "description": "Stands in for the support rep's app. Its tokens are audienced for the AGENT so the agent may exchange them.",
+      "description": "Stands in for the support rep's app in the scripted demo. Its tokens are audienced for the AGENT so the agent may exchange them.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -63,7 +131,7 @@
     },
     {
       "clientId": "manager-cli",
-      "description": "Stands in for the approver's app. Its tokens carry aud=mcp-tools so the API accepts them.",
+      "description": "Stands in for the approver's app in the scripted demo. Its tokens carry aud=mcp-tools so the API accepts them.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,

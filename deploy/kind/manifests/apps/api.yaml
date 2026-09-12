@@ -41,8 +41,11 @@ spec:
             # so it enforces the audience but not a single issuing workload.
             - name: AGENT_URL
               value: http://agent:8081
-            # Client secrets for the demo login, mounted from a Secret that
-            # setup.sh creates from the gitignored .env (never committed).
+            # Client secrets, mounted from a Secret that setup.sh creates from
+            # the gitignored .env (never committed):
+            #   DEMO_/MANAGER_CLI_SECRET — the scripted demo's personas
+            #   PORTAL_SECRET            — real user login (the web app's client)
+            #   ADMIN_CLIENT_SECRET      — least-privilege Keycloak Admin API
             - name: DEMO_CLI_SECRET
               valueFrom:
                 secretKeyRef:
@@ -53,6 +56,26 @@ spec:
                 secretKeyRef:
                   name: platform-secrets
                   key: MANAGER_CLI_SECRET
+            - name: PORTAL_CLIENT_ID
+              value: portal
+            - name: PORTAL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: PORTAL_SECRET
+            - name: ADMIN_CLIENT_ID
+              value: platform-admin
+            - name: ADMIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: ADMIN_CLIENT_SECRET
+            - name: KEYCLOAK_ADMIN_URL
+              value: http://keycloak:8080/admin/realms/agent-platform
+            # Self-service signup toggle. Set to "0" to make enrollment
+            # admin-only (see docs/enrollment-and-roles.md).
+            - name: SIGNUP_ENABLED
+              value: "1"
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           ports:

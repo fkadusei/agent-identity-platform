@@ -35,6 +35,9 @@ ensure_secrets() {
 DEMO_CLI_SECRET=$(gen_secret)
 MANAGER_CLI_SECRET=$(gen_secret)
 MCP_TOOLS_SECRET=$(gen_secret)
+# The web app's client (login) and the API's least-privilege admin client.
+PORTAL_SECRET=$(gen_secret)
+ADMIN_CLIENT_SECRET=$(gen_secret)
 # For a hosted LLM provider, uncomment and set (used only by the gateway):
 # LLM_API_KEY=sk-...
 EOF
@@ -43,7 +46,7 @@ EOF
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   set +a
-  for v in DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET; do
+  for v in DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET; do
     [ -n "${!v:-}" ] || die "$v is missing from $ENV_FILE"
   done
 }
@@ -87,7 +90,8 @@ SOCKET=/run/spire/server/private/api.sock
 SPIRE="kubectl -n $NS exec spire-server-0 -- /opt/spire/bin/spire-server"
 PARENT_ID=""
 for _ in $(seq 1 12); do
-  PARENT_ID=$($SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | awk '/SPIFFE ID/{print $NF; exit}')
+  # `|| true` so a transient failure retries instead of tripping `set -e`.
+  PARENT_ID=$($SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | awk '/SPIFFE ID/{print $NF; exit}' || true)
   [ -n "$PARENT_ID" ] && break
   sleep 5
 done
@@ -123,10 +127,14 @@ kubectl -n $NS create configmap keycloak-realm \
   --from-file=realm.json="$RENDERED" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 rm -f "$RENDERED"
 ok "realm rendered from $ENV_FILE (client secrets are not in git)"
-# The API needs the demo client secrets to mint tokens for the UI's demo login.
+# The API needs the portal client secret (login) and the admin client secret
+# (enrollment + role management), both least-privilege, plus the demo client
+# secrets used by the scripted demo.
 kubectl -n $NS create secret generic platform-secrets \
   --from-literal=DEMO_CLI_SECRET="$DEMO_CLI_SECRET" \
   --from-literal=MANAGER_CLI_SECRET="$MANAGER_CLI_SECRET" \
+  --from-literal=PORTAL_SECRET="$PORTAL_SECRET" \
+  --from-literal=ADMIN_CLIENT_SECRET="$ADMIN_CLIENT_SECRET" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 # Recreate Keycloak so the realm is imported fresh. Its H2 database is
 # ephemeral and the import strategy is IGNORE_EXISTING, so an existing realm

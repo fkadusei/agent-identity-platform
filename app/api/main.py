@@ -1,19 +1,29 @@
-"""The platform API: human approvals, agent tasks, and the audit timeline.
+"""The platform API: login/enrollment, user administration, approvals, audit.
 
 Endpoints:
-    POST /demo/login               demo-only: mint a token for a seeded user
+    GET  /auth/config              is self-service signup enabled?
+    POST /auth/login               username/password -> token (+roles)
+    POST /enroll                   self-service account creation (no roles)
+    GET  /admin/users              list users and their roles     (platform_admin)
+    POST /admin/users              create a user                  (platform_admin)
+    POST /admin/users/{id}/roles   grant a role                   (platform_admin)
+    DELETE /admin/users/{id}/roles/{role}   revoke a role         (platform_admin)
+    POST /admin/users/{id}/enabled enable/disable an account      (platform_admin)
+    POST /admin/users/{id}/password reset a password              (platform_admin)
+    DELETE /admin/users/{id}       delete a user                  (platform_admin)
     POST /tasks                    start an agent run (proxied to the agent svc)
     POST /tasks/resume             resume a paused run
     POST /approvals                create a pending approval (agent's token)
     GET  /approvals?status=pending the approval queue
-    POST /approvals/{id}/decision  approve/deny (approver's token)
+    POST /approvals/{id}/decision  approve/deny     (manager/platform_admin role)
     POST /approvals/verify         used by tool servers (in trust domain)
     POST /audit/events             ingest an audit record (from the services)
     GET  /audit                    the audit timeline (newest first)
     GET  /                         the web UI (when a build is present)
 
-Callers are authenticated with an exchanged token. The `/demo/login` endpoint is
-a convenience for the local demo and is called out as such.
+Callers are authenticated with a token (aud=mcp-tools). Authorization is by role
+and checked **on the server** (app/api/authz.py); the UI hiding a button is
+convenience, never the control.
 """
 from __future__ import annotations
 
@@ -26,80 +36,30 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from agentnhi import Settings, TokenRejected, TokenVerifier, audit
+from agentnhi import audit
 from agentnhi.tokens import Delegation
+from app.api.admin import router as admin_router
+from app.api.auth import router as auth_router
+from app.api.authz import current_delegation, require_roles
 from app.approvals import ApprovalStore
 from app.common.telemetry import instrument_fastapi, setup_telemetry
 
 app = FastAPI(title="agent-identity-platform API")
 setup_telemetry("api")
 instrument_fastapi(app)
+app.include_router(auth_router)
+app.include_router(admin_router)
 _store = ApprovalStore()
 _audit: deque[dict] = deque(maxlen=500)
-_verifier: TokenVerifier | None = None
-
-# Human demo logins are documented values (see docs/guides). The CLIENT secrets
-# are not: they are generated into a gitignored .env and mounted from the
-# platform-secrets Secret, so no client secret is ever committed.
-DEMO_USERS = {
-    "alice": ("alice123", "demo-cli", os.environ.get("DEMO_CLI_SECRET", "")),
-    "manager": ("manager123", "manager-cli", os.environ.get("MANAGER_CLI_SECRET", "")),
-}
 
 
 def get_store() -> ApprovalStore:
     return _store
 
 
-def get_verifier() -> TokenVerifier:
-    global _verifier
-    if _verifier is None:
-        _verifier = TokenVerifier(Settings.from_env())
-    return _verifier
-
-
-def current_delegation(
-    authorization: str | None = Header(default=None),
-    verifier: TokenVerifier = Depends(get_verifier),
-) -> Delegation:
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="missing bearer token")
-    try:
-        return verifier.verify(token)
-    except TokenRejected as exc:
-        raise HTTPException(status_code=403, detail=str(exc))
-
-
 @app.get("/healthz")
 def healthz() -> dict:
     return {"ok": True}
-
-
-# ---------------------------------------------------------------------------
-# Demo login (local demo convenience)
-# ---------------------------------------------------------------------------
-@app.post("/demo/login")
-def demo_login(body: dict) -> dict:
-    username = body.get("user", "")
-    if username not in DEMO_USERS:
-        raise HTTPException(status_code=400, detail="unknown demo user")
-    password, client_id, secret = DEMO_USERS[username]
-    issuer = Settings.from_env().keycloak_issuer
-    resp = httpx.post(
-        f"{issuer}/protocol/openid-connect/token",
-        data={
-            "grant_type": "password",
-            "client_id": client_id,
-            "client_secret": secret,
-            "username": username,
-            "password": password,
-        },
-        timeout=10,
-    )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail="login failed")
-    return {"user": username, "access_token": resp.json()["access_token"]}
 
 
 # ---------------------------------------------------------------------------
@@ -186,7 +146,7 @@ def verify_approval(body: dict, store: ApprovalStore = Depends(get_store)) -> di
 def decide_approval(
     approval_id: str,
     body: dict,
-    delegation: Delegation = Depends(current_delegation),
+    delegation: Delegation = Depends(require_roles("manager", "platform_admin")),
     store: ApprovalStore = Depends(get_store),
 ) -> dict:
     approval = store.decide(
