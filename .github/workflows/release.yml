@@ -1,0 +1,42 @@
+# Release: build, push and sign the images and the policy bundle on a tag.
+#
+# Signing is **keyless** (Sigstore): the workflow's OIDC identity is exchanged for
+# a short-lived Fulcio certificate and the signature is recorded in Rekor. There
+# is no signing key to manage or leak (ADR-0010). The admission policy in
+# deploy/kind/manifests/supply-chain/ verifies these signatures before admitting
+# a pod.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write   # keyless signing (Fulcio/Rekor)
+  packages: write   # push images to GHCR
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      - name: log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: build, push and sign the images
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for svc in api tools agent gateway; do
+            img="$repo/$svc:${GITHUB_REF_NAME}"
+            docker build -f "docker/$svc.Dockerfile" -t "$img" .
+            docker push "$img"
+            cosign sign --yes "$img"
+          done
+
+      - name: sign the policy bundle
+        run: |
+          ./scripts/build-bundle.sh
+          COSIGN_KEYLESS=1 ./scripts/sign-bundle.sh

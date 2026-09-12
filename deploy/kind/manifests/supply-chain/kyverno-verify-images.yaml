@@ -1,0 +1,42 @@
+# =============================================================================
+# Admission policy (Kyverno): admit only images signed by our release workflow.
+#
+# This is the enforcement half of ADR-0010 — verification that a running image is
+# the one our pipeline built. It targets images in the registry (the keyless
+# signatures produced by .github/workflows/release.yml). The local kind demo
+# loads images straight into the cluster, which has no registry signature to
+# verify, so this policy is the production path; see docs/supply-chain.md.
+#
+# Install Kyverno, then: kubectl apply -f deploy/kind/manifests/supply-chain/
+# =============================================================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-agent-platform-images
+  annotations:
+    policies.kyverno.io/title: Verify agent-platform image signatures
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Only admit agent-platform images whose cosign keyless signature was
+      produced by our release workflow identity.
+spec:
+  validationFailureAction: Enforce
+  background: false
+  rules:
+    - name: verify-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [agent-platform]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/fkadusei/agent-identity-platform/*"
+          attestors:
+            - entries:
+                - keyless:
+                    subject: "https://github.com/fkadusei/agent-identity-platform/.github/workflows/release.yml@refs/tags/*"
+                    issuer: "https://token.actions.githubusercontent.com"
+                    rekor:
+                      url: https://rekor.sigstore.dev

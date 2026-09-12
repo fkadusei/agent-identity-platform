@@ -54,6 +54,10 @@ description = "The local, gitignored .env — generated secrets, never committed
 paths = ['''^\.env$''']
 
 [[allowlists]]
+description = "The local demo cosign signing key — gitignored; production signs keyless in CI, so no key exists there."
+paths = ['''^\.cosign/''']
+
+[[allowlists]]
 description = "Documented synthetic/demo-only values (disposable local environment)"
 matchCondition = "AND"
 paths = [
