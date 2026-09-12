@@ -58,3 +58,22 @@ def test_approval_denied_does_not_execute():
     assert resumed["status"] == "denied"
     # The tool was attempted once (which triggered the approval), not twice.
     assert len(deps.calls) == 1
+
+
+class _RaisingDeps:
+    """A downstream failure (e.g. a refused token exchange) must not 500."""
+
+    def decide(self, task: str) -> dict:
+        return PLAN
+
+    def call_tool(self, *_args, **_kwargs):
+        raise RuntimeError("token exchange failed (403)")
+
+    def create_approval(self, *_args, **_kwargs):
+        raise RuntimeError("unreachable")
+
+
+def test_downstream_failure_is_reported_not_raised():
+    out = run_task(build_agent(_RaisingDeps()), "refund o-1001", "t-5", "user-token")
+    assert out["status"] == "error"
+    assert "token exchange failed" in out["reason"]
