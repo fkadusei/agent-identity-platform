@@ -5,9 +5,11 @@
 ---
 
 - **Project:** agent-identity-platform
-- **Status:** Phase 1 backend **COMPLETE** — it runs on kind end to end (read
-  allowed; $200 refund paused for approval; manager approved; refund issued;
-  all 5 attacks blocked). **Next: the React UI and the plain-language user guides.**
+- **Status:** **Phase 1 COMPLETE.** It runs on kind end to end — a read is
+  allowed; a $200 refund pauses for approval; the manager approves; the agent
+  resumes and issues it; all 5 attacks are blocked. A React UI (console,
+  approval queue, audit timeline) is served by the API, and the plain-language
+  user guides are in `docs/guides/`.
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
@@ -49,30 +51,26 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
   - `app/agent/` — LangGraph with approval interrupts — 4 tests
   - `deploy/kind/` + `scripts/` — SPIRE/Keycloak/OPA + api/tools/agent on kind;
     `demo.sh` (approval flow) and `attack-tests.sh` (5 attacks blocked)
-- **Next in Phase 1:** React UI (console, approval queue, audit timeline) and
-  the user guides.
+- **Next: Phase 2** — production hardening (TLS/mTLS, HA SPIRE, secret manager,
+  the LLM gateway, OpenTelemetry, policy lifecycle, SBOM/signing).
 
 ## Immediate next task
 
-**Phase 1, next: the React UI (`app/web/`), then the user guides.**
+**Phase 2, step 1: hardening.** Suggested order:
 
-The backend is done and runs locally:
+1. **TLS/mTLS everywhere** — HTTPS for Keycloak and the services; mTLS between
+   the agent and the tools using X.509-SVIDs (the SDK's `mtls_client_context`
+   is already there).
+2. **Secret manager + External Secrets** — move the remaining server-side demo
+   secrets (client secrets) into a manager; remove them from manifests.
+3. **LLM gateway** — a component that authenticates the agent by its SPIFFE
+   identity and holds the provider key, so the agent holds no secret (ADR-0009).
+4. **Observability** — OpenTelemetry traces spanning agent → tools → policy,
+   Prometheus/Grafana, and alerting on policy denials.
+5. **Policy lifecycle + SBOM/signing** — bundle versioning/staged rollout, and
+   cosign keyless signing (ADR-0010).
 
-```sh
-./scripts/setup.sh          # kind + SPIRE + Keycloak + OPA + api/tools/agent
-./scripts/demo.sh           # login -> run -> approval -> resume (works)
-./scripts/attack-tests.sh   # 5 attacks, all blocked
-./scripts/teardown.sh       # delete the cluster
-```
-
-1. **React + Vite UI**: a support-rep console (submit a task, see the agent's
-   plan and result), an approver queue (`GET /approvals?status=pending`,
-   `POST /approvals/{id}/decision`), and an audit timeline.
-2. **User guides** (`docs/guides/`, plain-language HTML): overview, support rep,
-   approver.
-3. Notes for the UI: services are reachable in-cluster at `api:8080`,
-   `agent:8081`, `tools:8000`, `keycloak:8080`. The realm has `alice/alice123`
-   (support_rep) and `manager/manager123` (manager).
+The UI and guides are done; the code is at `app/web/` and `docs/guides/`.
 
 ## Decisions made
 

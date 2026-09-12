@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guide — For approvers</title>
+<link rel="stylesheet" href="style.css">
+<script>try{var t=localStorage.getItem('guide-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <h1>For approvers</h1>
+      <p class="lede">How to review the actions the agent has held for a human decision.</p>
+    </div>
+    <div class="theme" role="group" aria-label="Color theme">
+      <button data-theme-btn="auto">Auto</button><button data-theme-btn="light">Light</button><button data-theme-btn="dark">Dark</button>
+    </div>
+  </div>
+
+  <nav class="guides">
+    <b>Guides:</b>
+    <a href="overview.html">Overview</a>
+    <a href="for-support-reps.html">For support reps</a>
+    <a href="for-approvers.html">For approvers</a>
+  </nav>
+
+  <h2>Sign in</h2>
+  <p>Open the console and choose <b>Sign in as manager</b>. Only a manager can approve or deny.</p>
+
+  <h2>Review the queue</h2>
+  <p>The <b>Approvals</b> tab lists everything waiting. Each item shows:</p>
+  <ul>
+    <li><b>What</b> the agent wants to do (e.g. <code>refunds.issue</code>) and the exact details (order and amount).</li>
+    <li><b>Why</b> it needs approval (e.g. “refund of 200 is above the auto-approval limit of 50”).</li>
+    <li><b>Who</b> it's for — the rep whose authority the agent is using.</li>
+  </ul>
+  <p>Approve to let it run, or deny to stop it. The agent's run continues or ends immediately, and the decision is recorded.</p>
+
+  <div class="box note">
+    <span class="tag">You cannot approve your own request</span>
+    <p>If the agent acted on your behalf, someone else must approve it. This separation of duties is enforced, not just a guideline.</p>
+  </div>
+
+  <h2>What you're actually approving</h2>
+  <p>An approval is tied to that <b>exact</b> request — the tool, the order, and the amount. Approving a $200 refund cannot be replayed to issue $2,000, or to a different order. If the details change, it needs a fresh approval.</p>
+
+  <h2>Reading the audit trail</h2>
+  <p>The <b>Audit</b> tab shows one line per event, newest first. Each names the agent, the person, the tool, and the decision. For example:</p>
+  <pre><code>tool.allowed    agent=agent  user=alice    tool=refunds.issue     require_approval
+approval.decided agent=-     user=manager  tool=refunds.issue     approved
+tool.allowed    agent=agent  user=alice    tool=refunds.issue     allow</code></pre>
+  <p>Together these answer, in order: the agent asked, the manager approved, and the refund was allowed. Tokens and personal data never appear here — they are redacted before anything is written.</p>
+
+  <div class="box good">
+    <span class="tag">Why this is safe to rely on</span>
+    <p>The approver is a real, authenticated identity, and the decision is bound to the exact action. There is no way to “approve in general”, and no way to approve something other than what was reviewed.</p>
+  </div>
+
+  <footer>All data in this demo is synthetic.</footer>
+</main>
+<script>
+(function(){var r=document.documentElement,bs=[].slice.call(document.querySelectorAll('[data-theme-btn]'));
+function ap(m){if(m==='light'||m==='dark')r.setAttribute('data-theme',m);else r.removeAttribute('data-theme');
+bs.forEach(function(b){b.setAttribute('aria-pressed',String(b.getAttribute('data-theme-btn')===m));});}
+var s='auto';try{s=localStorage.getItem('guide-theme')||'auto';}catch(e){}ap(s);
+bs.forEach(function(b){b.addEventListener('click',function(){var m=b.getAttribute('data-theme-btn');
+try{localStorage.setItem('guide-theme',m);}catch(e){}ap(m);});});})();
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Identity Platform — Overview</title>
+<link rel="stylesheet" href="style.css">
+<script>try{var t=localStorage.getItem('guide-theme');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t);}catch(e){}</script>
+</head>
+<body>
+<main>
+  <div class="top">
+    <div>
+      <h1>Agent Identity Platform</h1>
+      <p class="lede">A support copilot that has a real, cryptographic identity — instead of an API key — and whose every action is checked by policy, with a human approving the risky ones.</p>
+    </div>
+    <div class="theme" role="group" aria-label="Color theme">
+      <button data-theme-btn="auto">Auto</button>
+      <button data-theme-btn="light">Light</button>
+      <button data-theme-btn="dark">Dark</button>
+    </div>
+  </div>
+
+  <nav class="guides">
+    <b>Guides:</b>
+    <a href="overview.html">Overview</a>
+    <a href="for-support-reps.html">For support reps</a>
+    <a href="for-approvers.html">For approvers</a>
+  </nav>
+
+  <h2>What it is, in plain language</h2>
+  <p>You hire a contractor. You don't give them a master key that works on every door, forever, and that anyone can copy. But that is how most AI agents are given access today: a long-lived <b>API key</b> in a config file.</p>
+  <p>This platform does it the other way. The agent proves <i>what it is</i> using a short-lived identity that the platform itself issues and verifies. It acts <i>on behalf of a person</i> with a token that is narrow and expires in minutes. And every action is decided by a rulebook, not by the agent.</p>
+
+  <div class="box note">
+    <span class="tag">The one-sentence version</span>
+    <p>OAuth answers “is this actor <i>allowed</i>?” — identity answers “what <i>is</i> this actor?” — and an agent you can't identify is an agent you can't govern.</p>
+  </div>
+
+  <h2>The cast</h2>
+  <table>
+    <tr><th>Who / what</th><th>What they do</th></tr>
+    <tr><td><b>The support rep</b> (alice)</td><td>Signs in and asks the agent to handle a ticket or a refund. Her authority is what the agent acts with.</td></tr>
+    <tr><td><b>The approver</b> (manager)</td><td>Reviews high-risk actions the agent wants to take, and approves or denies them.</td></tr>
+    <tr><td><b>The agent</b></td><td>Reads customer and order data, drafts replies, and can issue refunds. It holds no password or key.</td></tr>
+    <tr><td><b>The policy engine</b></td><td>Decides, for every action, one of three things: allow, deny, or <i>ask a human first</i>.</td></tr>
+    <tr><td><b>The tool servers</b></td><td>The gate in front of the data. Nothing reaches the data without passing them.</td></tr>
+  </table>
+
+  <h2>What happens when the rep asks for something</h2>
+  <ol>
+    <li>The rep signs in and gets a token that says who she is.</li>
+    <li>The agent proves its own identity — the platform vouches for it, no secret involved.</li>
+    <li>The agent trades the rep's token for a new, five-minute token that says “this agent is acting for this rep, for this service only”.</li>
+    <li>The agent asks a tool to do the work.</li>
+    <li>The tool asks the rulebook: may <i>this</i> agent do <i>this</i> for <i>this</i> person? The answer is <b>no by default</b>.</li>
+    <li>If the action is risky, the run <b>pauses</b> until the approver decides — then it continues and the work is done.</li>
+    <li>Every step is written down: who acted, for whom, what they asked for, and why it was allowed.</li>
+  </ol>
+
+  <h2>What is allowed, and what needs a human</h2>
+  <table>
+    <tr><th>Action</th><th>What happens</th></tr>
+    <tr><td>Read a customer's profile or orders, read a ticket, draft a reply, quote a refund</td><td>Allowed</td></tr>
+    <tr><td>Issue a small refund (up to $50)</td><td>Allowed</td></tr>
+    <tr><td>Issue a refund from $50 to $500</td><td><b>Held for approval</b></td></tr>
+    <tr><td>Issue a refund above $500</td><td>Refused</td></tr>
+    <tr><td>Read a customer's personal details (name, email, phone)</td><td><b>Held for approval</b></td></tr>
+    <tr><td>Bulk actions</td><td>Refused</td></tr>
+  </table>
+
+  <h2>Why you can trust it</h2>
+  <div class="box good">
+    <span class="tag">Built-in safety</span>
+    <p><b>There is no key to steal.</b> The agent's identity lives for minutes and only works for that workload.</p>
+    <p><b>A stolen token is useless elsewhere.</b> Each token is aimed at exactly one service; passing it along fails.</p>
+    <p><b>The model cannot overrule the rulebook.</b> A clever prompt can change what the agent <i>asks for</i>, never what it is <i>permitted</i> to do.</p>
+    <p><b>Risky actions need a person.</b> And that person cannot approve their own request.</p>
+    <p><b>Everything is written down</b> — who did what, for whom, and why.</p>
+  </div>
+
+  <div class="box warn">
+    <span class="tag">This is a demonstration</span>
+    <p>All the data here is <b>synthetic</b> — no real customers, cards, or personal data. The logins and passwords are demo values. In production these would be replaced by your own identity system and real integrations.</p>
+  </div>
+
+  <footer>Companion to the <code>enterprise-agent-nhi</code> concepts demo. See the repository's <code>docs/</code> for the technical detail.</footer>
+</main>
+<script>
+(function(){var r=document.documentElement,bs=[].slice.call(document.querySelectorAll('[data-theme-btn]'));
+function ap(m){if(m==='light'||m==='dark')r.setAttribute('data-theme',m);else r.removeAttribute('data-theme');
+bs.forEach(function(b){b.setAttribute('aria-pressed',String(b.getAttribute('data-theme-btn')===m));});}
+var s='auto';try{s=localStorage.getItem('guide-theme')||'auto';}catch(e){}ap(s);
+bs.forEach(function(b){b.addEventListener('click',function(){var m=b.getAttribute('data-theme-btn');
+try{localStorage.setItem('guide-theme',m);}catch(e){}ap(m);});});})();
+</script>
+</body>
+</html>

@@ -37,6 +37,8 @@ spec:
             # NOTE: no TRUSTED_WORKLOAD here. The API accepts tokens from both
             # the agent (creating approvals) and human approvers (deciding them),
             # so it enforces the audience but not a single issuing workload.
+            - name: AGENT_URL
+              value: http://agent:8081
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           ports:

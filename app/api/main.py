@@ -1,19 +1,30 @@
-"""The platform API: human approvals and agent tasks.
+"""The platform API: human approvals, agent tasks, and the audit timeline.
 
 Endpoints:
-    POST /approvals                    create a pending approval (agent's token)
-    GET  /approvals?status=pending     the approval queue
-    POST /approvals/{id}/decision      approve/deny (approver's token)
-    POST /approvals/verify             used by tool servers (in trust domain)
-    POST /tasks                        start an agent run
-    POST /tasks/{thread_id}/resume     resume a paused run with a decision
+    POST /demo/login               demo-only: mint a token for a seeded user
+    POST /tasks                    start an agent run (proxied to the agent svc)
+    POST /tasks/resume             resume a paused run
+    POST /approvals                create a pending approval (agent's token)
+    GET  /approvals?status=pending the approval queue
+    POST /approvals/{id}/decision  approve/deny (approver's token)
+    POST /approvals/verify         used by tool servers (in trust domain)
+    POST /audit/events             ingest an audit record (from the services)
+    GET  /audit                    the audit timeline (newest first)
+    GET  /                         the web UI (when a build is present)
 
-Every caller is authenticated with an exchanged token; the approval is bound to
-the token's user and workload.
+Callers are authenticated with an exchanged token. The `/demo/login` endpoint is
+a convenience for the local demo and is called out as such.
 """
 from __future__ import annotations
 
+import os
+from collections import deque
+from pathlib import Path
+
+import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from agentnhi import Settings, TokenRejected, TokenVerifier, audit
 from agentnhi.tokens import Delegation
@@ -21,7 +32,13 @@ from app.approvals import ApprovalStore
 
 app = FastAPI(title="agent-identity-platform API")
 _store = ApprovalStore()
+_audit: deque[dict] = deque(maxlen=500)
 _verifier: TokenVerifier | None = None
+
+DEMO_USERS = {
+    "alice": ("alice123", "demo-cli", "demo-cli-secret-demo"),
+    "manager": ("manager123", "manager-cli", "manager-cli-secret-demo"),
+}
 
 
 def get_store() -> ApprovalStore:
@@ -53,6 +70,64 @@ def healthz() -> dict:
     return {"ok": True}
 
 
+# ---------------------------------------------------------------------------
+# Demo login (local demo convenience)
+# ---------------------------------------------------------------------------
+@app.post("/demo/login")
+def demo_login(body: dict) -> dict:
+    username = body.get("user", "")
+    if username not in DEMO_USERS:
+        raise HTTPException(status_code=400, detail="unknown demo user")
+    password, client_id, secret = DEMO_USERS[username]
+    issuer = Settings.from_env().keycloak_issuer
+    resp = httpx.post(
+        f"{issuer}/protocol/openid-connect/token",
+        data={
+            "grant_type": "password",
+            "client_id": client_id,
+            "client_secret": secret,
+            "username": username,
+            "password": password,
+        },
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="login failed")
+    return {"user": username, "access_token": resp.json()["access_token"]}
+
+
+# ---------------------------------------------------------------------------
+# Agent tasks (proxied to the agent service)
+# ---------------------------------------------------------------------------
+def _agent_url() -> str:
+    return os.environ.get("AGENT_URL", "http://agent:8081").rstrip("/")
+
+
+@app.post("/tasks")
+def start_task(body: dict, authorization: str | None = Header(default=None)) -> dict:
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    resp = httpx.post(
+        f"{_agent_url()}/run",
+        json=body,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=180,
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
+    return resp.json()
+
+
+@app.post("/tasks/resume")
+def resume_task(body: dict) -> dict:
+    resp = httpx.post(f"{_agent_url()}/resume", json=body, timeout=120)
+    if resp.status_code != 200:
+        raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
+    return resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Approvals
+# ---------------------------------------------------------------------------
 @app.post("/approvals")
 def create_approval(
     body: dict,
@@ -89,10 +164,7 @@ def list_approvals(
 
 
 @app.post("/approvals/verify")
-def verify_approval(
-    body: dict,
-    store: ApprovalStore = Depends(get_store),
-) -> dict:
+def verify_approval(body: dict, store: ApprovalStore = Depends(get_store)) -> dict:
     """Called by the tool server. The approvals service is the authority here."""
     valid = store.verify(
         body.get("approval_id", ""),
@@ -130,3 +202,29 @@ def decide_approval(
         tool=approval.tool,
     )
     return approval.as_dict()
+
+
+# ---------------------------------------------------------------------------
+# Audit timeline
+# ---------------------------------------------------------------------------
+@app.post("/audit/events")
+def ingest_audit(record: dict) -> dict:
+    _audit.appendleft(record)
+    return {"ok": True}
+
+
+@app.get("/audit")
+def get_audit(limit: int = 100) -> list[dict]:
+    return list(_audit)[: max(1, min(limit, 500))]
+
+
+# ---------------------------------------------------------------------------
+# Web UI (served from the same origin when a build is present)
+# ---------------------------------------------------------------------------
+_WEB_DIR = Path(os.environ.get("WEB_DIR", "/workspace/app/web/dist"))
+if _WEB_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=_WEB_DIR / "assets"), name="assets")
+
+    @app.get("/")
+    def index() -> FileResponse:
+        return FileResponse(_WEB_DIR / "index.html")
