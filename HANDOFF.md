@@ -61,9 +61,18 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 
 - **Signed commits** are required but not yet configured on this machine (no GPG
   key; `user.signingkey` unset; the SSH key is not registered with GitHub). See
-  "Environment" below.
-- **Branch protection** was not attempted yet; confirm whether the plan supports
-  it on a private repo, otherwise document the equivalent process.
+  "Environment" below. Until then, commits are unsigned.
+- **Branch protection is ENABLED** on `main`: PR-only (0 required approvals, so
+  the owner can self-merge), no force-push, no deletions, linear history,
+  conversation resolution, enforced for admins.
+  **Consequence: `main` is no longer pushable directly — changes go via a branch
+  + PR:**
+  ```sh
+  git switch -c feat/short-name
+  git push -u origin HEAD
+  gh pr create --fill
+  gh pr merge --squash --delete-branch     # linear history => squash/rebase only
+  ```
 - **GHAS** (secret scanning / CodeQL) — enable on the repo if available; the OSS
   CI tooling covers the same ground meanwhile.
 
