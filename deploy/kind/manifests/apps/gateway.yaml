@@ -1,66 +1,67 @@
 # =============================================================================
-# The agent service.
+# LLM gateway — the only component that talks to a model provider.
 #
-# Holds the LangGraph run state in memory, so a paused (approval-required) run
-# can be resumed via POST /resume. It fetches a JWT-SVID from the Workload API
-# and exchanges the rep's token per call — it holds no static credential.
+# It serves HTTPS using its own X.509-SVID as the server certificate and
+# REQUIRES a client SVID verified against the SPIRE trust bundle (mTLS). The
+# agent therefore needs no model credential at all.
 #
-# Model calls go ONLY through the LLM gateway, over mTLS with the agent's
-# X.509-SVID. The agent has no provider key and no model endpoint of its own.
+# Readiness uses a TCP probe on purpose: an HTTP probe from the kubelet has no
+# client certificate and would fail the mTLS handshake.
 # =============================================================================
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: agent
+  name: gateway
   namespace: agent-platform
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: agent
+  name: gateway
   namespace: agent-platform
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: agent
+      app: gateway
   template:
     metadata:
       labels:
-        app: agent
+        app: gateway
     spec:
-      serviceAccountName: agent
+      serviceAccountName: gateway
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: agent
-          image: agent-platform/agent:demo
+        - name: gateway
+          image: agent-platform/gateway:demo
           imagePullPolicy: IfNotPresent
           env:
-            - name: KC_ISSUER
-              value: http://keycloak:8080/realms/agent-platform
             - name: SPIFFE_SOCKET
               value: unix:///run/spire/sockets/agent.sock
             - name: SPIFFE_BUNDLE
               value: /run/spire/bundle/bundle.crt
-            - name: AGENT_SPIFFE_ID
-              value: spiffe://acme.com/ns/agent-platform/sa/agent
-            - name: TOOL_SERVER_URL
-              value: http://tools:8000
-            - name: APPROVALS_URL
-              value: http://api:8080
-            - name: AUDIT_URL
-              value: http://api:8080
-            # The agent reaches the model ONLY through the gateway, over mTLS.
-            - name: LLM_GATEWAY_URL
-              value: https://gateway:8443
-            - name: PYTHONDONTWRITEBYTECODE
-              value: "1"
+            - name: PORT
+              value: "8443"
+            - name: LLM_PROVIDER
+              value: ollama
+            - name: OLLAMA_URL
+              value: http://host.docker.internal:11434
+            - name: OLLAMA_MODEL
+              value: llama3.2:3b
+            # The ONLY place a provider key may live. Absent by default (Ollama
+            # needs none); supplied via setup.sh from a gitignored .env.
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-api-key
+                  key: LLM_API_KEY
+                  optional: true
           ports:
-            - containerPort: 8081
+            - containerPort: 8443
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -76,10 +77,9 @@ spec:
             - name: tmp
               mountPath: /tmp
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: 8081
-            initialDelaySeconds: 5
+            tcpSocket:
+              port: 8443
+            initialDelaySeconds: 10
             periodSeconds: 10
       volumes:
         - name: spiffe-workload-api
@@ -95,12 +95,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: agent
+  name: gateway
   namespace: agent-platform
 spec:
   selector:
-    app: agent
+    app: gateway
   ports:
-    - name: http
-      port: 8081
-      targetPort: 8081
+    - name: https
+      port: 8443
+      targetPort: 8443

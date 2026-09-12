@@ -21,6 +21,7 @@ from .errors import (
     TokenRejected,
 )
 from .exchange import TokenExchanger
+from .identity import fetch_jwt_svid, fetch_x509_svid, mtls_client_context, svid_to_pem, write_mtls_files
 from .policy import Decision, PolicyClient, PolicyResult
 from .tokens import Delegation, TokenVerifier
 
@@ -36,6 +37,11 @@ __all__ = [
     "redact",
     "configure",
     "set_sink",
+    "fetch_jwt_svid",
+    "fetch_x509_svid",
+    "svid_to_pem",
+    "write_mtls_files",
+    "mtls_client_context",
     "AgentNhiError",
     "ExchangeError",
     "IdentityError",

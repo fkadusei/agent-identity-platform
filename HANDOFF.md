@@ -5,11 +5,9 @@
 ---
 
 - **Project:** agent-identity-platform
-- **Status:** **Phase 1 COMPLETE.** It runs on kind end to end — a read is
-  allowed; a $200 refund pauses for approval; the manager approves; the agent
-  resumes and issues it; all 5 attacks are blocked. A React UI (console,
-  approval queue, audit timeline) is served by the API, and the plain-language
-  user guides are in `docs/guides/`.
+- **Status:** Phase 1 **complete**; Phase 2 in progress. The **LLM gateway** is
+  built and running — the agent holds no model credential and reaches the model
+  only over SPIFFE mTLS. Next: the remaining hardening items.
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
@@ -51,26 +49,26 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
   - `app/agent/` — LangGraph with approval interrupts — 4 tests
   - `deploy/kind/` + `scripts/` — SPIRE/Keycloak/OPA + api/tools/agent on kind;
     `demo.sh` (approval flow) and `attack-tests.sh` (5 attacks blocked)
-- **Next: Phase 2** — production hardening (TLS/mTLS, HA SPIRE, secret manager,
-  the LLM gateway, OpenTelemetry, policy lifecycle, SBOM/signing).
+- **Next: Phase 2** — production hardening. Done so far: the **LLM gateway**
+  (`app/gateway/`), authenticated by SPIFFE mTLS, which removes the agent's last
+  possible credential. Remaining: the secret manager, OpenTelemetry, policy
+  lifecycle, SBOM/signing, and the operator guide.
 
 ## Immediate next task
 
-**Phase 2, step 1: hardening.** Suggested order:
+**Phase 2, next: pick up the remaining hardening items** (see
+[`docs/roadmap.md`](docs/roadmap.md)). Suggested order:
 
-1. **TLS/mTLS everywhere** — HTTPS for Keycloak and the services; mTLS between
-   the agent and the tools using X.509-SVIDs (the SDK's `mtls_client_context`
-   is already there).
-2. **Secret manager + External Secrets** — move the remaining server-side demo
+1. **Secret manager + External Secrets** — move the remaining server-side demo
    secrets (client secrets) into a manager; remove them from manifests.
-3. **LLM gateway** — a component that authenticates the agent by its SPIFFE
-   identity and holds the provider key, so the agent holds no secret (ADR-0009).
-4. **Observability** — OpenTelemetry traces spanning agent → tools → policy,
-   Prometheus/Grafana, and alerting on policy denials.
-5. **Policy lifecycle + SBOM/signing** — bundle versioning/staged rollout, and
-   cosign keyless signing (ADR-0010).
+2. **Observability** — OpenTelemetry traces spanning agent → gateway → tools →
+   policy, plus Prometheus/Grafana and alerting on policy denials.
+3. **Policy lifecycle** — bundle versioning/staged rollout and decision logs.
+4. **Supply chain** — cosign keyless signing + verification (ADR-0010) and an
+   admission policy.
 
-The UI and guides are done; the code is at `app/web/` and `docs/guides/`.
+The LLM gateway is at `app/gateway/` (mTLS via its own X.509-SVID); the agent
+calls it at `LLM_GATEWAY_URL` and holds no provider key.
 
 ## Decisions made
 

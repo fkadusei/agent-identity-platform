@@ -1,6 +1,8 @@
 # ADR-0009: Provider-agnostic LLM, with an identity-authenticated gateway
 
-- **Status:** Accepted
+- **Status:** Accepted — **implemented** in `app/gateway/`: the gateway serves
+  HTTPS with its own X.509-SVID and requires a client SVID (SPIFFE mTLS), so the
+  agent holds no model credential and reaches the model only through it.
 - **Date:** 2026-09-12
 - **Related:** ADR-0001
 

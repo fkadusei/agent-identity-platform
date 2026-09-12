@@ -29,6 +29,23 @@ if echo "$OUT" | grep -q REFUSED; then
 else
   bad "rogue workload got an SVID: $OUT"
 fi
+
+# ---------------------------------------------------------------------------
+beat "6 — REACHING THE LLM GATEWAY WITHOUT A WORKLOAD IDENTITY"
+# The gateway serves HTTPS and REQUIRES a client SVID (mTLS). A workload with no
+# identity cannot complete the handshake, so it cannot reach the model at all.
+OUT=$(kubectl -n $NS exec rogue -- python -c "
+import httpx
+try:
+    r = httpx.get('https://gateway:8443/healthz', verify=False, timeout=5)
+    print('REACHED', r.status_code)
+except Exception as e:
+    print('REFUSED', type(e).__name__)" 2>/dev/null)
+if echo "$OUT" | grep -q REFUSED; then
+  good "gateway refused the connection: $OUT"
+else
+  bad "an identity-less workload reached the gateway: $OUT"
+fi
 kubectl -n $NS delete pod rogue --wait=false >/dev/null 2>&1
 
 # ---------------------------------------------------------------------------

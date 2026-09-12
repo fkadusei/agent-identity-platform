@@ -20,6 +20,7 @@ from typing import Any
 
 from agentnhi import Decision, PolicyClient, Settings, TokenRejected, TokenVerifier, audit
 
+from app.common.schema import coerce_args
 from app.tools.approvals import ApprovalsClient
 from app.tools.catalog import TOOLS, Tool
 
@@ -41,9 +42,8 @@ class ToolResult:
 
 
 def _clean_args(tool: Tool, args: dict) -> dict:
-    """Keep only the arguments the tool declares (drops approval_id, extras)."""
-    allowed = set((tool.input_schema.get("properties") or {}).keys())
-    return {k: v for k, v in args.items() if k in allowed}
+    """Keep only the tool's declared arguments, coerced to their types."""
+    return coerce_args(tool.input_schema.get("properties") or {}, args)
 
 
 class ToolEnforcer:

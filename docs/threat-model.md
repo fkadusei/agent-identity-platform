@@ -73,10 +73,12 @@ tokens or PII fields.
 **Threat.** Personal data is sent to an external model, or the agent reveals data
 the user is not entitled to.
 **Mitigation.** Synthetic data only; local model by default; a SPIFFE-
-authenticated LLM gateway with redaction before egress and provider retention
-controls; PII-tagged tools gated by policy.
-**Test.** An egress test asserts redacted payloads; a policy test asserts PII
-tools require approval.
+authenticated **LLM gateway** (implemented: `app/gateway/`) that is the only
+egress point and holds the provider key, so the agent has no model credential;
+redaction before egress and provider retention controls; PII-tagged tools gated
+by policy.
+**Test.** The gateway refuses connections without a client SVID (attack suite
+#6); a policy test asserts PII tools require approval.
 
 ## T9 — Cross-tenant data leakage
 
