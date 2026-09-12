@@ -33,6 +33,7 @@ class Delegation:
     user: str
     workload: str
     audience: str
+    roles: tuple[str, ...] = ()
     claims: dict = field(default_factory=dict)
 
     @classmethod
@@ -44,7 +45,20 @@ class Delegation:
         # surfaces it as `azp`.
         act = claims.get("act") or {}
         workload = act.get("sub") or claims.get("azp") or "?"
-        return cls(user=user, workload=workload, audience=audience, claims=claims)
+        # Keycloak puts realm roles under realm_access.roles; accept a flat
+        # `roles` claim too, so the SDK is not Keycloak-specific.
+        roles = (
+            (claims.get("realm_access") or {}).get("roles")
+            or claims.get("roles")
+            or ()
+        )
+        return cls(
+            user=user,
+            workload=workload,
+            audience=audience,
+            roles=tuple(roles),
+            claims=claims,
+        )
 
 
 class TokenVerifier:

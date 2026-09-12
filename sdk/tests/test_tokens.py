@@ -28,6 +28,15 @@ def test_user_falls_back_to_subject_when_no_username(resolver, make_token):
     assert verifier(resolver).verify(token).user == "user-123"
 
 
+def test_roles_are_extracted_from_realm_access(resolver, make_token):
+    token = make_token(realm_access={"roles": ["support_rep", "privacy"]})
+    assert verifier(resolver).verify(token).roles == ("support_rep", "privacy")
+
+
+def test_roles_default_to_empty(resolver, make_token):
+    assert verifier(resolver).verify(make_token()).roles == ()
+
+
 def test_wrong_audience_is_rejected(resolver, make_token):
     token = make_token(aud="some-other-service")
     with pytest.raises(TokenRejected, match="audience"):

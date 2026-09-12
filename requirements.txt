@@ -1,0 +1,8 @@
+# Runtime dependencies for the platform app (agent, tools, api).
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27
+pyjwt[crypto]>=2.8
+mcp>=2.0
+langgraph>=0.2
+pydantic>=2.10
