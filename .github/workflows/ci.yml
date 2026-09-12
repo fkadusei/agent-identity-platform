@@ -1,5 +1,7 @@
 # Repository checks that are meaningful from day one and grow with the project.
 # Application tests (pytest, vitest, OPA) are added in Phase 1.
+#
+# Actions are pinned to full commit SHAs (mutable tags can be repointed).
 name: ci
 
 on:
@@ -14,7 +16,7 @@ jobs:
   repo-checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
 
       - name: shell syntax
         run: |
