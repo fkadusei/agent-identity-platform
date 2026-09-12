@@ -14,10 +14,10 @@ from __future__ import annotations
 import os
 
 import httpx
-import jwt
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from agentnhi import Settings, audit
+from agentnhi import Settings, TokenRejected, TokenVerifier, audit
+from app.api.authz import get_verifier
 from app.api.identity import admin_from_env
 
 router = APIRouter()
@@ -31,10 +31,8 @@ def signup_enabled() -> bool:
     return os.environ.get("SIGNUP_ENABLED", "1").lower() not in ("0", "false", "no", "")
 
 
-def _roles_from_token(token: str) -> list[str]:
-    # We just minted this token, so we read its claims without re-verifying.
-    claims = jwt.decode(token, options={"verify_signature": False, "verify_aud": False})
-    roles = (claims.get("realm_access") or {}).get("roles") or []
+def platform_roles(roles) -> list[str]:
+    """Keep only the roles this platform acts on, sorted."""
     return sorted(r for r in roles if r in PLATFORM_ROLES)
 
 
@@ -45,7 +43,7 @@ def auth_config() -> dict:
 
 
 @router.post("/auth/login")
-def login(body: dict) -> dict:
+def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
     username = (body.get("username") or "").strip()
     password = body.get("password") or ""
     if not username or not password:
@@ -68,7 +66,14 @@ def login(body: dict) -> dict:
         raise HTTPException(status_code=401, detail="invalid username or password")
 
     token = resp.json()["access_token"]
-    roles = _roles_from_token(token)
+    # Verify what we just minted (signature + issuer + audience) rather than
+    # trusting an unverified decode, then read the roles off the delegation.
+    try:
+        delegation = verifier.verify(token)
+    except TokenRejected as exc:
+        raise HTTPException(status_code=502, detail=f"login produced an unusable token: {exc}")
+
+    roles = platform_roles(delegation.roles)
     audit("auth.login", user=username, roles=roles)
     return {"user": username, "roles": roles, "access_token": token}
 

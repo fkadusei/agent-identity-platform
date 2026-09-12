@@ -63,13 +63,9 @@ def test_enroll_requires_all_fields(client, monkeypatch):
     assert resp.status_code == 400
 
 
-def test_login_roles_are_filtered_to_platform_roles():
-    import jwt
+def test_platform_roles_filters_keycloak_builtins():
+    from app.api.auth import platform_roles
 
-    from app.api.auth import _roles_from_token
-
-    token = jwt.encode(
-        {"realm_access": {"roles": ["default-roles-agent-platform", "offline_access", "support_rep"]}},
-        "unused-because-we-do-not-verify-here",
-    )
-    assert _roles_from_token(token) == ["support_rep"]
+    assert platform_roles(["default-roles-agent-platform", "offline_access", "support_rep"]) == [
+        "support_rep"
+    ]
