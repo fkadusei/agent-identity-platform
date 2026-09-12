@@ -44,6 +44,12 @@ keywords = ["PRIVATE KEY"]
 # so a real secret anywhere else still fails the scan.
 # ---------------------------------------------------------------------------
 [[allowlists]]
+description = "Build artifacts, virtualenvs and caches (never committed; .gitignored)"
+paths = [
+  '''(^|/)(__pycache__|\.venv|venv|\.mypy_cache|\.ruff_cache|\.pytest_cache|node_modules|dist|build)/''',
+]
+
+[[allowlists]]
 description = "Documented synthetic/demo-only values (disposable local environment)"
 matchCondition = "AND"
 paths = [

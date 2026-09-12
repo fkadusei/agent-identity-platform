@@ -1,0 +1,5 @@
+"""Shared test constants."""
+ISSUER = "http://keycloak:8080/realms/agent-nhi"
+AUDIENCE = "mcp-tools"
+AGENT = "spiffe://acme.com/ns/agent-nhi/sa/agent"
+OTHER_AGENT = "spiffe://acme.com/ns/agent-nhi/sa/rogue"
