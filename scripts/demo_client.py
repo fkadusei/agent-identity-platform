@@ -4,11 +4,17 @@ Piped to the agent pod by scripts/demo.sh (it needs the pod's SPIFFE socket and
 network access to the services).
 """
 import json
+import os
+
 import httpx
 
 KC = "http://keycloak:8080/realms/agent-platform"
 AGENT = "http://agent:8081"
 API = "http://api:8080"
+
+# Client secrets come from the environment (a Secret), never from source.
+DEMO_CLI_SECRET = os.environ["DEMO_CLI_SECRET"]
+MANAGER_CLI_SECRET = os.environ["MANAGER_CLI_SECRET"]
 
 
 def login(username, password, client_id, secret):
@@ -41,7 +47,7 @@ def show(label, payload):
 
 
 print("1. alice (support rep) logs in")
-alice = login("alice", "alice123", "demo-cli", "demo-cli-secret-demo")
+alice = login("alice", "alice123", "demo-cli", DEMO_CLI_SECRET)
 print("   got alice's token")
 
 show("2. agent run — a read (allowed)", run("Get the profile of customer c-100", alice))
@@ -56,7 +62,7 @@ if outcome.get("status") == "approval_required":
     pending = httpx.get(f"{API}/approvals?status=pending", timeout=10).json()
     print(f"   approval queue: {len(pending)} pending — {pending[0]['reason'] if pending else ''}")
 
-    manager = login("manager", "manager123", "manager-cli", "manager-cli-secret-demo")
+    manager = login("manager", "manager123", "manager-cli", MANAGER_CLI_SECRET)
     decided = httpx.post(
         f"{API}/approvals/{approval_id}/decision",
         json={"approved": True, "note": "within policy"},

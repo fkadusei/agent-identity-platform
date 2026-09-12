@@ -35,9 +35,12 @@ _store = ApprovalStore()
 _audit: deque[dict] = deque(maxlen=500)
 _verifier: TokenVerifier | None = None
 
+# Human demo logins are documented values (see docs/guides). The CLIENT secrets
+# are not: they are generated into a gitignored .env and mounted from the
+# platform-secrets Secret, so no client secret is ever committed.
 DEMO_USERS = {
-    "alice": ("alice123", "demo-cli", "demo-cli-secret-demo"),
-    "manager": ("manager123", "manager-cli", "manager-cli-secret-demo"),
+    "alice": ("alice123", "demo-cli", os.environ.get("DEMO_CLI_SECRET", "")),
+    "manager": ("manager123", "manager-cli", os.environ.get("MANAGER_CLI_SECRET", "")),
 }
 
 

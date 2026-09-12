@@ -47,7 +47,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 - [~] TLS/mTLS everywhere; HA SPIRE; persistent storage; hardened Keycloak
       (mTLS done for the agent↔gateway hop; the rest is plaintext in-cluster)
-- [ ] Secret manager + External Secrets (remove every static secret)
+- [x] **Secrets out of git and manifests** — client secrets generated into a
+      gitignored `.env`, the realm rendered from a template, values mounted as
+      Kubernetes Secrets; the External Secrets Operator pattern is documented
+      (`docs/secrets.md`)
 - [x] **LLM gateway authenticated by SPIFFE identity** — the agent holds no
       model credential; it reaches the model only over mTLS (`app/gateway/`)
 - [ ] OpenTelemetry end-to-end; Prometheus/Grafana; audit pipeline; alerts

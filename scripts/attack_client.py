@@ -3,6 +3,8 @@
 Each attack is expected to be BLOCKED. The script prints a clear PASS/FAIL so a
 regression is obvious.
 """
+import os
+
 import httpx
 
 from agentnhi import Settings, TokenExchanger
@@ -11,6 +13,7 @@ from agentnhi.identity import fetch_jwt_svid
 KC = "http://keycloak:8080/realms/agent-platform"
 TOOLS = "http://tools:8000"
 AGENT_ID = "spiffe://acme.com/ns/agent-platform/sa/agent"
+DEMO_CLI_SECRET = os.environ["DEMO_CLI_SECRET"]
 S = Settings.from_env()
 
 failures = 0
@@ -53,7 +56,7 @@ def check(label, blocked, detail):
         print(f"   SUCCEEDED ✗  {label} — {detail}")
 
 
-alice = login("alice", "alice123", "demo-cli", "demo-cli-secret-demo")
+alice = login("alice", "alice123", "demo-cli", DEMO_CLI_SECRET)
 
 print("\nATTACK 2 — TOKEN FORWARDING (wrong audience)")
 status, detail = call("crm.customer.read", {"customer_id": "c-100"}, alice)

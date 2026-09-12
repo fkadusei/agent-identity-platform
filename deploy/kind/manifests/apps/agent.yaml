@@ -57,6 +57,19 @@ spec:
             # The agent reaches the model ONLY through the gateway, over mTLS.
             - name: LLM_GATEWAY_URL
               value: https://gateway:8443
+            # Used only by the demo/attack scripts (they stand in for alice's
+            # and the manager's apps when minting tokens). From a Secret, never
+            # committed.
+            - name: DEMO_CLI_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: DEMO_CLI_SECRET
+            - name: MANAGER_CLI_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: MANAGER_CLI_SECRET
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           ports:

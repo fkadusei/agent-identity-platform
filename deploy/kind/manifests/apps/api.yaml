@@ -39,6 +39,18 @@ spec:
             # so it enforces the audience but not a single issuing workload.
             - name: AGENT_URL
               value: http://agent:8081
+            # Client secrets for the demo login, mounted from a Secret that
+            # setup.sh creates from the gitignored .env (never committed).
+            - name: DEMO_CLI_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: DEMO_CLI_SECRET
+            - name: MANAGER_CLI_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: platform-secrets
+                  key: MANAGER_CLI_SECRET
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           ports:
