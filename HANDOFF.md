@@ -60,11 +60,10 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 
 ## Open questions / blockers
 
-- **Signed commits** — local signing is configured and verified on this machine
-  (SSH signing; `git log --show-signature` reports a good signature).
-  **Still to confirm:** the key is registered on GitHub as a **Signing Key**, so
-  pushed commits show the "Verified" badge. See "Signed commits (one-time
-  setup)" below.
+- **Signed commits** — **DONE and verified end to end.** Local
+  `git log --show-signature` reports a good signature, and GitHub marks pushed
+  commits **Verified** (confirmed via the commits API: `"verified": true`).
+  Setup steps for other machines are in "Signed commits (one-time setup)" below.
 - **Branch protection is ENABLED** on `main`: PR-only (0 required approvals, so
   the owner can self-merge), no force-push, no deletions, linear history,
   conversation resolution, enforced for admins.
