@@ -53,3 +53,22 @@ pre { background: #0a0f16; border: 1px solid var(--line); border-radius: 8px; pa
 .ev { color: var(--accent); background: none; }
 .meta { color: var(--muted); font-size: 13px; }
 .approval { margin-top: 8px; }
+
+/* --- auth + admin --------------------------------------------------------- */
+input {
+  font: inherit; padding: 8px 10px; color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+.authcard { max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin: 24px 0; }
+.authcard form { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
+.authcard button[type="submit"], .authcard form > button { align-self: flex-start; }
+.link { background: none; border: none; color: var(--accent); padding: 0; font-size: inherit; cursor: pointer; text-decoration: underline; }
+.createuser { display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+.createuser > button { align-self: flex-start; }
+.users { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+.users th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid var(--line); padding: 8px 10px; }
+.users td { border-bottom: 1px solid var(--line); padding: 10px; vertical-align: top; }
+.role { display: inline-flex; align-items: center; gap: 4px; margin: 2px 10px 2px 0; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.role input { padding: 0; }
+.actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.actions button { font-size: 12px; padding: 4px 9px; }

@@ -25,10 +25,30 @@ function errorMessage(body: any, status: number): string {
 }
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
+const json = (method: string, token: string, body?: any): RequestInit => ({
+  method,
+  headers: auth(token),
+  ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+});
 
-export const login = (user: string) =>
-  request("/demo/login", { method: "POST", body: JSON.stringify({ user }) });
+// --- auth + enrollment -----------------------------------------------------
+export const authConfig = () => request("/auth/config");
 
+export const login = (username: string, password: string) =>
+  request("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+
+export const enroll = (form: {
+  username: string;
+  email: string;
+  password: string;
+  firstName?: string;
+  lastName?: string;
+}) => request("/enroll", { method: "POST", body: JSON.stringify(form) });
+
+// --- agent tasks + approvals ----------------------------------------------
 export const runTask = (task: string, token: string) =>
   request("/tasks", { method: "POST", headers: auth(token), body: JSON.stringify({ task }) });
 
@@ -45,3 +65,26 @@ export const decideApproval = (id: string, approved: boolean, token: string, not
   });
 
 export const getAudit = () => request("/audit?limit=100");
+
+// --- admin: user management (requires the platform_admin role) -------------
+export const listUsers = (token: string) => request("/admin/users", { headers: auth(token) });
+
+export const createUser = (
+  form: { username: string; email: string; password: string; roles: string[] },
+  token: string,
+) => request("/admin/users", json("POST", token, form));
+
+export const grantRole = (id: string, role: string, token: string) =>
+  request(`/admin/users/${id}/roles`, json("POST", token, { role }));
+
+export const revokeRole = (id: string, role: string, token: string) =>
+  request(`/admin/users/${id}/roles/${role}`, json("DELETE", token));
+
+export const setUserEnabled = (id: string, enabled: boolean, token: string) =>
+  request(`/admin/users/${id}/enabled`, json("POST", token, { enabled }));
+
+export const resetUserPassword = (id: string, password: string, token: string) =>
+  request(`/admin/users/${id}/password`, json("POST", token, { password }));
+
+export const deleteUser = (id: string, token: string) =>
+  request(`/admin/users/${id}`, json("DELETE", token));

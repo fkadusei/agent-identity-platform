@@ -63,6 +63,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] Supply chain: SBOM + image scan (already in CI), **cosign (keyless
       Sigstore) signing + verification**, Kyverno admission policy
       (`docs/supply-chain.md`, ADR-0010)
+- [x] **Enrollment + role administration** — self-service signup (toggleable),
+      admin user management via a least-privilege Keycloak service account, real
+      login, and server-side role enforcement (`docs/enrollment-and-roles.md`,
+      ADR-0011)
 - [ ] Operator user guide
 - [ ] **Gate:** threat model addressed; dashboards live; secret audit clean
 

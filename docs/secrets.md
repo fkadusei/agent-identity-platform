@@ -9,8 +9,9 @@ deploy time.
 | Item | Secret? | Where it lives |
 |---|---|---|
 | SPIFFE workload identities (SVIDs) | no — fetched, never stored | issued on demand by SPIRE |
-| Human demo logins (`alice`/`manager`) | documented demo values | realm template + guides |
-| Keycloak **client secrets** (`demo-cli`, `manager-cli`, `mcp-tools`) | **yes** | generated into a gitignored `.env` |
+| Human demo logins (`alice`/`manager`/`admin`) | documented demo values | realm template + guides |
+| Keycloak **client secrets** (`demo-cli`, `manager-cli`, `mcp-tools`, `portal`) | **yes** | generated into a gitignored `.env` |
+| Keycloak **admin** service-account secret (`platform-admin`) | **yes** | gitignored `.env` → Secret, read only by the API |
 | LLM provider key | **yes** (optional) | gitignored `.env` → Kubernetes Secret, read **only** by the gateway |
 
 ## How it works locally (kind)
@@ -21,13 +22,18 @@ deploy time.
    DEMO_CLI_SECRET=<random>
    MANAGER_CLI_SECRET=<random>
    MCP_TOOLS_SECRET=<random>
-   # LLM_API_KEY=...        # optional, for a hosted model
+   PORTAL_SECRET=<random>          # the web app's login client
+   ADMIN_CLIENT_SECRET=<random>    # the API's least-privilege admin client
+   # LLM_API_KEY=...               # optional, for a hosted model
    ```
 2. The Keycloak realm is **rendered** from `realm.json.tmpl` (`${VAR}`
    placeholders) with those values, then applied as a ConfigMap. The template is
    committed; the values are not.
-3. The API's demo login gets `DEMO_CLI_SECRET` / `MANAGER_CLI_SECRET` from the
-   `platform-secrets` Secret, mounted as environment variables.
+3. The API gets `DEMO_CLI_SECRET` / `MANAGER_CLI_SECRET` (scripted demo),
+   `PORTAL_SECRET` (login), and `ADMIN_CLIENT_SECRET` (enrollment + role
+   management) from the `platform-secrets` Secret, mounted as environment
+   variables. The admin secret is **least privilege**: the service account holds
+   only `manage-users` plus read-roles on the realm — never the bootstrap admin.
 4. If `LLM_API_KEY` is set, it is placed in the `llm-api-key` Secret, consumed
    **only** by the gateway.
 

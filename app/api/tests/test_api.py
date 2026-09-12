@@ -5,7 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agentnhi import Delegation, TokenRejected
-from app.api.main import app, get_store, get_verifier
+from app.api.authz import get_verifier
+from app.api.main import app, get_store
 from app.approvals import ApprovalStore
 
 ALICE = Delegation(user="alice", workload="spiffe://agent", audience="mcp-tools", roles=("support_rep",))
@@ -85,11 +86,25 @@ def test_create_and_verify_approval(client):
     assert resp.json() == {"valid": True}
 
 
+def test_decision_requires_a_manager_role(client):
+    created = client.post(
+        "/approvals", json={"tool": "refunds.issue", "args": {}}, headers={"Authorization": "Bearer x"}
+    ).json()
+    # alice is a support_rep, not a manager: the role gate refuses before the store.
+    resp = client.post(
+        f"/approvals/{created['id']}/decision",
+        json={"approved": True},
+        headers={"Authorization": "Bearer x"},
+    )
+    assert resp.status_code == 403
+
+
 def test_self_approval_is_refused(client):
     created = client.post(
         "/approvals", json={"tool": "refunds.issue", "args": {}}, headers={"Authorization": "Bearer x"}
     ).json()
-    # Alice (the requester) tries to approve her own request.
+    # A manager who is *also* the requester still may not approve their own request.
+    _as(Delegation(user="alice", workload="spiffe://agent", audience="mcp-tools", roles=("manager",)))
     resp = client.post(
         f"/approvals/{created['id']}/decision",
         json={"approved": True},

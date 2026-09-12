@@ -1,0 +1,72 @@
+"""Walk enrollment -> admin role grant -> server-side role enforcement.
+
+Runs inside the cluster (see scripts/demo-roles.sh), talking to the API by
+service name. Fast and deterministic: no LLM involved.
+"""
+from __future__ import annotations
+
+import json
+import secrets
+
+import httpx
+
+API = "http://api:8080"
+
+
+def login(username: str, password: str) -> dict:
+    resp = httpx.post(
+        f"{API}/auth/login", json={"username": username, "password": password}, timeout=10
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def bearer(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}"}
+
+
+username = f"carol-{secrets.token_hex(2)}"
+password = "password1"
+
+print(f"1. enroll {username} (self-service)")
+created = httpx.post(
+    f"{API}/enroll",
+    json={
+        "username": username,
+        "email": f"{username}@example.com",
+        "firstName": "Carol",
+        "lastName": "Candidate",
+        "password": password,
+    },
+    timeout=10,
+)
+created.raise_for_status()
+print("   ->", json.dumps(created.json()))
+
+print("2. sign in: a token, but no roles")
+carol = login(username, password)
+print("   -> roles:", carol["roles"])
+
+print("3. carol tries to administer users (must be refused)")
+resp = httpx.get(f"{API}/admin/users", headers=bearer(carol["access_token"]), timeout=10)
+print(f"   -> HTTP {resp.status_code}: {resp.json().get('detail')}")
+
+print("4. admin grants support_rep")
+admin = login("admin", "admin123")
+print("   -> admin roles:", admin["roles"])
+users = httpx.get(f"{API}/admin/users", headers=bearer(admin["access_token"]), timeout=10).json()
+carol_id = next(u["id"] for u in users if u["username"] == username)
+granted = httpx.post(
+    f"{API}/admin/users/{carol_id}/roles",
+    json={"role": "support_rep"},
+    headers=bearer(admin["access_token"]),
+    timeout=10,
+)
+granted.raise_for_status()
+print("   -> carol roles now:", granted.json()["roles"])
+
+print("5. carol signs in again and now carries the role")
+carol = login(username, password)
+print("   -> roles:", carol["roles"])
+
+print("\nEnrollment grants nothing; only an admin can authorize.")
