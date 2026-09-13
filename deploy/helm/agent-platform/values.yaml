@@ -85,6 +85,7 @@ services:
   api:
     enabled: true
     replicas: 2
+    autoscale: true
     port: 8080
     spiffe: false
     env:
@@ -113,6 +114,7 @@ services:
   tools:
     enabled: true
     replicas: 2
+    autoscale: true
     port: 8000
     spiffe: false
     env:
@@ -144,6 +146,7 @@ services:
   agent:
     enabled: true
     replicas: 2
+    autoscale: true
     port: 8081
     spiffe: true
     env:
@@ -170,6 +173,7 @@ services:
   gateway:
     enabled: true
     replicas: 2
+    autoscale: true
     port: 8443
     spiffe: true
     env:
@@ -220,6 +224,14 @@ observability_stack:
   grafana:
     enabled: true
     image: grafana/grafana:11.4.0
+
+# --- autoscaling -------------------------------------------------------------
+# Needs metrics-server in the cluster (the kind manifests install it).
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
 
 # --- disruption --------------------------------------------------------------
 # A PodDisruptionBudget per stateless service: a node drain must leave one

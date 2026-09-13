@@ -231,7 +231,30 @@ kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gatewa
   --timeout=240s >/dev/null
 ok "api, tools, agent, gateway, sandbox ready"
 
-say "9. GATE: the agent pod can fetch its SVID (no secrets involved)"
+say "9. autoscaling"
+# metrics-server serves the metrics API over TLS. Give it a serving cert the API
+# server can verify (rather than skipping verification), signed by a small CA we
+# generate here.
+TLS=$(mktemp -d)
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=metrics-server-ca" \
+  -keyout "$TLS/ca.key" -out "$TLS/ca.crt" 2>/dev/null
+openssl req -newkey rsa:2048 -nodes -subj "/CN=metrics-server.kube-system.svc" \
+  -keyout "$TLS/tls.key" -out "$TLS/tls.csr" 2>/dev/null
+openssl x509 -req -in "$TLS/tls.csr" -CA "$TLS/ca.crt" -CAkey "$TLS/ca.key" -CAcreateserial \
+  -days 3650 -out "$TLS/tls.crt" \
+  -extfile <(printf "subjectAltName=DNS:metrics-server.kube-system.svc,DNS:metrics-server.kube-system.svc.cluster.local") 2>/dev/null
+kubectl -n kube-system create secret tls metrics-server-tls \
+  --cert="$TLS/tls.crt" --key="$TLS/tls.key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl apply -f "$MANIFESTS/autoscaling/metrics-server.yaml" >/dev/null
+# Pin the APIService to the generated CA (never skip TLS verification).
+kubectl patch apiservice v1beta1.metrics.k8s.io --type=merge \
+  -p "{\"spec\":{\"insecureSkipTLSVerify\":false,\"caBundle\":\"$(openssl base64 -A -in "$TLS/ca.crt")\"}}" >/dev/null
+rm -rf "$TLS"
+kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s >/dev/null
+kubectl apply -f "$MANIFESTS/autoscaling/hpa.yaml" >/dev/null
+ok "metrics-server + HPAs ready (api/tools/agent/gateway/opa scale on CPU)"
+
+say "10. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""
 for _ in $(seq 1 12); do
   OUT=$(kubectl -n $NS exec deploy/agent -- python -c "

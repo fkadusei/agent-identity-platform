@@ -97,6 +97,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       nodes and `scripts/ha-check.sh` proves an eviction is survivable. SPIRE,
       Keycloak, Postgres and the sandbox are documented as single-replica, and
       why (`docs/ha.md`)
+- [x] **Autoscaling** — api/tools/agent/gateway/opa scale 2→5 on CPU
+      utilization; metrics-server in-cluster (`docs/autoscaling.md`)
 - The tools' in-memory simulator state resets on restart (fine for the demo).
 
 ## Phase 3 — Deploy and adoption
