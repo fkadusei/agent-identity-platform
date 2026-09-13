@@ -75,6 +75,9 @@ export const resumeTask = (thread_id: string, approved: boolean) =>
 
 export const listApprovals = () => request("/approvals?status=pending");
 
+// All approvals (any status) — used to watch a held run flip to decided.
+export const getAllApprovals = () => request("/approvals");
+
 export const decideApproval = (id: string, approved: boolean, token: string, note = "") =>
   request(`/approvals/${id}/decision`, {
     method: "POST",

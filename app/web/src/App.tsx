@@ -5,6 +5,7 @@ import {
   decideApproval,
   deleteUser,
   enroll,
+  getAllApprovals,
   getAudit,
   grantRole,
   listApprovals,
@@ -23,15 +24,29 @@ type Tab = "console" | "approvals" | "audit" | "admin";
 // The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
 const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
 
+// "spiffe://acme.com/ns/agent-platform/sa/agent" -> "sa/agent" (title has the rest).
+const shortId = (id: string) => id.split("/").filter(Boolean).slice(-2).join("/");
+
+const STATUS_LABEL: Record<string, string> = {
+  ok: "allowed",
+  approval_required: "held for approval",
+  denied: "denied",
+  error: "error",
+};
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [tab, setTab] = useState<Tab>("console");
   const [signupEnabled, setSignupEnabled] = useState(false);
+  const [agentId, setAgentId] = useState("");
   const [mode, setMode] = useState<"login" | "enroll">("login");
 
   useEffect(() => {
     authConfig()
-      .then((c) => setSignupEnabled(c.signup_enabled))
+      .then((c) => {
+        setSignupEnabled(c.signup_enabled);
+        setAgentId(c.agent_id ?? "");
+      })
       .catch(() => {});
   }, []);
 
@@ -93,8 +108,12 @@ export default function App() {
           </nav>
 
           <main>
-            {tab === "console" && <Console session={session} />}
-            {tab === "approvals" && <Approvals session={session} canApprove={canApprove} />}
+            {tab === "console" && (
+              <Console session={session} agentId={agentId} canApprove={canApprove} />
+            )}
+            {tab === "approvals" && (
+              <Approvals session={session} agentId={agentId} canApprove={canApprove} />
+            )}
             {tab === "audit" && <Audit />}
             {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} />}
           </main>
@@ -232,8 +251,17 @@ function Enroll({ onDone, onCancel }: { onDone: () => void; onCancel: () => void
   );
 }
 
-function Console({ session }: { session: Session }) {
+function Console({
+  session,
+  agentId,
+  canApprove,
+}: {
+  session: Session;
+  agentId: string;
+  canApprove: boolean;
+}) {
   const [task, setTask] = useState("Issue a refund of 200 dollars for order o-1001");
+  const [asked, setAsked] = useState("");
   const [outcome, setOutcome] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -244,6 +272,7 @@ function Console({ session }: { session: Session }) {
     setBusy(true);
     setError("");
     setOutcome(null);
+    setAsked(task);
     try {
       setOutcome(await runTask(task, session.token));
     } catch (e) {
@@ -253,11 +282,31 @@ function Console({ session }: { session: Session }) {
     }
   };
 
-  const resume = async (approved: boolean) => {
+  // An approver decides and the run continues in one step.
+  const decide = async (approved: boolean) => {
+    setBusy(true);
+    setError("");
     try {
+      await decideApproval(outcome.approval_id, approved, session.token);
       setOutcome(await resumeTask(outcome.thread_id, approved));
     } catch (e) {
       setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // The requester continues once someone else has approved. Safe to press: if
+  // the approval is still pending, policy simply holds the run again.
+  const resume = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      setOutcome(await resumeTask(outcome.thread_id, true));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -276,27 +325,161 @@ function Console({ session }: { session: Session }) {
       </button>
       {error && <div className="error">{error}</div>}
       {outcome && (
-        <div className="card">
-          <div className={`status ${outcome.status}`}>{outcome.status}</div>
-          {outcome.tool && <p>tool: <code>{outcome.tool}</code></p>}
-          {outcome.reason && <p className="reason">{outcome.reason}</p>}
-          {outcome.status === "approval_required" && (
-            <div className="approval">
-              <p>
-                Held for approval <code>{outcome.approval_id}</code> — go to the
-                Approvals tab.
-              </p>
-              <button onClick={() => resume(true)}>Resume (approved)</button>
-            </div>
-          )}
-          {outcome.result && <pre>{JSON.stringify(outcome.result, null, 2)}</pre>}
-        </div>
+        <ResultCard
+          asked={asked}
+          session={session}
+          agentId={agentId}
+          outcome={outcome}
+          busy={busy}
+          canApprove={canApprove}
+          onDecide={decide}
+          onResume={resume}
+        />
       )}
     </section>
   );
 }
 
-function Approvals({ session, canApprove }: { session: Session; canApprove: boolean }) {
+function ResultCard({
+  asked,
+  session,
+  agentId,
+  outcome,
+  busy,
+  canApprove,
+  onDecide,
+  onResume,
+}: {
+  asked: string;
+  session: Session;
+  agentId: string;
+  outcome: any;
+  busy: boolean;
+  canApprove: boolean;
+  onDecide: (approved: boolean) => void;
+  onResume: () => void;
+}) {
+  const held = outcome.status === "approval_required";
+  const [decided, setDecided] = useState<string | null>(null);
+
+  // While held, watch the approval so the requester's card updates the moment
+  // someone else decides (e.g. a manager in another tab).
+  useEffect(() => {
+    if (!held) return;
+    const tick = async () => {
+      try {
+        const all = await getAllApprovals();
+        const mine = all.find((a: any) => a.id === outcome.approval_id);
+        if (mine && mine.status !== "pending") setDecided(mine.status);
+      } catch {
+        /* transient; try again next tick */
+      }
+    };
+    const t = setInterval(tick, 4000);
+    return () => clearInterval(t);
+  }, [held, outcome.approval_id]);
+
+  return (
+    <div className="card result">
+      <div className={`status ${outcome.status}`}>
+        {STATUS_LABEL[outcome.status] ?? outcome.status}
+      </div>
+
+      <h3>What just happened</h3>
+      <ol className="steps">
+        <li>
+          You asked: <span className="q">“{asked}”</span>
+        </li>
+        <li>
+          The agent authenticated as{" "}
+          <code title={agentId}>{shortId(agentId) || "agent"}</code> and exchanged your
+          token, acting for <b>{session.user}</b>
+        </li>
+        {outcome.tool && (
+          <li>
+            It called <code>{outcome.tool}</code>
+          </li>
+        )}
+        <li>
+          Policy decided <b>{STATUS_LABEL[outcome.status] ?? outcome.status}</b>
+          {outcome.reason && <> — {outcome.reason}</>}
+        </li>
+      </ol>
+
+      <div className="chain" title={agentId}>
+        <span className="node">agent {shortId(agentId) || "agent"}</span>
+        <span className="arrow">→</span>
+        <span className="node">user {session.user}</span>
+        {outcome.tool && (
+          <>
+            <span className="arrow">→</span>
+            <span className="node">tool {outcome.tool}</span>
+          </>
+        )}
+      </div>
+
+      {held && (
+        <div className="approval">
+          {decided === "approved" && !canApprove ? (
+            <>
+              <p>
+                Approved by a manager. <b>Resume</b> to let the agent finish.
+              </p>
+              <button disabled={busy} onClick={onResume}>
+                Resume now
+              </button>
+            </>
+          ) : decided === "denied" && !canApprove ? (
+            <p className="reason">
+              Denied by a manager — the agent will not perform this action.
+            </p>
+          ) : canApprove ? (
+            <div className="row">
+              <span>
+                Held for approval <code>{outcome.approval_id}</code> — you can decide it.
+              </span>
+              <div>
+                <button disabled={busy} onClick={() => onDecide(true)}>
+                  Approve
+                </button>
+                <button disabled={busy} onClick={() => onDecide(false)}>
+                  Deny
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="row">
+              <span>
+                Held for approval <code>{outcome.approval_id}</code> — a manager must
+                decide it in the Approvals tab.
+              </span>
+              <button disabled={busy} onClick={onResume}>
+                Resume when approved
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {!held && outcome.result && Object.keys(outcome.result).length > 0 && (
+        <>
+          <h3>Result</h3>
+          <pre>{JSON.stringify(outcome.result, null, 2)}</pre>
+        </>
+      )}
+    </div>
+  );
+}
+
+function Approvals({
+  session,
+  agentId,
+  canApprove,
+}: {
+  session: Session;
+  agentId: string;
+  canApprove: boolean;
+}) {
   const [items, setItems] = useState<any[]>([]);
   const [error, setError] = useState("");
 
@@ -328,7 +511,8 @@ function Approvals({ session, canApprove }: { session: Session; canApprove: bool
       <h2>Approval queue</h2>
       {!canApprove && (
         <p className="hint">
-          Deciding requires the <b>manager</b> (or platform_admin) role.
+          Deciding requires the <b>manager</b> (or platform_admin) role. Approving here
+          records the decision; the requester resumes the run from their console.
         </p>
       )}
       {error && <div className="error">{error}</div>}
@@ -338,6 +522,13 @@ function Approvals({ session, canApprove }: { session: Session; canApprove: bool
           <div className="row">
             <b>{a.tool}</b>
             <code>{a.id}</code>
+          </div>
+          <div className="chain" title={a.agent}>
+            <span className="node">agent {shortId(a.agent || agentId) || "agent"}</span>
+            <span className="arrow">→</span>
+            <span className="node">user {a.user}</span>
+            <span className="arrow">→</span>
+            <span className="node">tool {a.tool}</span>
           </div>
           <p className="reason">{a.reason}</p>
           <pre>{JSON.stringify(a.args, null, 2)}</pre>
@@ -539,7 +730,7 @@ function Audit() {
           <div className="event" key={i}>
             <code className="ev">{e.event}</code>
             <span className="meta">
-              {e.spiffe_id && <>agent <b>{short(e.spiffe_id)}</b> · </>}
+              {e.spiffe_id && <>agent <b>{shortId(e.spiffe_id)}</b> · </>}
               {e.sub && <>user <b>{e.sub}</b> · </>}
               {e.tool && <>tool <code>{e.tool}</code> · </>}
               {e.decision && <>decision <b>{e.decision}</b></>}
@@ -551,5 +742,3 @@ function Audit() {
     </section>
   );
 }
-
-const short = (id: string) => id.split("/").pop();

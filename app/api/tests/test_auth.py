@@ -14,9 +14,11 @@ def client():
 
 def test_auth_config_reflects_the_toggle(client, monkeypatch):
     monkeypatch.setenv("SIGNUP_ENABLED", "1")
-    assert client.get("/auth/config").json() == {"signup_enabled": True}
+    cfg = client.get("/auth/config").json()
+    assert cfg["signup_enabled"] is True
+    assert cfg["agent_id"].startswith("spiffe://")
     monkeypatch.setenv("SIGNUP_ENABLED", "0")
-    assert client.get("/auth/config").json() == {"signup_enabled": False}
+    assert client.get("/auth/config").json()["signup_enabled"] is False
 
 
 def test_login_requires_credentials(client):

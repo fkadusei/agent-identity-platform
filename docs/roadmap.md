@@ -67,15 +67,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       admin user management via a least-privilege Keycloak service account, real
       login, and server-side role enforcement (`docs/enrollment-and-roles.md`,
       ADR-0011)
+- [x] **UI polish** — a per-run "what just happened" summary, the delegation
+      chain (agent → user → tool), and inline approve/deny from the result card
+      (with the requester resuming once a manager decides)
 - [ ] Operator user guide
 - [ ] **Gate:** threat model addressed; dashboards live; secret audit clean
 
 ## Backlog / known gaps
 
-- **UI polish** (owner feedback): the console/approvals flow should be more
-  intuitive — a clearer "what just happened" summary per run, inline approval
-  actions from the result card, and surfacing the delegation chain
-  (agent → user → tool) alongside each result.
 - TLS for the remaining in-cluster hops (only agent↔gateway is mTLS today).
 - Per-agent rate and cost limits on the gateway.
 - The tools' in-memory simulator state resets on restart (fine for the demo).
