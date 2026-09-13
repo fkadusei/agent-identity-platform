@@ -1,10 +1,10 @@
-# Release: build, push and sign the images and the policy bundle on a tag.
+# Release: build, push and sign the images, the policy bundle, and the chart.
 #
 # Signing is **keyless** (Sigstore): the workflow's OIDC identity is exchanged for
 # a short-lived Fulcio certificate and the signature is recorded in Rekor. There
 # is no signing key to manage or leak (ADR-0010). The admission policy in
 # deploy/kind/manifests/supply-chain/ verifies these signatures before admitting
-# a pod.
+# a pod, and the deploy workflow verifies them before deploying.
 name: release
 
 on:
@@ -14,7 +14,7 @@ on:
 permissions:
   contents: read
   id-token: write   # keyless signing (Fulcio/Rekor)
-  packages: write   # push images to GHCR
+  packages: write   # push images and the chart to GHCR
 
 jobs:
   sign:
@@ -22,6 +22,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+        with:
+          version: v3.16.3
 
       - name: log in to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
@@ -40,3 +43,12 @@ jobs:
         run: |
           ./scripts/build-bundle.sh
           COSIGN_KEYLESS=1 ./scripts/sign-bundle.sh
+
+      - name: publish the Helm chart (OCI)
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          helm registry login ghcr.io -u "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}"
+          helm package deploy/helm/agent-platform \
+            --version "$version" --app-version "$version" -d dist
+          helm push "dist/agent-platform-$version.tgz" \
+            "oci://ghcr.io/${GITHUB_REPOSITORY,,}/charts"

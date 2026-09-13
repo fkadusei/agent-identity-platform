@@ -89,6 +89,7 @@ Then read, in order:
 | Security | [`SECURITY.md`](SECURITY.md) · [`docs/threat-model.md`](docs/threat-model.md) · [`docs/data-handling.md`](docs/data-handling.md) |
 | Resuming work | [`HANDOFF.md`](HANDOFF.md) · [`docs/roadmap.md`](docs/roadmap.md) |
 | Operators | [`docs/operator-guide.md`](docs/operator-guide.md) · [`docs/secrets.md`](docs/secrets.md) · [`docs/policy-lifecycle.md`](docs/policy-lifecycle.md) |
+| Platform engineers | [`docs/ci-cd.md`](docs/ci-cd.md) · [`deploy/helm/agent-platform/`](deploy/helm/agent-platform/) |
 | Users (plain language) | `docs/guides/` (added as features land) |
 
 ## Repository layout
