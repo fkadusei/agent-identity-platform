@@ -89,7 +89,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 ## Phase 3 — Deploy and adoption
 
-- [ ] Cloud-agnostic Helm chart + values; ingress/TLS; managed data stores
+- [x] Cloud-agnostic **Helm chart + values**; ingress/TLS via values
+      (`deploy/helm/agent-platform`); SPIRE and Keycloak are documented
+      prerequisites, the policy bundle a signed build artifact
+- [ ] Managed data stores (approvals and agent run state are in-memory today)
 - [ ] CI/CD with approval gates
 - [ ] Real sandbox integrations behind the existing tool interfaces
 - [ ] Finalize `docs/real-world-adoption.md` and the runbook

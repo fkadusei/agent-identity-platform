@@ -1,0 +1,191 @@
+# =============================================================================
+# agent-platform values.
+#
+# The chart deploys the platform's own workloads (api, tools, agent, gateway,
+# OPA, and — optionally — the observability stack). Two things are prerequisites
+# and are NOT templated here, because every environment provides them
+# differently:
+#
+#   * SPIRE — a SPIRE agent must be running on each node, exposing the Workload
+#     API socket and the trust bundle (see templates/../README.md).
+#   * Keycloak — the OIDC realm (see the repo's deploy/kind/manifests/keycloak).
+#
+# Point the values at wherever those live.
+# =============================================================================
+
+# Images are <registry>/<repository>/<name>:<tag>. Leave registry empty to use
+# locally loaded images (kind); set it to push to a real registry (e.g.
+# ghcr.io/fkadusei).
+image:
+  registry: ""
+  repository: agent-platform
+  tag: demo
+  pullPolicy: IfNotPresent
+
+# --- identity (SPIRE) --------------------------------------------------------
+spire:
+  # Paths as seen *inside* the pod.
+  socketPath: unix:///run/spire/sockets/agent.sock
+  bundlePath: /run/spire/bundle/bundle.crt
+  # Where the node exposes the Workload API socket (hostPath on kind).
+  agentSocketHostPath: /run/spire/sockets
+  # ConfigMap holding the SPIRE trust bundle (ca.crt).
+  bundleConfigMap: spire-bundle
+
+# --- identity (Keycloak) -----------------------------------------------------
+auth:
+  issuer: http://keycloak:8080/realms/agent-platform
+  audience: mcp-tools
+  agentSpiffeId: spiffe://acme.com/ns/agent-platform/sa/agent
+  gatewaySpiffeId: spiffe://acme.com/ns/agent-platform/sa/gateway
+  # Existing Secret with the client secrets (External Secrets syncs it).
+  existingSecret: platform-secrets
+  # Self-service signup toggle ("0" makes enrollment admin-only).
+  signupEnabled: "1"
+
+# --- the model gateway -------------------------------------------------------
+llm:
+  gatewayUrl: https://gateway:8443
+  provider: ollama
+  ollamaUrl: http://host.docker.internal:11434
+  ollamaModel: llama3.2:3b
+  # Existing Secret with LLM_API_KEY (only the gateway consumes it).
+  existingSecret: llm-api-key
+
+observability:
+  otelEndpoint: http://otel-collector:4318
+
+# Default resource envelope for every workload (override per service).
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# --- the four application services ------------------------------------------
+# Each entry renders a Deployment + Service. `spiffe: true` adds the Workload API
+# socket and trust bundle mounts (the agent and gateway need them).
+services:
+  api:
+    enabled: true
+    replicas: 1
+    port: 8080
+    spiffe: false
+    env:
+      - name: KC_ISSUER
+        value: http://keycloak:8080/realms/agent-platform
+      - name: TOKEN_AUDIENCE
+        value: mcp-tools
+      - name: AGENT_URL
+        value: http://agent:8081
+      - name: PORTAL_CLIENT_ID
+        value: portal
+      - name: ADMIN_CLIENT_ID
+        value: platform-admin
+      - name: KEYCLOAK_ADMIN_URL
+        value: http://keycloak:8080/admin/realms/agent-platform
+      - name: SIGNUP_ENABLED
+        value: "1"
+      - name: PORTAL_SECRET
+        valueFrom:
+          secretKeyRef: { name: platform-secrets, key: PORTAL_SECRET }
+      - name: ADMIN_CLIENT_SECRET
+        valueFrom:
+          secretKeyRef: { name: platform-secrets, key: ADMIN_CLIENT_SECRET }
+  tools:
+    enabled: true
+    replicas: 1
+    port: 8000
+    spiffe: false
+    env:
+      - name: KC_ISSUER
+        value: http://keycloak:8080/realms/agent-platform
+      - name: TOKEN_AUDIENCE
+        value: mcp-tools
+      - name: TRUSTED_WORKLOAD
+        value: spiffe://acme.com/ns/agent-platform/sa/agent
+      - name: OPA_URL
+        value: http://opa:8181
+      - name: APPROVALS_URL
+        value: http://api:8080
+      - name: AUDIT_URL
+        value: http://api:8080
+  agent:
+    enabled: true
+    replicas: 1
+    port: 8081
+    spiffe: true
+    env:
+      - name: KC_ISSUER
+        value: http://keycloak:8080/realms/agent-platform
+      - name: AGENT_SPIFFE_ID
+        value: spiffe://acme.com/ns/agent-platform/sa/agent
+      - name: TOOL_SERVER_URL
+        value: http://tools:8000
+      - name: APPROVALS_URL
+        value: http://api:8080
+      - name: AUDIT_URL
+        value: http://api:8080
+      - name: LLM_GATEWAY_URL
+        value: https://gateway:8443
+      - name: DEMO_CLI_SECRET
+        valueFrom:
+          secretKeyRef: { name: platform-secrets, key: DEMO_CLI_SECRET }
+      - name: MANAGER_CLI_SECRET
+        valueFrom:
+          secretKeyRef: { name: platform-secrets, key: MANAGER_CLI_SECRET }
+  gateway:
+    enabled: true
+    replicas: 1
+    port: 8443
+    spiffe: true
+    env:
+      - name: PORT
+        value: "8443"
+      - name: LLM_PROVIDER
+        value: ollama
+      - name: OLLAMA_URL
+        value: http://host.docker.internal:11434
+      - name: OLLAMA_MODEL
+        value: llama3.2:3b
+      - name: LLM_API_KEY
+        valueFrom:
+          secretKeyRef: { name: llm-api-key, key: LLM_API_KEY, optional: true }
+
+# --- policy ------------------------------------------------------------------
+opa:
+  enabled: true
+  image: openpolicyagent/opa:0.68.0
+  # Existing ConfigMap holding the versioned bundle (authz.rego + data.json +
+  # .manifest). Build it with scripts/build-bundle.sh; in production it is
+  # signed (ADR-0010). The revision is stamped into every decision.
+  bundleConfigMap: opa-bundle
+
+# --- observability -----------------------------------------------------------
+observability_stack:
+  enabled: true
+  otelCollector:
+    enabled: true
+    image: otel/opentelemetry-collector-contrib:0.116.1
+  jaeger:
+    enabled: true
+    image: jaegertracing/all-in-one:1.62.0
+  prometheus:
+    enabled: true
+    image: prom/prometheus:v3.1.0
+  grafana:
+    enabled: true
+    image: grafana/grafana:11.4.0
+
+# --- ingress -----------------------------------------------------------------
+ingress:
+  enabled: false
+  className: nginx
+  host: agent-platform.example.com
+  path: /
+  tls:
+    enabled: true
+    secretName: agent-platform-tls
+  annotations: {}

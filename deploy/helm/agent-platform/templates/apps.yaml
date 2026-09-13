@@ -1,0 +1,104 @@
+{{- /*
+The application services: one Deployment + Service per entry in .Values.services.
+The agent and gateway additionally mount the SPIFFE Workload API socket and the
+trust bundle.
+*/ -}}
+{{- range $name, $svc := .Values.services }}
+{{- if $svc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    {{- include "agent-platform.labels" $ | nindent 4 }}
+spec:
+  replicas: {{ $svc.replicas | default 1 }}
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        app: {{ $name }}
+    spec:
+      {{- if $svc.spiffe }}
+      serviceAccountName: {{ $name }}
+      {{- end }}
+      securityContext:
+        {{- include "agent-platform.podSecurityContext" $ | nindent 8 }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "agent-platform.image" (dict "root" $ "name" $name) }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          env:
+            {{- include "agent-platform.commonEnv" $ | nindent 12 }}
+            {{- if $svc.spiffe }}
+            - name: SPIFFE_SOCKET
+              value: {{ $.Values.spire.socketPath | quote }}
+            - name: SPIFFE_BUNDLE
+              value: {{ $.Values.spire.bundlePath | quote }}
+            {{- end }}
+            {{- with $svc.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ $svc.port }}
+          securityContext:
+            {{- include "agent-platform.containerSecurityContext" $ | nindent 12 }}
+          volumeMounts:
+            {{- if $svc.spiffe }}
+            - name: spiffe-workload-api
+              mountPath: /run/spire/sockets
+              readOnly: true
+            - name: spire-bundle
+              mountPath: /run/spire/bundle
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            {{- if eq $name "gateway" }}
+            # mTLS: an HTTP probe from the kubelet has no client certificate.
+            tcpSocket:
+              port: {{ $svc.port }}
+            {{- else }}
+            httpGet:
+              path: /healthz
+              port: {{ $svc.port }}
+            {{- end }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml $.Values.resources | nindent 12 }}
+      volumes:
+        {{- if $svc.spiffe }}
+        - name: spiffe-workload-api
+          hostPath:
+            path: {{ $.Values.spire.agentSocketHostPath }}
+            type: Directory
+        - name: spire-bundle
+          configMap:
+            name: {{ $.Values.spire.bundleConfigMap }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    {{- include "agent-platform.labels" $ | nindent 4 }}
+spec:
+  selector:
+    app: {{ $name }}
+  ports:
+    - name: http
+      port: {{ $svc.port }}
+      targetPort: {{ $svc.port }}
+{{- end }}
+{{- end }}

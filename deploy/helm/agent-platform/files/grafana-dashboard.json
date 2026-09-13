@@ -1,0 +1,52 @@
+{
+  "title": "Agent Identity Platform",
+  "uid": "agent-platform",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Logins by result",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "sum by (result) (rate(agent_platform_logins_total[5m]))", "legendFormat": "{{result}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Policy decisions (from the audit stream)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        { "expr": "sum by (event) (rate(agent_platform_audit_events_total{event=~\"tool.*\"}[5m]))", "legendFormat": "{{event}}" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Approvals pending",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "targets": [ { "expr": "agent_platform_approvals_pending" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Requests by route",
+      "gridPos": { "h": 8, "w": 16, "x": 8, "y": 8 },
+      "targets": [
+        { "expr": "sum by (route) (rate(agent_platform_http_requests_total[5m]))", "legendFormat": "{{route}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Spans exported",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [ { "expr": "sum(rate(otelcol_exporter_sent_spans[5m]))" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Failed span exports",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [ { "expr": "sum(rate(otelcol_exporter_send_failed_spans[5m]))" } ]
+    }
+  ]
+}
