@@ -87,8 +87,6 @@ addressed (T9 tenancy included). Next, pick from the open backlog in
 [`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
 
 - **HA** — SPIRE, Keycloak, OPA, Postgres and the sandbox are single-replica demos.
-- **Durable limits** — the gateway's rate/budget counters are in-memory
-  (single-replica); move them to Postgres for HA.
 - **Tenancy depth** — approvals/run checkpoints are keyed by user/agent, not
   tenant; add a tenant column if those are ever shared across tenants.
 - **SPIFFE-native transport** — the mesh uses Linkerd's own identity; extending

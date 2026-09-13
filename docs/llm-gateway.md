@@ -52,13 +52,26 @@ kubectl -n agent-platform logs deploy/gateway | grep llm.limited
 Unit tests cover the limiter directly (`app/gateway/tests/test_limits.py`) and the
 429 path (`app/gateway/tests/test_gateway.py`).
 
+## Durable counters
+
+The counters live in Postgres when a database is configured (the same
+`DATABASE_URL`/`PG*` as the rest of the platform), and in memory otherwise:
+
+| Backend | When | Survives a restart | Shared across replicas |
+| --- | --- | --- | --- |
+| `PostgresLimiter` | a database is configured | yes | yes |
+| `Limiter` (in-memory) | no database | no | no |
+
+The rate window is one row per `(caller, minute)` and the budget one row per
+`(caller, day)`, both upserted atomically — so concurrent calls cannot both see a
+stale count. Old rows are cleaned up opportunistically.
+
 ## Limitations
 
-- **In-memory, single-replica.** The counters live in the gateway process, so a
-  restart resets them and replicas do not share state. For HA, move them to the
-  same Postgres the rest of the platform uses (see
-  [`data-stores.md`](data-stores.md)) — the `Limiter` interface is the seam.
 - **Estimate, not metering.** The token count is approximate; a provider that
   reports `usage` is exact for hosted models, Ollama is estimated.
-- **One gateway, one budget per caller.** Per-tenant or per-tool budgets would
-  key on more than the SPIFFE ID.
+- **One budget per caller.** Per-tenant or per-tool budgets would key on more
+  than the SPIFFE ID.
+- **A small over-shoot is possible.** The budget check reads, then the call
+  charges; two calls in flight together can slightly exceed the budget. It is a
+  spend guard, not an accounting ledger.

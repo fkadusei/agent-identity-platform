@@ -88,8 +88,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       (Linkerd) for every other in-cluster hop including Keycloak, OPA and the
       observability stack (`docs/tls.md`, `scripts/tls-check.sh`)
 - [x] **Per-agent rate and cost limits** on the LLM gateway — keyed on the
-      caller's JWT-SVID-proven SPIFFE ID; 429 + `Retry-After` on exceed
-      (`docs/llm-gateway.md`)
+      caller's JWT-SVID-proven SPIFFE ID; 429 + `Retry-After` on exceed; counters
+      durable in Postgres when a database is configured (`docs/llm-gateway.md`)
 - The tools' in-memory simulator state resets on restart (fine for the demo).
 
 ## Phase 3 — Deploy and adoption
