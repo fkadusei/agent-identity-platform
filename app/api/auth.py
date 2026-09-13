@@ -26,6 +26,11 @@ router = APIRouter()
 # (default-roles-…, offline_access, uma_authorization) that are not ours.
 PLATFORM_ROLES = ("support_rep", "manager", "privacy", "platform_admin")
 
+# The agent's SPIFFE ID, surfaced so the UI can show the real delegation chain.
+AGENT_SPIFFE_ID = os.environ.get(
+    "AGENT_SPIFFE_ID", "spiffe://acme.com/ns/agent-platform/sa/agent"
+)
+
 
 def signup_enabled() -> bool:
     return os.environ.get("SIGNUP_ENABLED", "1").lower() not in ("0", "false", "no", "")
@@ -38,8 +43,11 @@ def platform_roles(roles) -> list[str]:
 
 @router.get("/auth/config")
 def auth_config() -> dict:
-    """Lets the UI show or hide the Enroll page."""
-    return {"signup_enabled": signup_enabled()}
+    """Lets the UI show or hide the Enroll page, and name the acting agent."""
+    return {
+        "signup_enabled": signup_enabled(),
+        "agent_id": AGENT_SPIFFE_ID,
+    }
 
 
 @router.post("/auth/login")
