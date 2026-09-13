@@ -99,6 +99,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       why (`docs/ha.md`)
 - [x] **Autoscaling** — api/tools/agent/gateway/opa scale 2→5 on CPU
       utilization; metrics-server in-cluster (`docs/autoscaling.md`)
+- [x] **Tenancy depth** — approvals are scoped by tenant (create, list,
+      decide, verify), keyed on the caller's identity; a manager sees only their
+      own tenant's queue (`docs/tenancy.md`)
 - The tools' in-memory simulator state resets on restart (fine for the demo).
 
 ## Phase 3 — Deploy and adoption

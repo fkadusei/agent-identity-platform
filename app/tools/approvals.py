@@ -19,7 +19,9 @@ class ApprovalsClient:
         self._client = client
         self._timeout = timeout
 
-    def verify(self, approval_id: str, *, tool: str, args: dict, user: str, agent: str) -> bool:
+    def verify(
+        self, approval_id: str, *, tool: str, args: dict, user: str, agent: str, tenant: str
+    ) -> bool:
         """Return True only if the approvals service confirms a matching approval."""
         payload = {
             "approval_id": approval_id,
@@ -27,6 +29,7 @@ class ApprovalsClient:
             "args": args,
             "user": user,
             "agent": agent,
+            "tenant": tenant,
         }
         url = f"{self._base_url}/approvals/verify"
         try:

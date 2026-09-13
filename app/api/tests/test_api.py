@@ -115,6 +115,33 @@ def test_self_approval_is_refused(client):
 
 def test_pending_queue(client):
     client.post("/approvals", json={"tool": "refunds.issue", "args": {}}, headers={"Authorization": "Bearer x"})
-    pending = client.get("/approvals?status=pending").json()
+    # The queue is tenant-scoped, so it needs the caller's token.
+    pending = client.get(
+        "/approvals?status=pending", headers={"Authorization": "Bearer x"}
+    ).json()
     assert len(pending) == 1
     assert pending[0]["status"] == "pending"
+
+
+def test_the_queue_is_scoped_to_the_callers_tenant(client):
+    client.post("/approvals", json={"tool": "refunds.issue", "args": {}}, headers={"Authorization": "Bearer x"})
+    # A session in another tenant sees nothing.
+    _as(Delegation(user="grace", workload="spiffe://agent", audience="mcp-tools",
+                   roles=("manager",), tenant="globex"))
+    resp = client.get("/approvals", headers={"Authorization": "Bearer y"})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_a_manager_cannot_decide_another_tenants_approval(client):
+    created = client.post(
+        "/approvals", json={"tool": "refunds.issue", "args": {}}, headers={"Authorization": "Bearer x"}
+    ).json()
+    _as(Delegation(user="grace", workload="spiffe://agent", audience="mcp-tools",
+                   roles=("manager",), tenant="globex"))
+    resp = client.post(
+        f"/approvals/{created['id']}/decision",
+        json={"approved": True},
+        headers={"Authorization": "Bearer y"},
+    )
+    assert resp.status_code == 409  # not found in this tenant

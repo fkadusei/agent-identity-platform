@@ -369,7 +369,7 @@ function ResultCard({
     if (!held) return;
     const tick = async () => {
       try {
-        const all = await getAllApprovals();
+        const all = await getAllApprovals(session.token);
         const mine = all.find((a: any) => a.id === outcome.approval_id);
         if (mine && mine.status !== "pending") setDecided(mine.status);
       } catch {
@@ -378,7 +378,7 @@ function ResultCard({
     };
     const t = setInterval(tick, 4000);
     return () => clearInterval(t);
-  }, [held, outcome.approval_id]);
+  }, [held, outcome.approval_id, session.token]);
 
   return (
     <div className="card result">
@@ -486,7 +486,7 @@ function Approvals({
 
   const refresh = useCallback(async () => {
     try {
-      setItems(await listApprovals());
+      setItems(await listApprovals(session.token));
     } catch (e) {
       setError(String(e));
     }
