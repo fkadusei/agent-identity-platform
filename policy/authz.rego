@@ -58,6 +58,10 @@ has_role(role) if role in input.roles
 # A deny condition: the workload is not the trusted agent.
 deny if not is_trusted
 
+# A deny condition: the caller carries no tenant, so nothing can be scoped to
+# them. Fail closed — an unscoped identity gets no data.
+deny if not input.tenant
+
 # A deny condition: bulk actions are never permitted.
 deny if startswith(input.tool, "bulk.")
 
@@ -128,6 +132,11 @@ decision := "allow" if {
 default reason := "denied by default: no rule permitted this action"
 
 reason := "denied: untrusted workload identity" if not is_trusted
+
+reason := "denied: caller has no tenant (unscoped identity)" if {
+  is_trusted
+  not input.tenant
+}
 
 reason := "denied: bulk actions are not permitted" if startswith(input.tool, "bulk.")
 

@@ -84,13 +84,16 @@ by policy.
 
 ## T9 — Cross-tenant data leakage
 
-**Status: not implemented — the reference deployment is single-tenant.**
-Records carry a `tenant` field, but there is **no** per-tenant scoping in policy
-or in the tools, and no two-tenant test. Serving multiple tenants would require a
-tenant claim on the token, enforcement in policy *and* the tools, and a test that
-tenant B's records are unreachable from tenant A's session. Tracked in
-[`roadmap.md`](roadmap.md) — this is the one threat the reference platform does
-**not** demonstrate.
+**Threat.** A user (or the agent) accesses another tenant's data.
+**Mitigation.** The tenant is an **identity** attribute, mapped into the token by
+the realm and surfaced as `Delegation.tenant`. Policy denies any caller without a
+tenant (fail closed); every data accessor takes the tenant and returns nothing
+outside it, so another tenant's record is indistinguishable from one that does
+not exist; and a signup cannot choose its own tenant. See
+[`tenancy.md`](tenancy.md).
+**Test.** `scripts/tenancy-tests.sh` walks claim → policy → data, and unit tests
+cover each layer (`app/tests/test_simulators.py`,
+`app/tools/tests/test_enforcement.py`, `app/sandbox/tests/test_sandbox.py`).
 
 ## T10 — Supply chain and CI/CD compromise
 
@@ -105,9 +108,6 @@ policy bundle signed keyless (ADR-0010).
 
 ## Out of scope (documented, not hidden)
 
-- **Multi-tenant isolation (T9)** — the reference serves a single tenant; there
-  is no per-tenant scoping in policy or the tools, and no test. Required before
-  serving more than one tenant.
 - Hardware-backed attestation (TPM/TEE) for nodes.
 - Cross-organization identity federation.
 - Insider with legitimate repository write access (mitigated by branch protection

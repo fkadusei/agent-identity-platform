@@ -7,6 +7,8 @@ granted, so an admin cannot mint an arbitrary role.
 """
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from agentnhi import audit
@@ -54,6 +56,9 @@ def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> d
             password=password,
             first_name=(body.get("firstName") or "").strip(),
             last_name=(body.get("lastName") or "").strip(),
+            # The admin names the tenant; it defaults to the platform's.
+            tenant=(body.get("tenant") or "").strip()
+            or os.environ.get("DEFAULT_TENANT", "acme"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

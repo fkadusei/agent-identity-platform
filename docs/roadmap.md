@@ -81,8 +81,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 ## Backlog / known gaps
 
-- **Multi-tenant isolation (threat T9)** — the reference is single-tenant; add a
-  tenant claim, enforce it in policy *and* the tools, and a two-tenant test.
+- [x] **Multi-tenant isolation (threat T9)** — the tenant is an identity
+      attribute; policy denies an unscoped caller and every data accessor scopes
+      by tenant (`docs/tenancy.md`, `scripts/tenancy-tests.sh`)
 - TLS for the remaining in-cluster hops (only agent↔gateway is mTLS today).
 - Per-agent rate and cost limits on the gateway.
 - The tools' in-memory simulator state resets on restart (fine for the demo).

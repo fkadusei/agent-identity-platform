@@ -43,7 +43,7 @@ class FakeApprovals:
 
 def enforcer(*, delegation=None, verify_error=None, decision=Decision.ALLOW, approvals=False):
     delegation = delegation or Delegation(
-        user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",)
+        user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",), tenant="acme"
     )
     return ToolEnforcer(
         settings=Settings(keycloak_issuer="http://kc", audience="mcp-tools", trusted_workload=AGENT),
@@ -137,7 +137,7 @@ def test_string_amount_is_coerced_before_policy():
     e = ToolEnforcer(
         settings=Settings(keycloak_issuer="http://kc", audience="mcp-tools", trusted_workload=AGENT),
         verifier=FakeVerifier(
-            Delegation(user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",))
+            Delegation(user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",), tenant="acme")
         ),
         policy=CapturingPolicy(),
         approvals=FakeApprovals(False),
@@ -145,3 +145,28 @@ def test_string_amount_is_coerced_before_policy():
     result = e.call("token", "refunds.issue", {"order_id": "o-1001", "amount": "40"})
     assert result.outcome is Outcome.OK
     assert seen["context"]["amount"] == 40.0
+
+
+# --- tenant isolation (threat T9) -------------------------------------------
+# The tenant comes from the identity, so a session cannot reach another tenant's
+# data — and a record it may not see looks exactly like one that does not exist.
+
+def test_a_session_cannot_reach_another_tenants_data():
+    e = enforcer()  # alice, tenant acme
+    mine = e.call("token", "crm.customer.read", {"customer_id": "c-100"})
+    assert mine.outcome is Outcome.OK
+    assert "error" not in mine.result
+
+    other = e.call("token", "crm.customer.read", {"customer_id": "c-900"})
+    assert other.outcome is Outcome.OK
+    assert other.result == {"error": "unknown customer"}
+
+
+def test_an_unscoped_identity_gets_no_data():
+    e = enforcer(
+        delegation=Delegation(
+            user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",)
+        )
+    )
+    result = e.call("token", "crm.customer.read", {"customer_id": "c-100"})
+    assert result.result == {"error": "unknown customer"}

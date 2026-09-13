@@ -76,6 +76,10 @@ spec:
             # admin-only (see docs/enrollment-and-roles.md).
             - name: SIGNUP_ENABLED
               value: "1"
+            # The tenant a self-enrolled account is placed in. A signup form
+            # cannot choose its own tenant (see docs/enrollment-and-roles.md).
+            - name: DEFAULT_TENANT
+              value: acme
             # Durable approvals. Without a database configured the store is
             # in-memory; the password is a Secret reference, so no credential
             # appears in a URL.

@@ -666,7 +666,7 @@ function Admin({ token, self }: { token: string; self: string }) {
 }
 
 function CreateUser({ token, onCreated }: { token: string; onCreated: () => void }) {
-  const [form, setForm] = useState({ username: "", email: "", password: "" });
+  const [form, setForm] = useState({ username: "", email: "", password: "", tenant: "acme" });
   const [roles, setRoles] = useState<string[]>([]);
   const [error, setError] = useState("");
 
@@ -695,6 +695,12 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
         placeholder="password (min 8)"
         value={form.password}
         onChange={set("password")}
+      />
+      <input
+        placeholder="tenant"
+        value={form.tenant}
+        onChange={set("tenant")}
+        title="The tenant this account is scoped to"
       />
       <div>
         {ASSIGNABLE.map((r) => (

@@ -96,6 +96,8 @@ services:
         value: http://keycloak:8080/admin/realms/agent-platform
       - name: SIGNUP_ENABLED
         value: "1"
+      - name: DEFAULT_TENANT
+        value: acme
       - name: PORTAL_SECRET
         valueFrom:
           secretKeyRef: { name: platform-secrets, key: PORTAL_SECRET }

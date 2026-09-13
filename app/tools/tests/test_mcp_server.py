@@ -13,7 +13,7 @@ AGENT = "spiffe://acme.com/ns/agent-nhi/sa/agent"
 
 class _Verifier:
     def verify(self, token, **_kwargs):
-        return Delegation(user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",))
+        return Delegation(user="alice", workload=AGENT, audience="mcp-tools", roles=("support_rep",), tenant="acme")
 
 
 class _Policy:

@@ -28,12 +28,15 @@ SigningKeyResolver = Callable[[str], Any]
 
 @dataclass(frozen=True)
 class Delegation:
-    """Who is acting, and for whom."""
+    """Who is acting, for whom, and within which tenant."""
 
     user: str
     workload: str
     audience: str
     roles: tuple[str, ...] = ()
+    # The tenant the human belongs to. Every data access is scoped to it, and it
+    # comes from the identity — never from the caller's request.
+    tenant: str | None = None
     claims: dict = field(default_factory=dict)
 
     @classmethod
@@ -57,6 +60,7 @@ class Delegation:
             workload=workload,
             audience=audience,
             roles=tuple(roles),
+            tenant=claims.get("tenant"),
             claims=claims,
         )
 

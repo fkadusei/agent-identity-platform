@@ -85,13 +85,18 @@ class ToolEnforcer:
             "policy.decision",
             spiffe_id=delegation.workload,
             sub=delegation.user,
+            tenant=delegation.tenant,
             tool=tool_name,
         ) as current:
             decision = self._policy.decide(
                 agent=delegation.workload,
                 user=delegation.user,
                 tool=tool_name,
-                context={"roles": list(delegation.roles), **call_args},
+                context={
+                    "roles": list(delegation.roles),
+                    "tenant": delegation.tenant,
+                    **call_args,
+                },
             )
             current.set_attribute("decision", decision.decision.value)
             current.set_attribute("reason", decision.reason)
@@ -135,7 +140,9 @@ class ToolEnforcer:
                 )
 
         try:
-            result = tool.handler(**call_args)
+            # The tenant comes from the identity, never from the caller's args —
+            # so a request cannot name a tenant it does not belong to.
+            result = tool.handler(**call_args, tenant=delegation.tenant)
         except Exception as exc:  # noqa: BLE001 - report, do not crash the server
             audit(
                 "tool.error",

@@ -25,7 +25,8 @@ in-process.
 
 ## The REST contract
 
-The HTTP backend speaks exactly this, and nothing else:
+The HTTP backend speaks exactly this, and nothing else. Every request carries
+`X-Tenant` (from the caller's identity — see [`tenancy.md`](tenancy.md)):
 
 | Tool | Request |
 | --- | --- |

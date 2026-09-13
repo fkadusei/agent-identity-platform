@@ -42,7 +42,7 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                 description="Read a customer's profile (non-sensitive fields).",
                 risk="low",
                 input_schema=_customer_id_schema(),
-                handler=lambda customer_id: b.get_customer(customer_id)
+                handler=lambda customer_id, tenant: b.get_customer(customer_id, tenant)
                 or _not_found("customer"),
             ),
             Tool(
@@ -50,7 +50,7 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                 description="List a customer's orders.",
                 risk="low",
                 input_schema=_customer_id_schema(),
-                handler=lambda customer_id: {"orders": b.list_orders(customer_id)},
+                handler=lambda customer_id, tenant: {"orders": b.list_orders(customer_id, tenant)},
             ),
             Tool(
                 name="tickets.read",
@@ -61,7 +61,8 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                     "properties": {"ticket_id": {"type": "string"}},
                     "required": ["ticket_id"],
                 },
-                handler=lambda ticket_id: b.get_ticket(ticket_id) or _not_found("ticket"),
+                handler=lambda ticket_id, tenant: b.get_ticket(ticket_id, tenant)
+                or _not_found("ticket"),
             ),
             Tool(
                 name="tickets.reply.draft",
@@ -72,7 +73,7 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                     "properties": {"ticket_id": {"type": "string"}, "body": {"type": "string"}},
                     "required": ["ticket_id", "body"],
                 },
-                handler=lambda ticket_id, body: b.draft_reply(ticket_id, body),
+                handler=lambda ticket_id, body, tenant: b.draft_reply(ticket_id, body, tenant),
             ),
             Tool(
                 name="refunds.quote",
@@ -83,7 +84,8 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                     "properties": {"order_id": {"type": "string"}},
                     "required": ["order_id"],
                 },
-                handler=lambda order_id: b.quote_refund(order_id) or _not_found("order"),
+                handler=lambda order_id, tenant: b.quote_refund(order_id, tenant)
+                or _not_found("order"),
             ),
             Tool(
                 name="refunds.issue",
@@ -97,14 +99,15 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                     },
                     "required": ["order_id", "amount"],
                 },
-                handler=lambda order_id, amount: b.issue_refund(order_id, float(amount)),
+                handler=lambda order_id, amount, tenant: b.issue_refund(order_id, float(amount), tenant),
             ),
             Tool(
                 name="privacy.pii.read",
                 description="Read a customer's direct identifiers (name, email, phone). High-risk.",
                 risk="high",
                 input_schema=_customer_id_schema(),
-                handler=lambda customer_id: b.get_pii(customer_id) or _not_found("customer"),
+                handler=lambda customer_id, tenant: b.get_pii(customer_id, tenant)
+                or _not_found("customer"),
             ),
         ]
     }

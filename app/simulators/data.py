@@ -38,6 +38,18 @@ CUSTOMERS: dict[str, dict] = {
         "region": "us-west",
         "created_at": "2025-01-09",
     },
+    # A second tenant, so isolation is testable: a session scoped to `acme`
+    # must not reach any of these.
+    "c-900": {
+        "id": "c-900",
+        "tenant": "globex",
+        "name": "Grace Other",
+        "email": "grace@globex.example",
+        "phone": "+1-555-0900",
+        "tier": "gold",
+        "region": "us-east",
+        "created_at": "2024-11-02",
+    },
 }
 
 ORDERS: dict[str, dict] = {
@@ -81,6 +93,16 @@ ORDERS: dict[str, dict] = {
         "payment_token": "tok_demo_7777",
         "created_at": "2025-05-30",
     },
+    "o-9001": {
+        "id": "o-9001",
+        "tenant": "globex",
+        "customer_id": "c-900",
+        "items": [{"sku": "WIDGET-A", "qty": 4, "price": 25.00}],
+        "total": 100.00,
+        "status": "delivered",
+        "payment_token": "tok_demo_0900",
+        "created_at": "2025-06-11",
+    },
 }
 
 TICKETS: dict[str, dict] = {
@@ -102,4 +124,24 @@ TICKETS: dict[str, dict] = {
         "status": "open",
         "messages": [{"from": "customer", "body": "It has been a week."}],
     },
+    "t-9001": {
+        "id": "t-9001",
+        "tenant": "globex",
+        "customer_id": "c-900",
+        "subject": "Invoice question",
+        "status": "open",
+        "messages": [{"from": "customer", "body": "Please re-send the invoice."}],
+    },
 }
+
+
+def scoped(record: dict | None, tenant: str) -> dict | None:
+    """Return the record only if it belongs to `tenant`, else None.
+
+    The single rule that makes tenant isolation real: every data access goes
+    through here, so a record from another tenant is indistinguishable from a
+    record that does not exist.
+    """
+    if record is None or not tenant:
+        return None
+    return record if record.get("tenant") == tenant else None
