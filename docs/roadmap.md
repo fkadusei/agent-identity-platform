@@ -75,10 +75,14 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] Operator user guide — bring-up, health checks, common operations,
       incident-response playbooks, alerting, troubleshooting and the Phase 2 gate
       checklist (`docs/operator-guide.md`)
-- [ ] **Gate:** threat model addressed; dashboards live; secret audit clean
+- [x] **Gate:** threat model addressed (T9 multi-tenant isolation is documented
+      as *not* implemented — see the backlog), traces + dashboards live, secret
+      audit clean, all six attacks blocked
 
 ## Backlog / known gaps
 
+- **Multi-tenant isolation (threat T9)** — the reference is single-tenant; add a
+  tenant claim, enforce it in policy *and* the tools, and a two-tenant test.
 - TLS for the remaining in-cluster hops (only agent↔gateway is mTLS today).
 - Per-agent rate and cost limits on the gateway.
 - The tools' in-memory simulator state resets on restart (fine for the demo).

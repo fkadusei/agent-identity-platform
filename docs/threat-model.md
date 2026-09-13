@@ -57,8 +57,10 @@ identity together; roles are least-privilege; bulk actions are denied.
 **Threat.** A key, token, or password is committed.
 **Mitigation.** `.gitignore`, gitleaks config, a pre-commit hook, and a CI guard
 that fails if `.env` is ever tracked.
-**Test.** `scripts/scan-secrets.sh` (tree + full history); a unit test in CI that
-stages a fake secret and asserts the hook blocks it.
+**Test.** `scripts/scan-secrets.sh` (tree + full history) and
+`scripts/test-hooks.sh` — run in CI — which stages a `.env` and a fake private
+key in a throwaway repo and asserts the pre-commit hook blocks both (and does not
+false-positive on a clean change).
 
 ## T7 — Secret/PII leakage into logs and traces
 
@@ -82,24 +84,30 @@ by policy.
 
 ## T9 — Cross-tenant data leakage
 
-**Threat.** A user (or the agent) accesses another tenant's data.
-**Mitigation.** Tenant scoping enforced in policy *and* in the tools; the SDK
-provides the scoped context, not the caller.
-**Test.** A two-tenant test asserts tenant B's records are unreachable from
-tenant A's session.
+**Status: not implemented — the reference deployment is single-tenant.**
+Records carry a `tenant` field, but there is **no** per-tenant scoping in policy
+or in the tools, and no two-tenant test. Serving multiple tenants would require a
+tenant claim on the token, enforcement in policy *and* the tools, and a test that
+tenant B's records are unreachable from tenant A's session. Tracked in
+[`roadmap.md`](roadmap.md) — this is the one threat the reference platform does
+**not** demonstrate.
 
 ## T10 — Supply chain and CI/CD compromise
 
 **Threat.** A malicious dependency, image, or workflow change.
-**Mitigation.** Lockfiles committed; Dependabot; actions pinned to major
-versions; SBOM (Syft); Trivy scans; SAST (Semgrep); least-privilege
-`GITHUB_TOKEN`; no secrets in CI logs.
+**Mitigation.** Lockfiles committed; Dependabot; GitHub Actions pinned to full
+commit SHAs (mutable tags can be repointed); SBOM (Syft); Trivy scans; SAST
+(Semgrep); least-privilege `GITHUB_TOKEN`; no secrets in CI logs; images and the
+policy bundle signed keyless (ADR-0010).
 **Test.** CI jobs (`.github/workflows/security.yml`) fail on findings.
 
 ---
 
 ## Out of scope (documented, not hidden)
 
+- **Multi-tenant isolation (T9)** — the reference serves a single tenant; there
+  is no per-tenant scoping in policy or the tools, and no test. Required before
+  serving more than one tenant.
 - Hardware-backed attestation (TPM/TEE) for nodes.
 - Cross-organization identity federation.
 - Insider with legitimate repository write access (mitigated by branch protection
