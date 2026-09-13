@@ -55,6 +55,14 @@ llm:
 observability:
   otelEndpoint: http://otel-collector:4318
 
+# --- durable state -----------------------------------------------------------
+# A Postgres DSN. When set, the api stores approvals and the agent stores its run
+# checkpoints in it, so both survive a restart and any replica can serve them.
+# Leave empty to use the in-memory stores (fine for a demo, not for production).
+# Point this at a managed database, or at an in-chart/external Postgres.
+database:
+  url: ""
+
 # Default resource envelope for every workload (override per service).
 resources:
   requests:

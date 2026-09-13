@@ -43,6 +43,10 @@ spec:
             {{- with $svc.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- if and $.Values.database.url (or (eq $name "api") (eq $name "agent")) }}
+            - name: DATABASE_URL
+              value: {{ $.Values.database.url | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ $svc.port }}

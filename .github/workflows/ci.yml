@@ -84,6 +84,27 @@ jobs:
 
   app-tests:
     runs-on: ubuntu-latest
+    # A real Postgres so the durable-store tests run, not just the in-memory ones.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: agent_platform
+          POSTGRES_USER: agent
+          POSTGRES_PASSWORD: agent
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The service is ephemeral; these are throwaway values, not secrets.
+      PGHOST: localhost
+      PGUSER: agent
+      PGPASSWORD: agent
+      PGDATABASE: agent_platform
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7

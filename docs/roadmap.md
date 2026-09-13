@@ -92,7 +92,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] Cloud-agnostic **Helm chart + values**; ingress/TLS via values
       (`deploy/helm/agent-platform`); SPIRE and Keycloak are documented
       prerequisites, the policy bundle a signed build artifact
-- [ ] Managed data stores (approvals and agent run state are in-memory today)
+- [x] Managed data stores — approvals and agent run checkpoints are durable in
+      Postgres when `DATABASE_URL` is set; simulators stay in-memory
+      (`docs/data-stores.md`)
 - [x] **CI/CD with approval gates** — release builds + signs images/bundle/chart;
       deploy verifies signatures, applies the chart behind a GitHub Environment
       approval gate, smoke-tests (incl. the attack suite) and rolls back

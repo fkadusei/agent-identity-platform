@@ -26,6 +26,8 @@ ENV_FILE=.env
 
 gen_secret() { python3 -c "import secrets; print(secrets.token_hex(16))"; }
 
+REQUIRED_SECRETS="DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET POSTGRES_PASSWORD"
+
 ensure_secrets() {
   if [ ! -f "$ENV_FILE" ]; then
     info "generating $ENV_FILE with random demo secrets (gitignored)"
@@ -38,15 +40,27 @@ MCP_TOOLS_SECRET=$(gen_secret)
 # The web app's client (login) and the API's least-privilege admin client.
 PORTAL_SECRET=$(gen_secret)
 ADMIN_CLIENT_SECRET=$(gen_secret)
+# Postgres (durable approvals + agent run checkpoints).
+POSTGRES_PASSWORD=$(gen_secret)
 # For a hosted LLM provider, uncomment and set (used only by the gateway):
 # LLM_API_KEY=sk-...
 EOF
   fi
+  # Add any newly-required secret to an existing file (so an upgrade from an
+  # older .env does not fail).
+  local added=0
+  for v in $REQUIRED_SECRETS; do
+    if ! grep -q "^${v}=" "$ENV_FILE"; then
+      printf '%s=%s\n' "$v" "$(gen_secret)" >> "$ENV_FILE"
+      added=1
+    fi
+  done
+  [ "$added" = "1" ] && info "added newly-required secrets to $ENV_FILE"
   set -a
   # shellcheck disable=SC1090
   . "$ENV_FILE"
   set +a
-  for v in DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET; do
+  for v in $REQUIRED_SECRETS; do
     [ -n "${!v:-}" ] || die "$v is missing from $ENV_FILE"
   done
 }
@@ -144,7 +158,15 @@ kubectl apply -f "$MANIFESTS/keycloak/keycloak.yaml" >/dev/null
 kubectl -n $NS rollout status deploy/keycloak --timeout=300s >/dev/null
 ok "keycloak ready (realm agent-platform imported)"
 
-say "5. OPA"
+say "5. postgres (durable approvals + run state)"
+kubectl -n $NS create secret generic postgres \
+  --from-literal=password="$POSTGRES_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl apply -f "$MANIFESTS/data/" >/dev/null
+kubectl -n $NS rollout status deploy/postgres --timeout=180s >/dev/null
+ok "postgres ready (services pick it up via DATABASE_URL)"
+
+say "6. OPA"
 # Build the versioned bundle (revision stamped into every decision) and mount it.
 POLICY_REVISION=$(./scripts/build-bundle.sh)
 kubectl -n $NS create configmap opa-bundle \
@@ -156,7 +178,7 @@ kubectl apply -f "$MANIFESTS/opa/" >/dev/null
 kubectl -n $NS rollout status deploy/opa --timeout=120s >/dev/null
 ok "opa serving policy bundle revision $POLICY_REVISION"
 
-say "6. observability"
+say "7. observability"
 kubectl apply -f "$MANIFESTS/observability/" >/dev/null
 kubectl -n $NS rollout status deploy/otel-collector --timeout=180s >/dev/null
 kubectl -n $NS rollout status deploy/jaeger --timeout=180s >/dev/null
@@ -164,7 +186,7 @@ kubectl -n $NS rollout status deploy/prometheus --timeout=180s >/dev/null
 kubectl -n $NS rollout status deploy/grafana --timeout=180s >/dev/null
 ok "otel-collector, jaeger, prometheus + grafana ready (traces, metrics, dashboard)"
 
-say "7. platform services"
+say "8. platform services"
 # The optional provider key: only the gateway consumes it.
 if [ -n "${LLM_API_KEY:-}" ]; then
   kubectl -n $NS create secret generic llm-api-key \
@@ -178,7 +200,7 @@ kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gatewa
   --timeout=240s >/dev/null
 ok "api, tools, agent, gateway ready"
 
-say "8. GATE: the agent pod can fetch its SVID (no secrets involved)"
+say "9. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""
 for _ in $(seq 1 12); do
   OUT=$(kubectl -n $NS exec deploy/agent -- python -c "

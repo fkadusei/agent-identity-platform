@@ -72,7 +72,10 @@ if outcome.get("status") == "approval_required":
     print(f"   manager decided: {decided.get('status')}")
 
     show("5. agent resumes after approval", httpx.post(
-        f"{AGENT}/resume", json={"thread_id": outcome["thread_id"], "approved": True}, timeout=60
+        f"{AGENT}/resume",
+        json={"thread_id": outcome["thread_id"], "approved": True},
+        headers={"Authorization": f"Bearer {alice}"},
+        timeout=60,
     ).json())
 else:
     print("   (the model chose a different tool; no approval was required)")
