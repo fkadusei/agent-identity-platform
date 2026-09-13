@@ -15,10 +15,10 @@ import {
   revokeRole,
   runTask,
   setUserEnabled,
+  type Session,
 } from "./api";
 
 type Tab = "console" | "approvals" | "audit" | "admin";
-type Session = { user: string; roles: string[]; token: string };
 
 // The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
 const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
