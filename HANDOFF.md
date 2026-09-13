@@ -8,7 +8,8 @@
 - **Status:** Phase 1 **complete**; Phase 2 hardening feature-complete. Done:
   the **LLM gateway** (SPIFFE mTLS; the agent holds no model credential),
   **secrets out of git/manifests**, **observability** (OpenTelemetry traces with
-  identity attributes → collector → Jaeger), the **policy lifecycle** (versioned
+  identity attributes → collector → Jaeger, plus platform metrics → Prometheus →
+  a provisioned Grafana dashboard), the **policy lifecycle** (versioned
   bundle; every decision names its revision), **supply chain** (keyless cosign
   signing + Kyverno admission policy), **enrollment + role administration**
   (self-service signup, admin user management, real login, server-side role
@@ -66,12 +67,11 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
 ## Immediate next task
 
 **Phase 2 gate.** Phase 2 hardening is feature-complete (secrets, LLM gateway,
-observability, policy lifecycle, supply chain, enrollment/roles, UI polish, and
-the operator guide). Remaining before the gate: service-level metrics +
-dashboards (the collector exposes Prometheus metrics but nothing scrapes them
-yet), then walk the checklist in
+observability + Prometheus/Grafana dashboards, policy lifecycle, supply chain,
+enrollment/roles, UI polish, operator guide). Remaining: walk the checklist in
 [`docs/operator-guide.md`](docs/operator-guide.md#9-phase-2-gate-checklist) —
-threat model addressed, traces live, secret audit clean, all attacks blocked.
+threat model addressed, traces live, dashboards live, secret audit clean, all
+attacks blocked.
 
 After the gate, Phase 3 (deploy/adoption): Helm chart + ingress/TLS, CI/CD with
 approval gates, real sandbox integrations, runbook + adoption guide. Also still

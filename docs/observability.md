@@ -50,19 +50,45 @@ kubectl -n agent-platform port-forward svc/jaeger 16686:16686
 # open http://localhost:16686
 ```
 
-## Metrics
+## Metrics and dashboards
 
-The collector exposes its own Prometheus metrics (including
-`otelcol_exporter_sent_spans`) on `:8888`:
+Traces answer "what happened in this one request"; metrics answer "is the
+platform healthy right now". Both are live.
+
+The API exposes platform counters at `/metrics` (`app/common/metrics.py`):
+
+| Metric | Meaning |
+| --- | --- |
+| `agent_platform_logins_total{result}` | logins, ok vs failed |
+| `agent_platform_audit_events_total{event}` | every audited event — policy decisions (`tool.allowed`/`tool.denied`/`tool.approval_required`), approvals, user administration |
+| `agent_platform_approvals_pending` | the approval backlog |
+| `agent_platform_http_requests_total{method,route,status}` | request rates by route template |
+
+The audit-derived counters are the interesting ones: because every service
+forwards its audit events to the API, one instrumentation point covers policy
+decisions and admin actions across the whole platform — so the dashboard and the
+audit log cannot drift apart.
+
+**Prometheus** (`deploy/kind/manifests/observability/prometheus.yaml`) scrapes
+the API, the OTel collector and OPA. **Grafana**
+(`.../grafana.yaml`) is provisioned with the Prometheus datasource and a
+dashboard, both from ConfigMaps:
 
 ```bash
-kubectl -n agent-platform port-forward svc/otel-collector 8888:8888
-curl -s localhost:8888/metrics | grep otelcol_exporter_sent_spans
+kubectl -n agent-platform port-forward svc/grafana 3000:3000
+# open http://localhost:3000 — the "Agent Identity Platform" dashboard is there
 ```
 
-Point a Prometheus scrape config at `otel-collector.agent-platform:8888/metrics`
-to collect them. Service-level metrics (counters on `policy.decision` outcomes)
-are the natural next step; today the audit stream and traces carry the signal.
+Panels: logins by result, policy decisions, approvals pending, requests by
+route, spans exported, failed span exports. Anonymous viewer access is a demo
+setting; a real deployment enables auth and puts it behind ingress.
+
+To query without Grafana:
+
+```bash
+kubectl -n agent-platform port-forward svc/prometheus 9090:9090
+curl -s 'localhost:9090/api/v1/query?query=agent_platform_audit_events_total'
+```
 
 ## Design notes
 

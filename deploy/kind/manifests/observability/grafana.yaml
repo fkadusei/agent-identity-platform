@@ -1,0 +1,183 @@
+# Grafana — the operator dashboard, provisioned from ConfigMaps.
+#
+# Anonymous viewer access (demo only): open the Service and the dashboard is
+# already there. A real deployment enables auth and hides it behind ingress.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+  namespace: agent-platform
+data:
+  datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-provider
+  namespace: agent-platform
+data:
+  provider.yaml: |
+    apiVersion: 1
+    providers:
+      - name: platform
+        folder: ""
+        type: file
+        options:
+          path: /var/lib/grafana/dashboards
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard
+  namespace: agent-platform
+data:
+  platform.json: |
+    {
+      "title": "Agent Identity Platform",
+      "uid": "agent-platform",
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "10s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "Logins by result",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+          "targets": [
+            { "expr": "sum by (result) (rate(agent_platform_logins_total[5m]))", "legendFormat": "{{result}}" }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Policy decisions (from the audit stream)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+          "targets": [
+            { "expr": "sum by (event) (rate(agent_platform_audit_events_total{event=~\"tool.*\"}[5m]))", "legendFormat": "{{event}}" }
+          ]
+        },
+        {
+          "type": "stat",
+          "title": "Approvals pending",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+          "targets": [ { "expr": "agent_platform_approvals_pending" } ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Requests by route",
+          "gridPos": { "h": 8, "w": 16, "x": 8, "y": 8 },
+          "targets": [
+            { "expr": "sum by (route) (rate(agent_platform_http_requests_total[5m]))", "legendFormat": "{{route}}" }
+          ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Spans exported",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+          "targets": [ { "expr": "sum(rate(otelcol_exporter_sent_spans[5m]))" } ]
+        },
+        {
+          "type": "timeseries",
+          "title": "Failed span exports",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+          "targets": [ { "expr": "sum(rate(otelcol_exporter_send_failed_spans[5m]))" } ]
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  namespace: agent-platform
+  labels:
+    app: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: grafana
+          image: grafana/grafana:11.4.0
+          env:
+            # Demo only: anonymous viewer, no login form.
+            - name: GF_AUTH_ANONYMOUS_ENABLED
+              value: "true"
+            - name: GF_AUTH_ANONYMOUS_ORG_ROLE
+              value: Viewer
+            - name: GF_AUTH_DISABLE_LOGIN_FORM
+              value: "true"
+          ports:
+            - name: http
+              containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+              readOnly: true
+            - name: dashboard-provider
+              mountPath: /etc/grafana/provisioning/dashboards
+              readOnly: true
+            - name: dashboards
+              mountPath: /var/lib/grafana/dashboards
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+        - name: dashboard-provider
+          configMap:
+            name: grafana-dashboard-provider
+        - name: dashboards
+          configMap:
+            name: grafana-dashboard
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: agent-platform
+spec:
+  selector:
+    app: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: 3000

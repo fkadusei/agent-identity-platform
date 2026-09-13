@@ -43,6 +43,7 @@ from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.authz import current_delegation, require_roles
 from app.approvals import ApprovalStore
+from app.common import metrics
 from app.common.telemetry import instrument_fastapi, setup_telemetry
 
 app = FastAPI(title="agent-identity-platform API")
@@ -63,8 +64,25 @@ _store = ApprovalStore()
 _audit: deque[dict] = deque(maxlen=500)
 
 
+@app.middleware("http")
+async def _count_requests(request, call_next):
+    """Count every request by its route template (low label cardinality)."""
+    response = await call_next(request)
+    route = request.scope.get("route")
+    metrics.HTTP_REQUESTS.labels(
+        request.method, getattr(route, "path", "unknown"), response.status_code
+    ).inc()
+    return response
+
+
 def get_store() -> ApprovalStore:
     return _store
+
+
+@app.get("/metrics")
+def metrics_endpoint():
+    """Prometheus scrape target."""
+    return metrics.metrics_response()
 
 
 @app.get("/healthz")
@@ -120,6 +138,7 @@ def create_approval(
         agent=delegation.workload,
         reason=body.get("reason", ""),
     )
+    metrics.APPROVALS_PENDING.set(len(store.pending()))
     audit(
         "approval.created",
         approval_id=approval.id,
@@ -170,6 +189,7 @@ def decide_approval(
             status_code=409,
             detail="approval not found, already decided, or self-approval is not allowed",
         )
+    metrics.APPROVALS_PENDING.set(len(store.pending()))
     audit(
         "approval.decided",
         approval_id=approval.id,
@@ -186,6 +206,7 @@ def decide_approval(
 @app.post("/audit/events")
 def ingest_audit(record: dict) -> dict:
     _audit.appendleft(record)
+    metrics.AUDIT_EVENTS.labels(str(record.get("event", "unknown"))).inc()
     return {"ok": True}
 
 
