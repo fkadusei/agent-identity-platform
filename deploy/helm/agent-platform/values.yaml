@@ -120,6 +120,18 @@ services:
         value: http://api:8080
       - name: AUDIT_URL
         value: http://api:8080
+      # Real-integration path: call the sandbox over REST. Point SANDBOX_BASE_URL
+      # at a real sandbox/vendor API to swap it (docs/integrations.md).
+      - name: TOOLS_BACKEND
+        value: http
+      - name: SANDBOX_BASE_URL
+        value: http://sandbox:8090
+  sandbox:
+    enabled: true
+    replicas: 1
+    port: 8090
+    spiffe: false
+    env: []
   agent:
     enabled: true
     replicas: 1

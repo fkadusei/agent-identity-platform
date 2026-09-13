@@ -99,6 +99,8 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       deploy verifies signatures, applies the chart behind a GitHub Environment
       approval gate, smoke-tests (incl. the attack suite) and rolls back
       (`docs/ci-cd.md`)
-- [ ] Real sandbox integrations behind the existing tool interfaces
+- [x] Real sandbox integrations behind the existing tool interfaces — a backend
+      seam (simulator | HTTP) with a sandbox service exercising the REST path
+      (`docs/integrations.md`)
 - [ ] Finalize `docs/real-world-adoption.md` and the runbook
 - [ ] **Gate:** deployed end-to-end; runbook + adoption guide complete

@@ -84,7 +84,7 @@ say "2. build + load images"
 docker build -q -f docker/spire-server.Dockerfile -t agent-platform/spire-server-jti:demo . >/dev/null
 docker build -q -f docker/spire-agent.Dockerfile  -t agent-platform/spire-agent-nocache:demo . >/dev/null
 ok "spire-server-jti, spire-agent-nocache"
-for svc in api tools agent gateway; do
+for svc in api tools agent gateway sandbox; do
   docker build -q -f "docker/$svc.Dockerfile" -t "agent-platform/$svc:demo" . >/dev/null
   kind load docker-image "agent-platform/$svc:demo" --name agent-platform >/dev/null
   ok "agent-platform/$svc:demo"
