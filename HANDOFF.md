@@ -31,8 +31,9 @@
   gateway, keyed on the caller's JWT-SVID-proven SPIFFE ID, with durable counters
   (`docs/llm-gateway.md`). Then **HA for the app tier**: api/tools/agent/gateway/
   opa at 2 replicas with anti-affinity and PodDisruptionBudgets, on a 3-node kind
-  cluster (`docs/ha.md`, `scripts/ha-check.sh`). The threat model is fully
-  addressed.
+  cluster (`docs/ha.md`, `scripts/ha-check.sh`). Then **autoscaling**: the
+  stateless services scale 2→5 on CPU (`docs/autoscaling.md`). The threat model
+  is fully addressed.
 - **Last updated:** 2026-09-13
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
@@ -94,7 +95,8 @@ addressed (T9 tenancy included). Next, pick from the open backlog in
 - **HA for stateful components** — SPIRE (shared datastore + cloud KMS),
   Keycloak (external DB + clustering), Postgres (managed HA), the sandbox
   (in-memory). The app tier is already replicated (`docs/ha.md`).
-- **Autoscaling** — the stateless services could take an HPA.
+- **Custom-metric autoscaling** — scale on the approval backlog / request
+  rate via a Prometheus Adapter (CPU autoscaling is done).
 - **SPIFFE-native transport** — the mesh uses Linkerd's own identity; extending
   SPIFFE mTLS to every hop (and the browser edge via ingress TLS) is a further
   step.

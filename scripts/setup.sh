@@ -231,7 +231,13 @@ kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gatewa
   --timeout=240s >/dev/null
 ok "api, tools, agent, gateway, sandbox ready"
 
-say "9. GATE: the agent pod can fetch its SVID (no secrets involved)"
+say "9. autoscaling"
+kubectl apply -f "$MANIFESTS/autoscaling/metrics-server.yaml" >/dev/null
+kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s >/dev/null
+kubectl apply -f "$MANIFESTS/autoscaling/hpa.yaml" >/dev/null
+ok "metrics-server + HPAs ready (api/tools/agent/gateway/opa scale on CPU)"
+
+say "10. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""
 for _ in $(seq 1 12); do
   OUT=$(kubectl -n $NS exec deploy/agent -- python -c "

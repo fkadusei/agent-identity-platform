@@ -19,6 +19,11 @@ spec:
     metadata:
       labels:
         app: api
+      annotations:
+        # The mesh proxy is a sidecar in the pod, so the HPA needs it to
+        # declare requests too — otherwise CPU utilization cannot be computed.
+        config.linkerd.io/proxy-cpu-request: 25m
+        config.linkerd.io/proxy-memory-request: 64Mi
     spec:
       affinity:
         # Spread replicas across nodes when there is more than one (soft, so a
@@ -123,6 +128,13 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
       volumes:
         - name: tmp
           emptyDir: {}
