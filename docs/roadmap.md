@@ -84,7 +84,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] **Multi-tenant isolation (threat T9)** — the tenant is an identity
       attribute; policy denies an unscoped caller and every data accessor scopes
       by tenant (`docs/tenancy.md`, `scripts/tenancy-tests.sh`)
-- TLS for the remaining in-cluster hops (only agent↔gateway is mTLS today).
+- [x] **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway, a service mesh
+      (Linkerd) for every other in-cluster hop including Keycloak, OPA and the
+      observability stack (`docs/tls.md`, `scripts/tls-check.sh`)
 - Per-agent rate and cost limits on the gateway.
 - The tools' in-memory simulator state resets on restart (fine for the demo).
 

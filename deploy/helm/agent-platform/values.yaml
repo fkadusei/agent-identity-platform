@@ -55,6 +55,12 @@ llm:
 observability:
   otelEndpoint: http://otel-collector:4318
 
+# --- service mesh ------------------------------------------------------------
+# Linkerd provides mTLS on every in-cluster hop (the app layer already does
+# SPIFFE mTLS on agent<->gateway). Set inject=false if no mesh is installed.
+mesh:
+  inject: false
+
 # --- durable state -----------------------------------------------------------
 # A Postgres DSN. When set, the api stores approvals and the agent stores its run
 # checkpoints in it, so both survive a restart and any replica can serve them.

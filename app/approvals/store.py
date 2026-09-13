@@ -129,8 +129,22 @@ class PostgresApprovalStore:
     def __init__(self, url: str | None = None) -> None:
         # url=None means "use the PG* environment" (see app/common/db.py).
         self._url = url
+        self.ensure_schema()
+
+    def ensure_schema(self) -> None:
         with connect(self._url) as conn:
             conn.execute(_SCHEMA)
+
+    def _conn(self):
+        """A connection with the schema ensured.
+
+        The DDL is `CREATE TABLE IF NOT EXISTS` (a cheap no-op when the table is
+        there), so the store survives a database that was reset under it — e.g. a
+        Postgres restart on ephemeral storage.
+        """
+        conn = connect(self._url)
+        conn.execute(_SCHEMA)
+        return conn
 
     @staticmethod
     def _row_to_approval(row) -> Approval:
@@ -157,7 +171,7 @@ class PostgresApprovalStore:
             agent=agent,
             reason=reason,
         )
-        with connect(self._url) as conn:
+        with self._conn() as conn:
             conn.execute(
                 'INSERT INTO approvals (id, tool, args, "user", agent, reason, status, created_at) '
                 "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
@@ -175,7 +189,7 @@ class PostgresApprovalStore:
         return approval
 
     def get(self, approval_id: str) -> Approval | None:
-        with connect(self._url) as conn:
+        with self._conn() as conn:
             row = conn.execute(
                 'SELECT id, tool, args, "user", agent, reason, status, approver, note, '
                 "created_at, decided_at FROM approvals WHERE id = %s",
@@ -184,7 +198,7 @@ class PostgresApprovalStore:
         return self._row_to_approval(row) if row else None
 
     def pending(self) -> list[Approval]:
-        with connect(self._url) as conn:
+        with self._conn() as conn:
             rows = conn.execute(
                 'SELECT id, tool, args, "user", agent, reason, status, approver, note, '
                 "created_at, decided_at FROM approvals WHERE status = 'pending' "
@@ -193,7 +207,7 @@ class PostgresApprovalStore:
         return [self._row_to_approval(r) for r in rows]
 
     def all(self) -> list[Approval]:
-        with connect(self._url) as conn:
+        with self._conn() as conn:
             rows = conn.execute(
                 'SELECT id, tool, args, "user", agent, reason, status, approver, note, '
                 "created_at, decided_at FROM approvals ORDER BY created_at DESC"
@@ -204,7 +218,7 @@ class PostgresApprovalStore:
         self, approval_id: str, *, approver: str, approved: bool, note: str | None = None
     ) -> Approval | None:
         status = "approved" if approved else "denied"
-        with connect(self._url) as conn:
+        with self._conn() as conn:
             row = conn.execute(
                 'UPDATE approvals SET status = %s, approver = %s, note = %s, decided_at = %s '
                 "WHERE id = %s AND status = 'pending' AND \"user\" <> %s "

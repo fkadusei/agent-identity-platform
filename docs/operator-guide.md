@@ -215,6 +215,7 @@ deploy/gateway`; a client without a valid SVID cannot even connect.
 ## 6. Observability and alerting
 
 - **Traces** — Jaeger: `kubectl -n agent-platform port-forward svc/jaeger 16686:16686`, or `./scripts/show-trace.sh`. Every trace carries the identity on its `policy.decision` span (`spiffe_id`, `sub`, `tool`, `decision`).
+- **Transport** — `./scripts/tls-check.sh` reports every in-cluster edge and fails if any is not mTLS (see [`tls.md`](tls.md)).
 - **Metrics** — Prometheus scrapes the API (`/metrics`), the collector and OPA. Platform counters: logins, policy decisions (from the audit stream), approval backlog, request rates.
 - **Dashboard** — Grafana: `kubectl -n agent-platform port-forward svc/grafana 3000:3000` (the "Agent Identity Platform" dashboard is provisioned).
 - **Audit** — `GET /audit` (also shown in the UI's Audit tab) is the record of who did what, on whose behalf, and why.
@@ -273,6 +274,7 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | `no attested SPIRE agent found` | agent not attested yet | re-run `setup.sh`; check `spire-agent` logs |
 | Enrolled user vanished | Keycloak was recreated by `setup.sh` (ephemeral realm) | re-enroll, or use a persistent database in production |
 | Approvals/runs vanish on restart | `DATABASE_URL` not set (in-memory stores) | set `DATABASE_URL` (see [`data-stores.md`](data-stores.md)) |
+| An edge is not `SECURED` in `tls-check.sh` | the pod is not mesh-injected | annotate the namespace (`linkerd.io/inject=enabled`) and restart the deployment |
 
 ## 8. Teardown
 
