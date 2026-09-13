@@ -59,6 +59,10 @@ spec:
             # The agent reaches the model ONLY through the gateway, over mTLS.
             - name: LLM_GATEWAY_URL
               value: https://gateway:8443
+            # The audience it requests its JWT-SVID for, so the gateway can
+            # verify the token and key per-agent limits on the identity.
+            - name: LLM_GATEWAY_AUDIENCE
+              value: spiffe://acme.com/ns/agent-platform/sa/gateway
             # Durable run checkpoints, so a paused run survives a restart.
             - name: PGHOST
               value: postgres

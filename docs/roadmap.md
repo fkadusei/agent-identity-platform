@@ -87,7 +87,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway, a service mesh
       (Linkerd) for every other in-cluster hop including Keycloak, OPA and the
       observability stack (`docs/tls.md`, `scripts/tls-check.sh`)
-- Per-agent rate and cost limits on the gateway.
+- [x] **Per-agent rate and cost limits** on the LLM gateway — keyed on the
+      caller's JWT-SVID-proven SPIFFE ID; 429 + `Retry-After` on exceed
+      (`docs/llm-gateway.md`)
 - The tools' in-memory simulator state resets on restart (fine for the demo).
 
 ## Phase 3 — Deploy and adoption
