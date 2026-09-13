@@ -94,6 +94,25 @@ kind load docker-image agent-platform/spire-agent-nocache:demo --name agent-plat
 
 say "3. namespace + SPIRE"
 kubectl apply -f "$MANIFESTS/namespace.yaml" >/dev/null
+
+# Service mesh: Linkerd gives mTLS on *every* in-cluster hop. The app layer does
+# SPIFFE mTLS on agent<->gateway; the mesh covers the rest (api/tools/agent,
+# Keycloak, OPA, the observability stack) without changing the services.
+# Optional: without the CLI the platform still runs, just in plaintext.
+if command -v linkerd >/dev/null 2>&1; then
+  if ! kubectl get ns linkerd >/dev/null 2>&1; then
+    kubectl apply --server-side -f \
+      "https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml" >/dev/null
+    linkerd install --crds 2>/dev/null | kubectl apply -f - >/dev/null
+    linkerd install 2>/dev/null | kubectl apply -f - >/dev/null
+  fi
+  kubectl -n linkerd rollout status deploy/linkerd-destination --timeout=240s >/dev/null
+  kubectl annotate namespace $NS linkerd.io/inject=enabled --overwrite >/dev/null
+  ok "linkerd up; $NS is mesh-injected (mTLS on every hop)"
+else
+  info "linkerd CLI not found — skipping the mesh (brew install linkerd); in-cluster traffic stays plaintext"
+fi
+
 kubectl apply -f "$MANIFESTS/spire/" >/dev/null
 kubectl -n $NS rollout status statefulset/spire-server --timeout=240s >/dev/null
 kubectl -n $NS rollout restart daemonset/spire-agent >/dev/null

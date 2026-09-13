@@ -70,6 +70,7 @@ helm lint deploy/helm/agent-platform
 | `llm.*` | gateway URL and provider settings |
 | `opa.*` | OPA image and the bundle ConfigMap |
 | `database.url` | Postgres DSN for durable approvals + run checkpoints (empty = in-memory) |
+| `mesh.inject` | annotate pods for Linkerd injection (mTLS on every in-cluster hop) |
 | `observability_stack.*` | enable/disable the collector, Jaeger, Prometheus, Grafana |
 | `resources` | default requests/limits for every workload |
 | `ingress.*` | host, class, TLS, annotations |

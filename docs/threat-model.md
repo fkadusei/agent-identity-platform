@@ -22,7 +22,9 @@ and receives nothing.
 **Threat.** A captured token is passed along a chain of services.
 **Mitigation.** Every hop performs its own RFC 8693 exchange for a token scoped
 to exactly one audience; each resource server enforces `aud` **and** the
-workload the token was issued to (`azp`).
+workload the token was issued to (`azp`). Every in-cluster hop is additionally
+mTLS — app-level SPIFFE for agent↔gateway, a service mesh for the rest
+(`tls.md`) — so a token cannot be passively captured on the wire.
 **Test.** Attack suite #2: a valid `aud=tool-server` token replayed at the
 customer API returns `403`.
 

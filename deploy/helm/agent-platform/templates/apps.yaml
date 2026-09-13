@@ -22,6 +22,10 @@ spec:
     metadata:
       labels:
         app: {{ $name }}
+      {{- if $.Values.mesh.inject }}
+      annotations:
+        linkerd.io/inject: enabled
+      {{- end }}
     spec:
       {{- if $svc.spiffe }}
       serviceAccountName: {{ $name }}
