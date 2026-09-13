@@ -102,5 +102,6 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] Real sandbox integrations behind the existing tool interfaces — a backend
       seam (simulator | HTTP) with a sandbox service exercising the REST path
       (`docs/integrations.md`)
-- [ ] Finalize `docs/real-world-adoption.md` and the runbook
-- [ ] **Gate:** deployed end-to-end; runbook + adoption guide complete
+- [x] Finalize `docs/real-world-adoption.md` (production checklist + doc map) and
+      the runbook (`docs/operator-guide.md`)
+- [x] **Gate:** the platform runs end to end; runbook + adoption guide complete
