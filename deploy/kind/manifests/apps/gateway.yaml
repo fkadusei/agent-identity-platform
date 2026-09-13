@@ -54,6 +54,17 @@ spec:
               value: http://host.docker.internal:11434
             - name: OLLAMA_MODEL
               value: llama3.2:3b
+            # Callers present a JWT-SVID; the gateway verifies it against SPIRE's
+            # JWKS and keys the limits below on the resulting SPIFFE ID.
+            - name: SPIRE_JWKS_URL
+              value: http://spire-oidc-discovery.agent-platform.svc.cluster.local:11080/keys
+            - name: LLM_GATEWAY_AUDIENCE
+              value: spiffe://acme.com/ns/agent-platform/sa/gateway
+            # Per-agent limits (0 = unlimited).
+            - name: LLM_RATE_LIMIT_PER_MINUTE
+              value: "60"
+            - name: LLM_TOKEN_BUDGET_PER_DAY
+              value: "200000"
             # The ONLY place a provider key may live. Absent by default (Ollama
             # needs none); supplied via setup.sh from a gitignored .env.
             - name: LLM_API_KEY

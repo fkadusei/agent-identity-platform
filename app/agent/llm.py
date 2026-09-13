@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 
 import httpx
 
@@ -83,6 +84,30 @@ def _mtls_client() -> httpx.Client:
     return httpx.Client(verify=ctx, timeout=180)
 
 
+_jwt_svid: tuple[float, str] = (0.0, "")
+
+
+def _workload_token() -> str:
+    """This workload's JWT-SVID, cached briefly.
+
+    mTLS proves *a* workload is calling; the JWT-SVID names *which* one, so the
+    gateway can key its per-agent limits on it.
+    """
+    global _jwt_svid
+    issued, token = _jwt_svid
+    if token and time.time() - issued < 300:
+        return token
+    from agentnhi.identity import fetch_jwt_svid
+
+    socket = os.environ.get("SPIFFE_SOCKET", "unix:///run/spire/sockets/agent.sock")
+    audience = os.environ.get(
+        "LLM_GATEWAY_AUDIENCE", "spiffe://acme.com/ns/agent-platform/sa/gateway"
+    )
+    token = fetch_jwt_svid(socket, audience)
+    _jwt_svid = (time.time(), token)
+    return token
+
+
 def _chat(prompt: str) -> str:
     """Return the model's reply, via the gateway when configured."""
     gateway = os.environ.get("LLM_GATEWAY_URL")
@@ -95,6 +120,7 @@ def _chat(prompt: str) -> str:
                     "messages": [{"role": "user", "content": prompt}],
                     "response_format": {"type": "json_object"},
                 },
+                headers={"Authorization": f"Bearer {_workload_token()}"},
             )
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]

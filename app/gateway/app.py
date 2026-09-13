@@ -1,9 +1,10 @@
 """LLM gateway: the only component that talks to a model provider.
 
 The agent calls this over **SPIFFE mTLS** (its X.509-SVID as the client cert,
-verified against the SPIRE trust bundle). The gateway holds the provider key, so
-the agent needs no LLM credential at all — the "last static credential" is gone
-from the agent.
+verified against the SPIRE trust bundle), and additionally presents a
+**JWT-SVID** in `Authorization` so the gateway knows *which* workload is calling
+— that identity keys the per-agent rate and cost limits. The gateway holds the
+provider key, so the agent needs no LLM credential at all.
 
 It exposes an OpenAI-compatible `/v1/chat/completions` and translates to the
 configured provider (local Ollama by default; any OpenAI-compatible endpoint
@@ -14,11 +15,14 @@ from __future__ import annotations
 import os
 
 import httpx
-from fastapi import FastAPI
+import jwt
+from fastapi import FastAPI, Header, HTTPException
+from jwt import PyJWKClient
 from pydantic import BaseModel
 
 from agentnhi import audit
 from app.common.telemetry import instrument_fastapi, setup_telemetry, span
+from app.gateway.limits import estimate_tokens, limiter_from_env
 
 app = FastAPI(title="LLM gateway")
 setup_telemetry("gateway")
@@ -26,6 +30,37 @@ instrument_fastapi(app)
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://host.docker.internal:11434").rstrip("/")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+
+# The caller's JWT-SVID is verified against SPIRE's JWKS; its `sub` is the
+# caller's SPIFFE ID and the key for the limits below.
+SPIRE_JWKS_URL = os.environ.get(
+    "SPIRE_JWKS_URL",
+    "http://spire-oidc-discovery.agent-platform.svc.cluster.local:11080/keys",
+)
+GATEWAY_AUDIENCE = os.environ.get(
+    "LLM_GATEWAY_AUDIENCE", "spiffe://acme.com/ns/agent-platform/sa/gateway"
+)
+LIMITER = limiter_from_env()
+_jwks: PyJWKClient | None = None
+
+
+def caller_id(authorization: str | None) -> str:
+    """Verify the caller's JWT-SVID and return its SPIFFE ID."""
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="missing workload token")
+    global _jwks
+    if _jwks is None:
+        _jwks = PyJWKClient(SPIRE_JWKS_URL)
+    try:
+        key = _jwks.get_signing_key_from_jwt(token).key
+        claims = jwt.decode(token, key, algorithms=["RS256", "ES256"], audience=GATEWAY_AUDIENCE)
+    except jwt.PyJWTError as exc:
+        raise HTTPException(status_code=403, detail=f"invalid workload token: {exc}")
+    subject = claims.get("sub")
+    if not subject:
+        raise HTTPException(status_code=403, detail="workload token has no subject")
+    return subject
 
 
 class ChatRequest(BaseModel):
@@ -44,10 +79,22 @@ def healthz() -> dict:
 
 
 @app.post("/v1/chat/completions")
-def chat(req: ChatRequest) -> dict:
+def chat(req: ChatRequest, authorization: str | None = Header(default=None)) -> dict:
+    caller = caller_id(authorization)
+
+    # Rate and cost limits, keyed on the proven caller identity.
+    decision = LIMITER.check(caller)
+    if not decision.allowed:
+        audit("llm.limited", caller=caller, reason=decision.reason)
+        raise HTTPException(
+            status_code=429,
+            detail=decision.reason,
+            headers={"Retry-After": str(decision.retry_after)},
+        )
+
     provider = os.environ.get("LLM_PROVIDER", "ollama")
     # Audit metadata only — never the prompt or its contents.
-    audit("llm.call", provider=provider, model=req.model or "", messages=len(req.messages))
+    audit("llm.call", provider=provider, model=req.model or "", messages=len(req.messages), caller=caller)
 
     if provider == "ollama":
         prompt = "\n".join(str(m.get("content", "")) for m in req.messages)
@@ -62,6 +109,7 @@ def chat(req: ChatRequest) -> dict:
             resp = httpx.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=180)
         resp.raise_for_status()
         content = resp.json()["response"]
+        LIMITER.charge(caller, estimate_tokens(prompt) + estimate_tokens(content))
         return {"choices": [{"message": {"role": "assistant", "content": content}}]}
 
     # Hosted, OpenAI-compatible provider. The key lives ONLY here.
@@ -73,4 +121,10 @@ def chat(req: ChatRequest) -> dict:
         timeout=60,
     )
     resp.raise_for_status()
-    return resp.json()
+    body = resp.json()
+    # Providers report usage; fall back to an estimate if they do not.
+    usage = (body.get("usage") or {}).get("total_tokens")
+    if usage is None:
+        usage = sum(estimate_tokens(str(m.get("content", ""))) for m in req.messages)
+    LIMITER.charge(caller, int(usage))
+    return body

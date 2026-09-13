@@ -275,6 +275,7 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | Enrolled user vanished | Keycloak was recreated by `setup.sh` (ephemeral realm) | re-enroll, or use a persistent database in production |
 | Approvals/runs vanish on restart | `DATABASE_URL` not set (in-memory stores) | set `DATABASE_URL` (see [`data-stores.md`](data-stores.md)) |
 | An edge is not `SECURED` in `tls-check.sh` | the pod is not mesh-injected | annotate the namespace (`linkerd.io/inject=enabled`) and restart the deployment |
+| An agent gets `429` from the gateway | it hit its rate or token budget | raise `LLM_RATE_LIMIT_PER_MINUTE` / `LLM_TOKEN_BUDGET_PER_DAY`, or check `llm.limited` in the audit ([`llm-gateway.md`](llm-gateway.md)) |
 
 ## 8. Teardown
 
