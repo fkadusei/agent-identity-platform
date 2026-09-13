@@ -147,8 +147,9 @@ def create_approval(
         user=delegation.user,
         agent=delegation.workload,
         reason=body.get("reason", ""),
+        tenant=delegation.tenant or "",
     )
-    metrics.APPROVALS_PENDING.set(len(store.pending()))
+    metrics.APPROVALS_PENDING.set(len(store.pending(delegation.tenant or "")))
     audit(
         "approval.created",
         approval_id=approval.id,
@@ -162,9 +163,12 @@ def create_approval(
 @app.get("/approvals")
 def list_approvals(
     status: str | None = None,
+    delegation: Delegation = Depends(current_delegation),
     store: ApprovalStore = Depends(get_store),
 ) -> list[dict]:
-    items = store.pending() if status == "pending" else store.all()
+    """The queue, scoped to the caller's tenant."""
+    tenant = delegation.tenant or ""
+    items = store.pending(tenant) if status == "pending" else store.all(tenant)
     return [a.as_dict() for a in items]
 
 
@@ -177,6 +181,7 @@ def verify_approval(body: dict, store: ApprovalStore = Depends(get_store)) -> di
         args=body.get("args", {}),
         user=body.get("user", ""),
         agent=body.get("agent", ""),
+        tenant=body.get("tenant", ""),
     )
     return {"valid": valid}
 
@@ -193,13 +198,14 @@ def decide_approval(
         approver=delegation.user,
         approved=bool(body.get("approved")),
         note=body.get("note"),
+        tenant=delegation.tenant or "",
     )
     if approval is None:
         raise HTTPException(
             status_code=409,
             detail="approval not found, already decided, or self-approval is not allowed",
         )
-    metrics.APPROVALS_PENDING.set(len(store.pending()))
+    metrics.APPROVALS_PENDING.set(len(store.pending(delegation.tenant or "")))
     audit(
         "approval.decided",
         approval_id=approval.id,

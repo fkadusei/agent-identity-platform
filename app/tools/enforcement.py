@@ -122,6 +122,7 @@ class ToolEnforcer:
                 args=call_args,
                 user=delegation.user,
                 agent=delegation.workload,
+                tenant=delegation.tenant or "",
             )
             if not approved:
                 audit(

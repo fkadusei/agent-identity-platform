@@ -82,10 +82,13 @@ export const resumeTask = (thread_id: string, approved: boolean, token: string) 
     body: JSON.stringify({ thread_id, approved }),
   });
 
-export const listApprovals = () => request("/approvals?status=pending");
+// The approval queue is tenant-scoped, so it needs the caller's token.
+export const listApprovals = (token: string) =>
+  request("/approvals?status=pending", { headers: auth(token) });
 
 // All approvals (any status) — used to watch a held run flip to decided.
-export const getAllApprovals = () => request("/approvals");
+export const getAllApprovals = (token: string) =>
+  request("/approvals", { headers: auth(token) });
 
 export const decideApproval = (id: string, approved: boolean, token: string, note = "") =>
   request(`/approvals/${id}/decision`, {

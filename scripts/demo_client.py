@@ -59,10 +59,15 @@ show("agent paused", outcome)
 if outcome.get("status") == "approval_required":
     approval_id = outcome["approval_id"]
     print(f"\n4. manager reviews approval {approval_id}")
-    pending = httpx.get(f"{API}/approvals?status=pending", timeout=10).json()
+    manager = login("manager", "manager123", "manager-cli", MANAGER_CLI_SECRET)
+    # The queue is tenant-scoped, so it needs the caller's token.
+    pending = httpx.get(
+        f"{API}/approvals?status=pending",
+        headers={"Authorization": f"Bearer {manager}"},
+        timeout=10,
+    ).json()
     print(f"   approval queue: {len(pending)} pending — {pending[0]['reason'] if pending else ''}")
 
-    manager = login("manager", "manager123", "manager-cli", MANAGER_CLI_SECRET)
     decided = httpx.post(
         f"{API}/approvals/{approval_id}/decision",
         json={"approved": True, "note": "within policy"},
