@@ -86,7 +86,13 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
     roles = platform_roles(delegation.roles)
     metrics.LOGINS.labels("ok").inc()
     audit("auth.login", user=username, roles=roles)
-    return {"user": username, "roles": roles, "access_token": token}
+    return {
+        "user": username,
+        "roles": roles,
+        # Surfaced so callers (the UI, scripts) never need to decode the token.
+        "tenant": delegation.tenant,
+        "access_token": token,
+    }
 
 
 @router.post("/enroll")

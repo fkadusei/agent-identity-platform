@@ -76,6 +76,7 @@ export default function App() {
             <>
               <span>
                 signed in as <b>{session.user}</b>
+                {session.tenant && <> · tenant {session.tenant}</>}
                 {session.roles.length ? <> · {session.roles.join(", ")}</> : <> · no roles</>}
               </span>
               <button onClick={signOut}>Sign out</button>
