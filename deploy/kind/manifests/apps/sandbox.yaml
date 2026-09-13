@@ -1,23 +1,25 @@
 # =============================================================================
-# Tool servers — the policy enforcement point (HTTP + MCP transports).
+# Sandbox — the synthetic CRM/orders/payments/ticketing API the tools call when
+# TOOLS_BACKEND=http. It stands in for a real vendor sandbox, so the HTTP
+# integration path is exercised end to end without credentials.
 #
-# Verifies the caller's token (aud=mcp-tools, azp=the agent), asks OPA, and
-# requires a verified approval for high-risk actions before executing.
+# Point SANDBOX_BASE_URL at a real sandbox to replace it; the tools only know
+# the REST contract (docs/integrations.md).
 # =============================================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: tools
+  name: sandbox
   namespace: agent-platform
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: tools
+      app: sandbox
   template:
     metadata:
       labels:
-        app: tools
+        app: sandbox
     spec:
       securityContext:
         runAsNonRoot: true
@@ -25,35 +27,16 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: tools
-          image: agent-platform/tools:demo
+        - name: sandbox
+          image: agent-platform/sandbox:demo
           imagePullPolicy: IfNotPresent
           env:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector:4318
-            - name: KC_ISSUER
-              value: http://keycloak:8080/realms/agent-platform
-            - name: TOKEN_AUDIENCE
-              value: mcp-tools
-            - name: TRUSTED_WORKLOAD
-              value: spiffe://acme.com/ns/agent-platform/sa/agent
-            - name: OPA_URL
-              value: http://opa:8181
-            - name: APPROVALS_URL
-              value: http://api:8080
-            - name: AUDIT_URL
-              value: http://api:8080
-            # Real-integration path: call the sandbox over REST instead of the
-            # in-process simulator. Point SANDBOX_BASE_URL at a real sandbox to
-            # swap it (docs/integrations.md).
-            - name: TOOLS_BACKEND
-              value: http
-            - name: SANDBOX_BASE_URL
-              value: http://sandbox:8090
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           ports:
-            - containerPort: 8000
+            - containerPort: 8090
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -65,7 +48,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /healthz
-              port: 8000
+              port: 8090
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
@@ -75,12 +58,12 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: tools
+  name: sandbox
   namespace: agent-platform
 spec:
   selector:
-    app: tools
+    app: sandbox
   ports:
     - name: http
-      port: 8000
-      targetPort: 8000
+      port: 8090
+      targetPort: 8090
