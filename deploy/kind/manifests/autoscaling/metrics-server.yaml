@@ -108,7 +108,10 @@ spec:
             - --kubelet-insecure-tls
             - --kubelet-preferred-address-types=InternalIP
             - --secure-port=10250
-            - --cert-dir=/tmp
+            # A serving cert the API server can verify (created by setup.sh),
+            # rather than skipping TLS verification.
+            - --tls-cert-file=/tls/tls.crt
+            - --tls-private-key-file=/tls/tls.key
           ports:
             - name: https
               containerPort: 10250
@@ -118,6 +121,9 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
+            - name: tls
+              mountPath: /tls
+              readOnly: true
             - name: tmp
               mountPath: /tmp
           readinessProbe:
@@ -128,6 +134,9 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 10
       volumes:
+        - name: tls
+          secret:
+            secretName: metrics-server-tls
         - name: tmp
           emptyDir: {}
 ---
@@ -141,6 +150,5 @@ spec:
     namespace: kube-system
   group: metrics.k8s.io
   version: v1beta1
-  insecureSkipTLSVerify: true
   groupPriorityMinimum: 100
   versionPriority: 100
