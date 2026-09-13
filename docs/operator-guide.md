@@ -211,10 +211,12 @@ deploy/gateway`; a client without a valid SVID cannot even connect.
 ## 6. Observability and alerting
 
 - **Traces** — Jaeger: `kubectl -n agent-platform port-forward svc/jaeger 16686:16686`, or `./scripts/show-trace.sh`. Every trace carries the identity on its `policy.decision` span (`spiffe_id`, `sub`, `tool`, `decision`).
-- **Metrics** — the collector exposes Prometheus metrics on `:8888`.
+- **Metrics** — Prometheus scrapes the API (`/metrics`), the collector and OPA. Platform counters: logins, policy decisions (from the audit stream), approval backlog, request rates.
+- **Dashboard** — Grafana: `kubectl -n agent-platform port-forward svc/grafana 3000:3000` (the "Agent Identity Platform" dashboard is provisioned).
 - **Audit** — `GET /audit` (also shown in the UI's Audit tab) is the record of who did what, on whose behalf, and why.
 
-Example Prometheus rules (scrape `otel-collector.agent-platform:8888/metrics`):
+Example Prometheus rules (scrape targets are already configured in
+`deploy/kind/manifests/observability/prometheus.yaml`):
 
 ```yaml
 groups:
@@ -232,12 +234,27 @@ groups:
         labels: { severity: warning }
         annotations:
           summary: "No spans exported — is traffic reaching the services?"
+      - alert: LoginFailureSpike
+        expr: rate(agent_platform_logins_total{result="failed"}[5m]) > 0.2
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Elevated login failures — possible credential stuffing"
+      - alert: PolicyDenialSpike
+        expr: rate(agent_platform_audit_events_total{event="tool.denied"}[5m]) > 0.5
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Policy denials spiking — a misbehaving agent or a bad policy?"
+      - alert: ApprovalBacklog
+        expr: agent_platform_approvals_pending > 10
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "Approvals are piling up — is anyone on call?"
 ```
 
-> **Known gap.** Service-level metrics (denial counts, login failures, approval
-> backlog) are in the audit stream and logs, not yet exported as first-class
-> Prometheus metrics, so those alerts are log-based today. Adding service
-> counters and a Grafana dashboard is the next observability step.
+Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 
 ## 7. Troubleshooting
 
@@ -264,7 +281,7 @@ Before calling hardening done:
 
 - [ ] **Threat model addressed** — every T1–T10 in [`threat-model.md`](threat-model.md) has a control or a documented, scoped exception.
 - [ ] **Traces live** — Jaeger shows end-to-end traces with identity attributes.
-- [ ] **Dashboards/alerts** — collector metrics scraped; the rules above firing in a test.
+- [ ] **Dashboards live** — Prometheus scrapes all targets; the Grafana dashboard renders; the alert rules above fire in a test.
 - [ ] **Secret audit clean** — `./scripts/scan-secrets.sh` reports no leaks (tree + history); no secret tracked.
 - [ ] **Attacks blocked** — `./scripts/attack-tests.sh` shows all six blocked.
 - [ ] **Supply chain** — images/bundle signed; admission policy enforcing.

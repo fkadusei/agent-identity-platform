@@ -13,3 +13,6 @@ opentelemetry-sdk>=1.27
 opentelemetry-exporter-otlp-proto-http>=1.27
 opentelemetry-instrumentation-fastapi>=0.48b0
 opentelemetry-instrumentation-httpx>=0.48b0
+
+# Service metrics, exposed at /metrics for Prometheus.
+prometheus-client>=0.21

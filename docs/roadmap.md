@@ -55,7 +55,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       model credential; it reaches the model only over mTLS (`app/gateway/`)
 - [x] Observability — OpenTelemetry traces spanning agent → gateway → tools →
       policy, with identity attributes on the decision span; collector + Jaeger
-      in-cluster and collector metrics for Prometheus (`docs/observability.md`)
+      in-cluster. Platform metrics at `/metrics` (logins, policy decisions from
+      the audit stream, approval backlog, request rates), scraped by Prometheus,
+      with a provisioned Grafana dashboard (`docs/observability.md`)
 - [x] Policy lifecycle — versioned OPA bundle (revision stamped into every
       decision, audit event, span and decision log), staged-rollout process
       (`docs/policy-lifecycle.md`)

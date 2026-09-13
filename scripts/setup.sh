@@ -160,7 +160,9 @@ say "6. observability"
 kubectl apply -f "$MANIFESTS/observability/" >/dev/null
 kubectl -n $NS rollout status deploy/otel-collector --timeout=180s >/dev/null
 kubectl -n $NS rollout status deploy/jaeger --timeout=180s >/dev/null
-ok "otel-collector + jaeger ready (traces carry identity attributes)"
+kubectl -n $NS rollout status deploy/prometheus --timeout=180s >/dev/null
+kubectl -n $NS rollout status deploy/grafana --timeout=180s >/dev/null
+ok "otel-collector, jaeger, prometheus + grafana ready (traces, metrics, dashboard)"
 
 say "7. platform services"
 # The optional provider key: only the gateway consumes it.

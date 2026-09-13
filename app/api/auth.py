@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from agentnhi import Settings, TokenRejected, TokenVerifier, audit
 from app.api.authz import get_verifier
 from app.api.identity import admin_from_env
+from app.common import metrics
 
 router = APIRouter()
 
@@ -70,6 +71,7 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
         timeout=10,
     )
     if resp.status_code != 200:
+        metrics.LOGINS.labels("failed").inc()
         audit("auth.login_failed", user=username)
         raise HTTPException(status_code=401, detail="invalid username or password")
 
@@ -82,6 +84,7 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
         raise HTTPException(status_code=502, detail=f"login produced an unusable token: {exc}")
 
     roles = platform_roles(delegation.roles)
+    metrics.LOGINS.labels("ok").inc()
     audit("auth.login", user=username, roles=roles)
     return {"user": username, "roles": roles, "access_token": token}
 
