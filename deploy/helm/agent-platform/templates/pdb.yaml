@@ -1,0 +1,38 @@
+{{- /*
+PodDisruptionBudgets: a node drain (or upgrade) must leave at least one replica
+of each stateless service serving.
+*/ -}}
+{{- if .Values.podDisruptionBudget.enabled }}
+{{- range $name, $svc := .Values.services }}
+{{- if and $svc.enabled (gt (int ($svc.replicas | default 1)) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    app: {{ $name }}
+    {{- include "agent-platform.labels" $ | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: {{ $name }}
+{{- end }}
+{{- end }}
+{{- if and .Values.opa.enabled (gt (int (.Values.opa.replicas | default 1)) 1) }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: opa
+  labels:
+    app: opa
+    {{- include "agent-platform.labels" . | nindent 4 }}
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: opa
+{{- end }}
+{{- end }}

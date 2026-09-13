@@ -1,0 +1,60 @@
+# =============================================================================
+# PodDisruptionBudgets — voluntary disruption (a node drain, an upgrade) must
+# leave at least one replica of each stateless service serving.
+#
+# Without these, draining a node can evict every replica of a service at once.
+# =============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  namespace: agent-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: tools
+  namespace: agent-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: tools
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agent
+  namespace: agent-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: agent
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+  namespace: agent-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: opa
+  namespace: agent-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: opa

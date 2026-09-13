@@ -216,6 +216,7 @@ deploy/gateway`; a client without a valid SVID cannot even connect.
 
 - **Traces** — Jaeger: `kubectl -n agent-platform port-forward svc/jaeger 16686:16686`, or `./scripts/show-trace.sh`. Every trace carries the identity on its `policy.decision` span (`spiffe_id`, `sub`, `tool`, `decision`).
 - **Transport** — `./scripts/tls-check.sh` reports every in-cluster edge and fails if any is not mTLS (see [`tls.md`](tls.md)).
+- **Redundancy** — `./scripts/ha-check.sh` shows the replicas' spread and the PodDisruptionBudgets, then evicts a replica to prove the service survives (see [`ha.md`](ha.md)).
 - **Metrics** — Prometheus scrapes the API (`/metrics`), the collector and OPA. Platform counters: logins, policy decisions (from the audit stream), approval backlog, request rates.
 - **Dashboard** — Grafana: `kubectl -n agent-platform port-forward svc/grafana 3000:3000` (the "Agent Identity Platform" dashboard is provisioned).
 - **Audit** — `GET /audit` (also shown in the UI's Audit tab) is the record of who did what, on whose behalf, and why.

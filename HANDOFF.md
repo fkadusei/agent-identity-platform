@@ -28,8 +28,11 @@
   agent↔gateway plus a service mesh (Linkerd) for every other in-cluster hop,
   Keycloak, OPA and the observability stack included (`docs/tls.md`,
   `scripts/tls-check.sh`). Then **per-agent rate and cost limits** at the LLM
-  gateway, keyed on the caller's JWT-SVID-proven SPIFFE ID (`docs/llm-gateway.md`).
-  The threat model is fully addressed.
+  gateway, keyed on the caller's JWT-SVID-proven SPIFFE ID, with durable counters
+  (`docs/llm-gateway.md`). Then **HA for the app tier**: api/tools/agent/gateway/
+  opa at 2 replicas with anti-affinity and PodDisruptionBudgets, on a 3-node kind
+  cluster (`docs/ha.md`, `scripts/ha-check.sh`). The threat model is fully
+  addressed.
 - **Last updated:** 2026-09-13
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
@@ -86,9 +89,12 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
 addressed (T9 tenancy included). Next, pick from the open backlog in
 [`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
 
-- **HA** — SPIRE, Keycloak, OPA, Postgres and the sandbox are single-replica demos.
 - **Tenancy depth** — approvals/run checkpoints are keyed by user/agent, not
   tenant; add a tenant column if those are ever shared across tenants.
+- **HA for stateful components** — SPIRE (shared datastore + cloud KMS),
+  Keycloak (external DB + clustering), Postgres (managed HA), the sandbox
+  (in-memory). The app tier is already replicated (`docs/ha.md`).
+- **Autoscaling** — the stateless services could take an HPA.
 - **SPIFFE-native transport** — the mesh uses Linkerd's own identity; extending
   SPIFFE mTLS to every hop (and the browser edge via ingress TLS) is a further
   step.

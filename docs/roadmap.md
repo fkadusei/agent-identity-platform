@@ -45,7 +45,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
 ## Phase 2 — Production hardening
 
-- [~] TLS/mTLS everywhere; HA SPIRE; persistent storage; hardened Keycloak
+- [~] TLS/mTLS everywhere (done — `docs/tls.md`); HA for the app tier (done —
+      `docs/ha.md`); HA SPIRE (needs a shared datastore + cloud KMS);
+      persistent storage; hardened Keycloak
       (mTLS done for the agent↔gateway hop; the rest is plaintext in-cluster)
 - [x] **Secrets out of git and manifests** — client secrets generated into a
       gitignored `.env`, the realm rendered from a template, values mounted as
@@ -90,6 +92,11 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] **Per-agent rate and cost limits** on the LLM gateway — keyed on the
       caller's JWT-SVID-proven SPIFFE ID; 429 + `Retry-After` on exceed; counters
       durable in Postgres when a database is configured (`docs/llm-gateway.md`)
+- [x] **HA for the app tier** — api/tools/agent/gateway/opa run 2 replicas with
+      soft anti-affinity and PodDisruptionBudgets; the kind cluster has worker
+      nodes and `scripts/ha-check.sh` proves an eviction is survivable. SPIRE,
+      Keycloak, Postgres and the sandbox are documented as single-replica, and
+      why (`docs/ha.md`)
 - The tools' in-memory simulator state resets on restart (fine for the demo).
 
 ## Phase 3 — Deploy and adoption

@@ -84,7 +84,7 @@ resources:
 services:
   api:
     enabled: true
-    replicas: 1
+    replicas: 2
     port: 8080
     spiffe: false
     env:
@@ -112,7 +112,7 @@ services:
           secretKeyRef: { name: platform-secrets, key: ADMIN_CLIENT_SECRET }
   tools:
     enabled: true
-    replicas: 1
+    replicas: 2
     port: 8000
     spiffe: false
     env:
@@ -134,6 +134,7 @@ services:
         value: http
       - name: SANDBOX_BASE_URL
         value: http://sandbox:8090
+  # The sandbox holds in-memory simulator state, so it stays single-replica.
   sandbox:
     enabled: true
     replicas: 1
@@ -142,7 +143,7 @@ services:
     env: []
   agent:
     enabled: true
-    replicas: 1
+    replicas: 2
     port: 8081
     spiffe: true
     env:
@@ -168,7 +169,7 @@ services:
           secretKeyRef: { name: platform-secrets, key: MANAGER_CLI_SECRET }
   gateway:
     enabled: true
-    replicas: 1
+    replicas: 2
     port: 8443
     spiffe: true
     env:
@@ -197,6 +198,7 @@ services:
 # --- policy ------------------------------------------------------------------
 opa:
   enabled: true
+  replicas: 2
   image: openpolicyagent/opa:0.68.0
   # Existing ConfigMap holding the versioned bundle (authz.rego + data.json +
   # .manifest). Build it with scripts/build-bundle.sh; in production it is
@@ -218,6 +220,12 @@ observability_stack:
   grafana:
     enabled: true
     image: grafana/grafana:11.4.0
+
+# --- disruption --------------------------------------------------------------
+# A PodDisruptionBudget per stateless service: a node drain must leave one
+# replica serving.
+podDisruptionBudget:
+  enabled: true
 
 # --- ingress -----------------------------------------------------------------
 ingress:
