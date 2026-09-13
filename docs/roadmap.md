@@ -70,7 +70,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] **UI polish** — a per-run "what just happened" summary, the delegation
       chain (agent → user → tool), and inline approve/deny from the result card
       (with the requester resuming once a manager decides)
-- [ ] Operator user guide
+- [x] Operator user guide — bring-up, health checks, common operations,
+      incident-response playbooks, alerting, troubleshooting and the Phase 2 gate
+      checklist (`docs/operator-guide.md`)
 - [ ] **Gate:** threat model addressed; dashboards live; secret audit clean
 
 ## Backlog / known gaps

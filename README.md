@@ -88,6 +88,7 @@ Then read, in order:
 | Developers | [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`docs/decisions/`](docs/decisions/) |
 | Security | [`SECURITY.md`](SECURITY.md) · [`docs/threat-model.md`](docs/threat-model.md) · [`docs/data-handling.md`](docs/data-handling.md) |
 | Resuming work | [`HANDOFF.md`](HANDOFF.md) · [`docs/roadmap.md`](docs/roadmap.md) |
+| Operators | [`docs/operator-guide.md`](docs/operator-guide.md) · [`docs/secrets.md`](docs/secrets.md) · [`docs/policy-lifecycle.md`](docs/policy-lifecycle.md) |
 | Users (plain language) | `docs/guides/` (added as features land) |
 
 ## Repository layout
