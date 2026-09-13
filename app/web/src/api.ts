@@ -2,12 +2,23 @@
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
 async function request(path: string, init: RequestInit = {}): Promise<any> {
-  const res = await fetch(BASE + path, {
-    // `init` first, then headers — otherwise init.headers would overwrite the
-    // merged headers and drop Content-Type (FastAPI would then 422 the body).
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-  });
+  let res: Response;
+  try {
+    res = await fetch(BASE + path, {
+      // `init` first, then headers — otherwise init.headers would overwrite the
+      // merged headers and drop Content-Type (FastAPI would then 422 the body).
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+    });
+  } catch {
+    // fetch only rejects on a network-level failure (server down, dropped
+    // port-forward, or a CORS/blocked request) — never on an HTTP error status.
+    const where = BASE || window.location.origin;
+    throw new Error(
+      `Cannot reach the API at ${where}. Is the server running — or your ` +
+        `\`kubectl port-forward svc/api 8080:8080\` still alive?`,
+    );
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(errorMessage(body, res.status));
   return body;
