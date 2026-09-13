@@ -69,3 +69,6 @@ data/
 .DS_Store
 .idea/
 .vscode/
+
+# Local port-forward pid (start.sh/stop.sh)
+.port-forward.pid
