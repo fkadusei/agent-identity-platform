@@ -38,6 +38,7 @@ def _create(store, **overrides):
         user="alice",
         agent="spiffe://acme.net/agent",
         reason="above the limit",
+        tenant="acme",
     )
     payload.update(overrides)
     return store.create(**payload)
@@ -46,7 +47,7 @@ def _create(store, **overrides):
 def test_create_and_get(store):
     a = _create(store)
     assert a.id.startswith("ap-")
-    fetched = store.get(a.id)
+    fetched = store.get(a.id, "acme")
     assert fetched is not None
     assert fetched.status == "pending"
     assert fetched.args == {"order_id": "o-1001", "amount": 200}
@@ -54,7 +55,7 @@ def test_create_and_get(store):
 
 def test_approve_then_verify(store):
     a = _create(store)
-    decided = store.decide(a.id, approver="manager", approved=True, note="ok")
+    decided = store.decide(a.id, approver="manager", approved=True, note="ok", tenant="acme")
     assert decided is not None and decided.status == "approved"
     assert store.verify(
         a.id,
@@ -62,12 +63,13 @@ def test_approve_then_verify(store):
         args={"order_id": "o-1001", "amount": 200},
         user="alice",
         agent="spiffe://acme.net/agent",
+        tenant="acme",
     )
 
 
 def test_verify_rejects_a_different_request(store):
     a = _create(store)
-    store.decide(a.id, approver="manager", approved=True)
+    store.decide(a.id, approver="manager", approved=True, tenant="acme")
     # Same approval id, different amount -> not valid.
     assert not store.verify(
         a.id,
@@ -75,27 +77,28 @@ def test_verify_rejects_a_different_request(store):
         args={"order_id": "o-1001", "amount": 9999},
         user="alice",
         agent="spiffe://acme.net/agent",
+        tenant="acme",
     )
 
 
 def test_self_approval_is_refused(store):
     a = _create(store, user="alice")
-    assert store.decide(a.id, approver="alice", approved=True) is None
-    assert store.get(a.id).status == "pending"
+    assert store.decide(a.id, approver="alice", approved=True, tenant="acme") is None
+    assert store.get(a.id, "acme").status == "pending"
 
 
 def test_double_decision_is_refused(store):
     a = _create(store)
-    assert store.decide(a.id, approver="manager", approved=True) is not None
+    assert store.decide(a.id, approver="manager", approved=True, tenant="acme") is not None
     # Second decision on an already-decided approval loses.
-    assert store.decide(a.id, approver="manager", approved=False) is None
+    assert store.decide(a.id, approver="manager", approved=False, tenant="acme") is None
 
 
 def test_pending_only_lists_pending(store):
     pending = _create(store, reason=f"p-{uuid.uuid4().hex[:6]}")
     decided = _create(store)
     store.decide(decided.id, approver="manager", approved=True)
-    ids = {a.id for a in store.pending()}
+    ids = {a.id for a in store.pending("acme")}
     assert pending.id in ids
     assert decided.id not in ids
 
@@ -103,5 +106,5 @@ def test_pending_only_lists_pending(store):
 def test_all_lists_every_approval(store):
     a = _create(store)
     b = _create(store, reason="second")
-    ids = {x.id for x in store.all()}
+    ids = {x.id for x in store.all("acme")}
     assert {a.id, b.id} <= ids

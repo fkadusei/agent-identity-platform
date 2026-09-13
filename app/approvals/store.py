@@ -28,12 +28,15 @@ CREATE TABLE IF NOT EXISTS approvals (
     "user"      text NOT NULL,
     agent       text NOT NULL,
     reason      text NOT NULL,
+    tenant      text NOT NULL DEFAULT '',
     status      text NOT NULL,
     approver    text,
     note        text,
     created_at  double precision NOT NULL,
     decided_at  double precision
-)
+);
+-- Migration for a database created before approvals were tenant-scoped.
+ALTER TABLE approvals ADD COLUMN IF NOT EXISTS tenant text NOT NULL DEFAULT '';
 """
 
 
@@ -50,6 +53,9 @@ class Approval:
     user: str
     agent: str
     reason: str
+    # The tenant the request belongs to. Approvals are scoped to it, so one
+    # tenant's approvers never see or decide another's.
+    tenant: str = ""
     status: str = "pending"  # pending | approved | denied
     approver: str | None = None
     note: str | None = None
@@ -67,7 +73,9 @@ class ApprovalStore:
         self._items: dict[str, Approval] = {}
         self._lock = threading.Lock()
 
-    def create(self, *, tool: str, args: dict, user: str, agent: str, reason: str) -> Approval:
+    def create(
+        self, *, tool: str, args: dict, user: str, agent: str, reason: str, tenant: str
+    ) -> Approval:
         approval = Approval(
             id=f"ap-{uuid.uuid4().hex[:12]}",
             tool=tool,
@@ -75,26 +83,36 @@ class ApprovalStore:
             user=user,
             agent=agent,
             reason=reason,
+            tenant=tenant,
         )
         with self._lock:
             self._items[approval.id] = approval
         return approval
 
-    def get(self, approval_id: str) -> Approval | None:
-        return self._items.get(approval_id)
+    def get(self, approval_id: str, tenant: str) -> Approval | None:
+        approval = self._items.get(approval_id)
+        # Invisible across tenants, the same as it is in Postgres.
+        return approval if approval is not None and approval.tenant == tenant else None
 
-    def pending(self) -> list[Approval]:
-        return [a for a in self._items.values() if a.status == "pending"]
+    def pending(self, tenant: str) -> list[Approval]:
+        return [a for a in self._items.values() if a.status == "pending" and a.tenant == tenant]
 
-    def all(self) -> list[Approval]:
-        return list(self._items.values())
+    def all(self, tenant: str) -> list[Approval]:
+        return [a for a in self._items.values() if a.tenant == tenant]
 
     def decide(
-        self, approval_id: str, *, approver: str, approved: bool, note: str | None = None
+        self,
+        approval_id: str,
+        *,
+        approver: str,
+        approved: bool,
+        note: str | None = None,
+        tenant: str,
     ) -> Approval | None:
         with self._lock:
             approval = self._items.get(approval_id)
-            if approval is None or approval.status != "pending":
+            # Only the requester's own tenant may decide it.
+            if approval is None or approval.status != "pending" or approval.tenant != tenant:
                 return None
             if approver == approval.user:
                 # Separation of duties: no self-approval.
@@ -106,10 +124,10 @@ class ApprovalStore:
             return approval
 
     def verify(
-        self, approval_id: str, *, tool: str, args: dict, user: str, agent: str
+        self, approval_id: str, *, tool: str, args: dict, user: str, agent: str, tenant: str
     ) -> bool:
         approval = self._items.get(approval_id)
-        if approval is None or approval.status != "approved":
+        if approval is None or approval.status != "approved" or approval.tenant != tenant:
             return False
         return (
             approval.tool == tool
@@ -155,14 +173,17 @@ class PostgresApprovalStore:
             user=row[3],
             agent=row[4],
             reason=row[5],
-            status=row[6],
-            approver=row[7],
-            note=row[8],
-            created_at=row[9],
-            decided_at=row[10],
+            tenant=row[6],
+            status=row[7],
+            approver=row[8],
+            note=row[9],
+            created_at=row[10],
+            decided_at=row[11],
         )
 
-    def create(self, *, tool: str, args: dict, user: str, agent: str, reason: str) -> Approval:
+    def create(
+        self, *, tool: str, args: dict, user: str, agent: str, reason: str, tenant: str
+    ) -> Approval:
         approval = Approval(
             id=f"ap-{uuid.uuid4().hex[:12]}",
             tool=tool,
@@ -170,11 +191,12 @@ class PostgresApprovalStore:
             user=user,
             agent=agent,
             reason=reason,
+            tenant=tenant,
         )
         with self._conn() as conn:
             conn.execute(
-                'INSERT INTO approvals (id, tool, args, "user", agent, reason, status, created_at) '
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                'INSERT INTO approvals (id, tool, args, "user", agent, reason, tenant, status, '
+                "created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     approval.id,
                     approval.tool,
@@ -182,56 +204,66 @@ class PostgresApprovalStore:
                     approval.user,
                     approval.agent,
                     approval.reason,
+                    approval.tenant,
                     approval.status,
                     approval.created_at,
                 ),
             )
         return approval
 
-    def get(self, approval_id: str) -> Approval | None:
+    def get(self, approval_id: str, tenant: str) -> Approval | None:
         with self._conn() as conn:
             row = conn.execute(
-                'SELECT id, tool, args, "user", agent, reason, status, approver, note, '
-                "created_at, decided_at FROM approvals WHERE id = %s",
-                (approval_id,),
+                'SELECT id, tool, args, "user", agent, reason, tenant, status, approver, note, '
+                "created_at, decided_at FROM approvals WHERE id = %s AND tenant = %s",
+                (approval_id, tenant),
             ).fetchone()
         return self._row_to_approval(row) if row else None
 
-    def pending(self) -> list[Approval]:
+    def pending(self, tenant: str) -> list[Approval]:
         with self._conn() as conn:
             rows = conn.execute(
-                'SELECT id, tool, args, "user", agent, reason, status, approver, note, '
-                "created_at, decided_at FROM approvals WHERE status = 'pending' "
-                "ORDER BY created_at"
+                'SELECT id, tool, args, "user", agent, reason, tenant, status, approver, note, '
+                "created_at, decided_at FROM approvals "
+                "WHERE status = 'pending' AND tenant = %s ORDER BY created_at",
+                (tenant,),
             ).fetchall()
         return [self._row_to_approval(r) for r in rows]
 
-    def all(self) -> list[Approval]:
+    def all(self, tenant: str) -> list[Approval]:
         with self._conn() as conn:
             rows = conn.execute(
-                'SELECT id, tool, args, "user", agent, reason, status, approver, note, '
-                "created_at, decided_at FROM approvals ORDER BY created_at DESC"
+                'SELECT id, tool, args, "user", agent, reason, tenant, status, approver, note, '
+                "created_at, decided_at FROM approvals WHERE tenant = %s "
+                "ORDER BY created_at DESC",
+                (tenant,),
             ).fetchall()
         return [self._row_to_approval(r) for r in rows]
 
     def decide(
-        self, approval_id: str, *, approver: str, approved: bool, note: str | None = None
+        self,
+        approval_id: str,
+        *,
+        approver: str,
+        approved: bool,
+        note: str | None = None,
+        tenant: str,
     ) -> Approval | None:
         status = "approved" if approved else "denied"
         with self._conn() as conn:
             row = conn.execute(
                 'UPDATE approvals SET status = %s, approver = %s, note = %s, decided_at = %s '
-                "WHERE id = %s AND status = 'pending' AND \"user\" <> %s "
-                'RETURNING id, tool, args, "user", agent, reason, status, approver, note, '
+                "WHERE id = %s AND status = 'pending' AND tenant = %s AND \"user\" <> %s "
+                'RETURNING id, tool, args, "user", agent, reason, tenant, status, approver, note, '
                 "created_at, decided_at",
-                (status, approver, note, time.time(), approval_id, approver),
+                (status, approver, note, time.time(), approval_id, tenant, approver),
             ).fetchone()
         return self._row_to_approval(row) if row else None
 
     def verify(
-        self, approval_id: str, *, tool: str, args: dict, user: str, agent: str
+        self, approval_id: str, *, tool: str, args: dict, user: str, agent: str, tenant: str
     ) -> bool:
-        approval = self.get(approval_id)
+        approval = self.get(approval_id, tenant)
         if approval is None or approval.status != "approved":
             return False
         return (

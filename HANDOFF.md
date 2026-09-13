@@ -32,8 +32,9 @@
   (`docs/llm-gateway.md`). Then **HA for the app tier**: api/tools/agent/gateway/
   opa at 2 replicas with anti-affinity and PodDisruptionBudgets, on a 3-node kind
   cluster (`docs/ha.md`, `scripts/ha-check.sh`). Then **autoscaling**: the
-  stateless services scale 2→5 on CPU (`docs/autoscaling.md`). The threat model
-  is fully addressed.
+  stateless services scale 2→5 on CPU (`docs/autoscaling.md`). Then **tenancy
+  depth**: approvals are scoped by tenant, so one tenant's managers never see or
+  decide another's queue (`docs/tenancy.md`). The threat model is fully addressed.
 - **Last updated:** 2026-09-13
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
@@ -90,8 +91,6 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
 addressed (T9 tenancy included). Next, pick from the open backlog in
 [`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
 
-- **Tenancy depth** — approvals/run checkpoints are keyed by user/agent, not
-  tenant; add a tenant column if those are ever shared across tenants.
 - **HA for stateful components** — SPIRE (shared datastore + cloud KMS),
   Keycloak (external DB + clustering), Postgres (managed HA), the sandbox
   (in-memory). The app tier is already replicated (`docs/ha.md`).

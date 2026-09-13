@@ -43,6 +43,20 @@ The simulator backend filters the synthetic data; the HTTP backend sends it as
 service enforces it. A record from another tenant is a **404**, indistinguishable
 from a record that does not exist — so tenancy does not leak *existence* either.
 
+## The platform's own state
+
+Tenancy applies to the platform's own records too, not just the data behind the
+tools:
+
+| Record | Scoped by |
+| --- | --- |
+| approvals (`create`/`list`/`decide`/`verify`) | the caller's tenant — a manager sees and decides only their own tenant's queue |
+| the approval queue (`GET /approvals`) | the caller's token (it is authenticated, and filtered) |
+
+The tenant is never a request parameter. It comes from the verified token, so a
+caller cannot ask for another tenant's queue — and another tenant's approval is
+indistinguishable from one that does not exist (a decision returns 409).
+
 ## Enrollment
 
 - **Self-service** (`POST /enroll`): the tenant is taken from `DEFAULT_TENANT`
