@@ -65,6 +65,19 @@ spec:
               value: "60"
             - name: LLM_TOKEN_BUDGET_PER_DAY
               value: "200000"
+            # Durable limits: with a database configured the counters live in
+            # Postgres, so they survive a restart and are shared across replicas.
+            - name: PGHOST
+              value: postgres
+            - name: PGUSER
+              value: agent
+            - name: PGDATABASE
+              value: agent_platform
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: password
             # The ONLY place a provider key may live. Absent by default (Ollama
             # needs none); supplied via setup.sh from a gitignored .env.
             - name: LLM_API_KEY

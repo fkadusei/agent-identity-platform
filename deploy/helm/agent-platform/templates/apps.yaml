@@ -47,7 +47,7 @@ spec:
             {{- with $svc.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-            {{- if and $.Values.database.url (or (eq $name "api") (eq $name "agent")) }}
+            {{- if and $.Values.database.url (has $name (list "api" "agent" "gateway")) }}
             - name: DATABASE_URL
               value: {{ $.Values.database.url | quote }}
             {{- end }}
