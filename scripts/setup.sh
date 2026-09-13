@@ -127,10 +127,15 @@ ok "spire-server + spire-agent ready"
 SOCKET=/run/spire/server/private/api.sock
 SPIRE="kubectl -n $NS exec spire-server-0 -- /opt/spire/bin/spire-server"
 
-# Wait for at least one SPIRE agent to attest before registering workloads.
-for _ in $(seq 1 12); do
+# Wait until every running SPIRE agent has attested. They attest a moment apart,
+# and an agent that attests *after* we register gets no entries — leaving its
+# node's workloads with "no identity issued".
+want=$(kubectl -n $NS get pods -l app=spire-agent --field-selector=status.phase=Running \
+  --no-headers 2>/dev/null | wc -l | tr -d ' ')
+for _ in $(seq 1 24); do
   # `|| true` so a transient failure retries instead of tripping `set -e`.
-  $SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | grep -q 'SPIFFE ID' && break
+  have=$($SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | grep -c 'SPIFFE ID' || true)
+  [ "${have:-0}" -ge "${want:-1}" ] && [ "${have:-0}" -gt 0 ] && break
   sleep 5
 done
 $SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | grep -q 'SPIFFE ID' \
