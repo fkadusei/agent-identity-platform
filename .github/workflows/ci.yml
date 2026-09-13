@@ -27,6 +27,9 @@ jobs:
           sh -n .githooks/pre-commit || { echo "::error::hook syntax error"; fail=1; }
           exit $fail
 
+      - name: pre-commit hook blocks secrets
+        run: ./scripts/test-hooks.sh
+
       - name: validate config files
         run: |
           python3 - <<'PY'
