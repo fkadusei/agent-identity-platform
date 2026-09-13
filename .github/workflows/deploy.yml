@@ -51,19 +51,26 @@ jobs:
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
 
       # Supply chain: refuse to deploy anything our release workflow did not sign.
+      # Context values are passed via env (never interpolated into the shell) —
+      # `inputs.*` is user-controlled and would otherwise be a script-injection
+      # vector.
       - name: verify image signatures
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          REPO: ghcr.io/${{ github.repository }}
         run: |
-          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
           for svc in api tools agent gateway; do
-            cosign verify "$repo/$svc:${{ inputs.image_tag }}" \
-              --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/.*" \
+            cosign verify "$REPO/$svc:$IMAGE_TAG" \
+              --certificate-identity-regexp "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/.*" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com
           done
 
       - name: configure cluster access
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG }}
         run: |
           mkdir -p ~/.kube
-          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+          echo "$KUBECONFIG_B64" | base64 -d > ~/.kube/config
 
       # The bundle is a build artifact, versioned and (in production) signed.
       - name: build and apply the policy bundle
@@ -79,11 +86,13 @@ jobs:
 
       # --atomic: helm rolls back automatically if the release fails or times out.
       - name: helm upgrade
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
           helm upgrade --install agent-platform deploy/helm/agent-platform \
             --namespace agent-platform --create-namespace \
             --set image.registry="ghcr.io/${GITHUB_REPOSITORY,,}" \
-            --set image.tag="${{ inputs.image_tag }}" \
+            --set image.tag="$IMAGE_TAG" \
             --atomic --wait --timeout 10m
 
       - name: post-deploy smoke test
