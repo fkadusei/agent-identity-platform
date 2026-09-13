@@ -89,7 +89,7 @@ Then read, in order:
 | Security | [`SECURITY.md`](SECURITY.md) · [`docs/threat-model.md`](docs/threat-model.md) · [`docs/tls.md`](docs/tls.md) · [`docs/data-handling.md`](docs/data-handling.md) |
 | Data | [`docs/data-stores.md`](docs/data-stores.md) · [`docs/tenancy.md`](docs/tenancy.md) · [`docs/data-handling.md`](docs/data-handling.md) |
 | Resuming work | [`HANDOFF.md`](HANDOFF.md) · [`docs/roadmap.md`](docs/roadmap.md) |
-| Operators | [`docs/operator-guide.md`](docs/operator-guide.md) · [`docs/secrets.md`](docs/secrets.md) · [`docs/policy-lifecycle.md`](docs/policy-lifecycle.md) |
+| Operators | [`docs/operator-guide.md`](docs/operator-guide.md) · [`docs/ha.md`](docs/ha.md) · [`docs/secrets.md`](docs/secrets.md) |
 | Platform engineers | [`docs/ci-cd.md`](docs/ci-cd.md) · [`docs/llm-gateway.md`](docs/llm-gateway.md) · [`deploy/helm/agent-platform/`](deploy/helm/agent-platform/) |
 | Users (plain language) | `docs/guides/` (added as features land) |
 

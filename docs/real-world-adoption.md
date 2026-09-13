@@ -84,7 +84,9 @@ the reference, not oversights:
       claim and enforce it in policy *and* the tools before serving >1 tenant.
 - [ ] **TLS/mTLS everywhere** — only agent↔gateway is mTLS today; terminate and
       originate TLS on every hop (cert-manager or a service mesh).
-- [ ] **HA** — SPIRE, Keycloak, OPA and the datastore are single-replica demos.
+- [ ] **HA** — the app tier is replicated (2 replicas + PDBs, see
+      [`ha.md`](ha.md)); SPIRE, Keycloak and Postgres still need a shared
+      datastore / external DB / managed HA.
 - [ ] **Managed data** — point `database.url` at a managed Postgres (done); give
       it backups and a migration story.
 - [ ] **Identity federation** — replace seeded users with your IdP (OIDC/SAML) and

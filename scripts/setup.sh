@@ -106,7 +106,12 @@ if command -v linkerd >/dev/null 2>&1; then
     linkerd install --crds 2>/dev/null | kubectl apply -f - >/dev/null
     linkerd install 2>/dev/null | kubectl apply -f - >/dev/null
   fi
+  # The viz extension backs `tls-check.sh` (linkerd viz edges).
+  if ! kubectl get ns linkerd-viz >/dev/null 2>&1; then
+    linkerd viz install 2>/dev/null | kubectl apply -f - >/dev/null
+  fi
   kubectl -n linkerd rollout status deploy/linkerd-destination --timeout=240s >/dev/null
+  kubectl -n linkerd-viz rollout status deploy/web --timeout=240s >/dev/null
   kubectl annotate namespace $NS linkerd.io/inject=enabled --overwrite >/dev/null
   ok "linkerd up; $NS is mesh-injected (mTLS on every hop)"
 else
@@ -121,31 +126,35 @@ ok "spire-server + spire-agent ready"
 
 SOCKET=/run/spire/server/private/api.sock
 SPIRE="kubectl -n $NS exec spire-server-0 -- /opt/spire/bin/spire-server"
-PARENT_ID=""
+
+# Wait for at least one SPIRE agent to attest before registering workloads.
 for _ in $(seq 1 12); do
   # `|| true` so a transient failure retries instead of tripping `set -e`.
-  PARENT_ID=$($SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | awk '/SPIFFE ID/{print $NF; exit}' || true)
-  [ -n "$PARENT_ID" ] && break
+  $SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | grep -q 'SPIFFE ID' && break
   sleep 5
 done
-[ -n "$PARENT_ID" ] || die "no attested SPIRE agent found"
+$SPIRE agent list -socketPath "$SOCKET" 2>/dev/null | grep -q 'SPIFFE ID' \
+  || die "no attested SPIRE agent found"
 
-# One registration entry per workload identity. The gateway has its own SPIFFE
-# ID so the agent can verify it over mTLS (and vice versa).
+# One registration entry per workload identity, **per attested agent**. With more
+# than one node each runs its own SPIRE agent, and a workload is attested by the
+# agent on its own node — a single entry parented to one agent leaves pods on
+# every other node with "no identity issued". The gateway has its own SPIFFE ID
+# so the agent can verify it over mTLS (and vice versa).
 ensure_entry() { # ensure_entry <service-account> <spiffe-id>
-  local sa="$1" id="$2" existing entry
-  existing=$($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$id" 2>/dev/null \
-    | awk '/Parent ID/{print $NF; exit}')
-  if [ "$existing" != "$PARENT_ID" ]; then
-    if [ -n "$existing" ]; then
-      entry=$($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$id" 2>/dev/null \
-        | awk '/Entry ID/{print $NF; exit}')
-      $SPIRE entry delete -socketPath "$SOCKET" -entryID "$entry" >/dev/null
-    fi
+  local sa="$1" id="$2" entry parent
+  # Drop any existing entries for this identity (e.g. parented to a node that is
+  # gone), then register one per attested agent.
+  for entry in $($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$id" 2>/dev/null \
+    | awk '/Entry ID/{print $NF}'); do
+    $SPIRE entry delete -socketPath "$SOCKET" -entryID "$entry" >/dev/null
+  done
+  for parent in $($SPIRE agent list -socketPath "$SOCKET" 2>/dev/null \
+    | awk '/SPIFFE ID/{print $NF}'); do
     $SPIRE entry create -socketPath "$SOCKET" \
-      -spiffeID "$id" -parentID "$PARENT_ID" \
+      -spiffeID "$id" -parentID "$parent" \
       -selector "k8s:ns:$NS" -selector "k8s:sa:$sa" >/dev/null
-  fi
+  done
   ok "registration entry: $id (k8s:sa=$sa)"
 }
 

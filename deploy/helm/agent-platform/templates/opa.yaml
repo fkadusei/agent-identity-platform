@@ -13,7 +13,7 @@ metadata:
     app: opa
     {{- include "agent-platform.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.opa.replicas | default 1 }}
   selector:
     matchLabels:
       app: opa

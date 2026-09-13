@@ -30,6 +30,17 @@ spec:
       {{- if $svc.spiffe }}
       serviceAccountName: {{ $name }}
       {{- end }}
+      affinity:
+        # Spread replicas across nodes (soft, so a single-node cluster still
+        # schedules them).
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ $name }}
+                topologyKey: kubernetes.io/hostname
       securityContext:
         {{- include "agent-platform.podSecurityContext" $ | nindent 8 }}
       containers:
