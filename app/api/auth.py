@@ -86,7 +86,13 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
     roles = platform_roles(delegation.roles)
     metrics.LOGINS.labels("ok").inc()
     audit("auth.login", user=username, roles=roles)
-    return {"user": username, "roles": roles, "access_token": token}
+    return {
+        "user": username,
+        "roles": roles,
+        # Surfaced so callers (the UI, scripts) never need to decode the token.
+        "tenant": delegation.tenant,
+        "access_token": token,
+    }
 
 
 @router.post("/enroll")
@@ -105,7 +111,8 @@ def enroll(body: dict) -> dict:
         )
 
     # NOTE: roles are deliberately NOT read from the request. A self-enrolled
-    # account starts with no roles; an admin grants access afterward.
+    # account starts with no roles; an admin grants access afterward. The tenant
+    # comes from configuration (a signup form cannot choose its own tenant).
     try:
         user_id = admin_from_env().create_user(
             username=username,
@@ -113,6 +120,7 @@ def enroll(body: dict) -> dict:
             password=password,
             first_name=(body.get("firstName") or "").strip(),
             last_name=(body.get("lastName") or "").strip(),
+            tenant=os.environ.get("DEFAULT_TENANT", "acme"),
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))

@@ -43,7 +43,7 @@ const json = (method: string, token: string, body?: any): RequestInit => ({
 });
 
 // --- auth + enrollment -----------------------------------------------------
-export type Session = { user: string; roles: string[]; token: string };
+export type Session = { user: string; roles: string[]; tenant: string; token: string };
 
 export const authConfig = () => request("/auth/config");
 
@@ -55,7 +55,12 @@ export const login = async (username: string, password: string): Promise<Session
   // The API speaks OAuth and returns `access_token`; the app works with `token`.
   // Normalise here so callers never accidentally send "Bearer undefined".
   if (!r?.access_token) throw new Error("login response did not include an access token");
-  return { user: r.user, roles: r.roles ?? [], token: r.access_token };
+  return {
+    user: r.user,
+    roles: r.roles ?? [],
+    tenant: r.tenant ?? "",
+    token: r.access_token,
+  };
 };
 
 export const enroll = (form: {

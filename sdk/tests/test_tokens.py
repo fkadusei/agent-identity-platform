@@ -37,6 +37,15 @@ def test_roles_default_to_empty(resolver, make_token):
     assert verifier(resolver).verify(make_token()).roles == ()
 
 
+def test_tenant_is_extracted_from_the_token(resolver, make_token):
+    assert verifier(resolver).verify(make_token(tenant="acme")).tenant == "acme"
+
+
+def test_tenant_defaults_to_none(resolver, make_token):
+    # No tenant claim -> an unscoped identity, which policy denies.
+    assert verifier(resolver).verify(make_token()).tenant is None
+
+
 def test_wrong_audience_is_rejected(resolver, make_token):
     token = make_token(aud="some-other-service")
     with pytest.raises(TokenRejected, match="audience"):

@@ -58,6 +58,23 @@ def test_create_user_defaults_names_so_the_account_can_log_in():
     assert captured["lastName"] == "carol"
 
 
+def test_create_user_sets_the_tenant_attribute():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            return _token_ok(request)
+        captured.update(json.loads(request.content))
+        return httpx.Response(201, headers={"Location": f"{ADMIN}/users/x"})
+
+    _client(handler).create_user(
+        username="carol", email="c@example.com", password="password1", tenant="globex"
+    )
+    # The tenant is an identity attribute; without it the account is unscoped and
+    # policy denies everything.
+    assert captured["attributes"] == {"tenant": ["globex"]}
+
+
 def test_duplicate_username_raises_valueerror():
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == TOKEN_URL:

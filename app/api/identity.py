@@ -77,9 +77,10 @@ class IdentityAdmin:
         password: str,
         first_name: str = "",
         last_name: str = "",
+        tenant: str = "",
     ) -> str:
         """Create a user and return its id. Raises ValueError on a duplicate."""
-        payload = {
+        payload: dict = {
             "username": username,
             "email": email,
             "enabled": True,
@@ -92,6 +93,11 @@ class IdentityAdmin:
             "requiredActions": [],
             "credentials": [{"type": "password", "value": password, "temporary": False}],
         }
+        if tenant:
+            # The tenant is an identity attribute, mapped into the token by the
+            # realm's `tenant` protocol mapper. Without it the account is
+            # unscoped and policy denies everything.
+            payload["attributes"] = {"tenant": [tenant]}
         resp = self._request("POST", "/users", json=payload)
         if resp.status_code == 409:
             raise ValueError("that username is already taken")

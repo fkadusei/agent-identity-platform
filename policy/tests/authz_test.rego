@@ -6,7 +6,13 @@ import rego.v1
 AGENT := "spiffe://acme.com/ns/agent-platform/sa/agent"
 ROGUE := "spiffe://acme.com/ns/agent-platform/sa/rogue"
 
-base := {"agent": AGENT, "user": "alice", "roles": ["support_rep"], "tool": "crm.customer.read"}
+base := {
+  "agent": AGENT,
+  "user": "alice",
+  "roles": ["support_rep"],
+  "tenant": "acme",
+  "tool": "crm.customer.read",
+}
 
 refund(amount) := object.union(base, {"tool": "refunds.issue", "amount": amount})
 
@@ -71,4 +77,17 @@ test_reason_is_never_empty if {
 
 test_refund_reason_mentions_approval if {
   contains(reason, "approval") with input as refund(200)
+}
+
+# --- tenancy: an unscoped identity gets nothing (fail closed) -----------------
+test_deny_without_a_tenant if {
+  decision == "deny" with input as object.remove(base, ["tenant"])
+}
+
+test_missing_tenant_reason_is_clear if {
+  contains(reason, "tenant") with input as object.remove(base, ["tenant"])
+}
+
+test_allow_still_holds_with_a_tenant if {
+  decision == "allow" with input as base
 }

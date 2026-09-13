@@ -175,6 +175,9 @@ kubectl -n $NS create configmap opa-bundle \
   --from-file=.manifest=dist/bundle/.manifest \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl apply -f "$MANIFESTS/opa/" >/dev/null
+# Restart OPA: the bundle files are mounted with subPath (which does not update
+# in place) and OPA loads the bundle at startup, so a new revision needs a restart.
+kubectl -n $NS rollout restart deploy/opa >/dev/null
 kubectl -n $NS rollout status deploy/opa --timeout=120s >/dev/null
 ok "opa serving policy bundle revision $POLICY_REVISION"
 
@@ -195,10 +198,10 @@ if [ -n "${LLM_API_KEY:-}" ]; then
   ok "llm-api-key secret created (consumed only by the gateway)"
 fi
 kubectl apply -f "$MANIFESTS/apps/" >/dev/null
-kubectl -n $NS rollout restart deploy/api deploy/tools deploy/agent deploy/gateway >/dev/null
-kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gateway \
+kubectl -n $NS rollout restart deploy/api deploy/tools deploy/agent deploy/gateway deploy/sandbox >/dev/null
+kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gateway deploy/sandbox \
   --timeout=240s >/dev/null
-ok "api, tools, agent, gateway ready"
+ok "api, tools, agent, gateway, sandbox ready"
 
 say "9. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""

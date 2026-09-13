@@ -23,9 +23,11 @@ Two ways to get an account:
 1. **Self-service** — the sign-in page's "Create one" link posts to
    `POST /enroll`. The account is created with **no roles** and can do nothing
    until an admin grants one. Roles are never taken from the request, so a
-   signup cannot self-escalate.
+   signup cannot self-escalate. The account is placed in the tenant from
+   `DEFAULT_TENANT` — a signup cannot choose its own tenant either
+   (see [`tenancy.md`](tenancy.md)).
 2. **Admin-created** — an admin uses the Admin tab's "New user" form
-   (`POST /admin/users`), which can set roles immediately.
+   (`POST /admin/users`), which can set roles and the tenant immediately.
 
 Self-service is toggled by `SIGNUP_ENABLED` (set in the API manifest). With
 `SIGNUP_ENABLED=0`, `/enroll` returns 403 and only admins can create accounts.

@@ -36,6 +36,7 @@ def test_enroll_is_refused_when_signup_is_disabled(client, monkeypatch):
 
 def test_enroll_never_takes_roles_from_the_request(client, monkeypatch):
     monkeypatch.setenv("SIGNUP_ENABLED", "1")
+    monkeypatch.setenv("DEFAULT_TENANT", "acme")
     captured: dict = {}
 
     class FakeAdmin:
@@ -52,11 +53,15 @@ def test_enroll_never_takes_roles_from_the_request(client, monkeypatch):
             "password": "password1",
             # A malicious signup trying to self-escalate:
             "roles": ["platform_admin"],
+            # ...or to choose its own tenant:
+            "tenant": "globex",
         },
     )
     assert resp.status_code == 200
     assert resp.json()["roles"] == []
     assert "roles" not in captured
+    # The tenant comes from configuration, not the request.
+    assert captured["tenant"] == "acme"
 
 
 def test_enroll_requires_all_fields(client, monkeypatch):
