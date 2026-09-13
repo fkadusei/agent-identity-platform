@@ -70,8 +70,12 @@ export const enroll = (form: {
 export const runTask = (task: string, token: string) =>
   request("/tasks", { method: "POST", headers: auth(token), body: JSON.stringify({ task }) });
 
-export const resumeTask = (thread_id: string, approved: boolean) =>
-  request("/tasks/resume", { method: "POST", body: JSON.stringify({ thread_id, approved }) });
+export const resumeTask = (thread_id: string, approved: boolean, token: string) =>
+  request("/tasks/resume", {
+    method: "POST",
+    headers: auth(token),
+    body: JSON.stringify({ thread_id, approved }),
+  });
 
 export const listApprovals = () => request("/approvals?status=pending");
 

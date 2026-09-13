@@ -76,6 +76,20 @@ spec:
             # admin-only (see docs/enrollment-and-roles.md).
             - name: SIGNUP_ENABLED
               value: "1"
+            # Durable approvals. Without a database configured the store is
+            # in-memory; the password is a Secret reference, so no credential
+            # appears in a URL.
+            - name: PGHOST
+              value: postgres
+            - name: PGUSER
+              value: agent
+            - name: PGDATABASE
+              value: agent_platform
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: password
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
           ports:

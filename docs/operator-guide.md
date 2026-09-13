@@ -72,6 +72,10 @@ kubectl -n agent-platform exec deploy/tools -- \
 
 # recent decisions (structured)
 kubectl -n agent-platform logs deploy/opa --tail=20 | grep decision_id
+
+# durable state reachable?
+kubectl -n agent-platform exec deploy/api -- python -c \
+  "import os,psycopg; print(psycopg.connect(os.environ['DATABASE_URL']).execute('select 1').fetchone())"
 ```
 
 What to watch over time:
@@ -268,6 +272,7 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | Tools return `policy unavailable — denying` | OPA unreachable (fail-closed) | restore OPA (§5D) |
 | `no attested SPIRE agent found` | agent not attested yet | re-run `setup.sh`; check `spire-agent` logs |
 | Enrolled user vanished | Keycloak was recreated by `setup.sh` (ephemeral realm) | re-enroll, or use a persistent database in production |
+| Approvals/runs vanish on restart | `DATABASE_URL` not set (in-memory stores) | set `DATABASE_URL` (see [`data-stores.md`](data-stores.md)) |
 
 ## 8. Teardown
 

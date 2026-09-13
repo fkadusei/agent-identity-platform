@@ -288,7 +288,7 @@ function Console({
     setError("");
     try {
       await decideApproval(outcome.approval_id, approved, session.token);
-      setOutcome(await resumeTask(outcome.thread_id, approved));
+      setOutcome(await resumeTask(outcome.thread_id, approved, session.token));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -302,7 +302,7 @@ function Console({
     setBusy(true);
     setError("");
     try {
-      setOutcome(await resumeTask(outcome.thread_id, true));
+      setOutcome(await resumeTask(outcome.thread_id, true, session.token));
     } catch (e) {
       setError(String(e));
     } finally {

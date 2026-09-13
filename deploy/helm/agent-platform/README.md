@@ -69,6 +69,7 @@ helm lint deploy/helm/agent-platform
 | `auth.*` | issuer, audience, SPIFFE IDs, secret name, signup toggle |
 | `llm.*` | gateway URL and provider settings |
 | `opa.*` | OPA image and the bundle ConfigMap |
+| `database.url` | Postgres DSN for durable approvals + run checkpoints (empty = in-memory) |
 | `observability_stack.*` | enable/disable the collector, Jaeger, Prometheus, Grafana |
 | `resources` | default requests/limits for every workload |
 | `ingress.*` | host, class, TLS, annotations |

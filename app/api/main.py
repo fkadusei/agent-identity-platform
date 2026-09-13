@@ -43,6 +43,7 @@ from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.authz import current_delegation, require_roles
 from app.approvals import ApprovalStore
+from app.approvals.store import build_store
 from app.common import metrics
 from app.common.telemetry import instrument_fastapi, setup_telemetry
 
@@ -60,7 +61,8 @@ app.add_middleware(
 )
 app.include_router(auth_router)
 app.include_router(admin_router)
-_store = ApprovalStore()
+# Durable when DATABASE_URL is set (a restart no longer forgets approvals).
+_store = build_store()
 _audit: deque[dict] = deque(maxlen=500)
 
 
@@ -112,8 +114,16 @@ def start_task(body: dict, authorization: str | None = Header(default=None)) -> 
 
 
 @app.post("/tasks/resume")
-def resume_task(body: dict) -> dict:
-    resp = httpx.post(f"{_agent_url()}/resume", json=body, timeout=120)
+def resume_task(body: dict, authorization: str | None = Header(default=None)) -> dict:
+    # Forward the caller's token: if the agent restarted, the graph state is
+    # durable but the token is not, so the resume needs it again.
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    resp = httpx.post(
+        f"{_agent_url()}/resume",
+        json=body,
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=120,
+    )
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
     return resp.json()
@@ -154,7 +164,7 @@ def list_approvals(
     status: str | None = None,
     store: ApprovalStore = Depends(get_store),
 ) -> list[dict]:
-    items = store.pending() if status == "pending" else list(store._items.values())  # noqa: SLF001
+    items = store.pending() if status == "pending" else store.all()
     return [a.as_dict() for a in items]
 
 
