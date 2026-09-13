@@ -1,0 +1,101 @@
+# =============================================================================
+# Deploy the platform behind a human approval gate.
+#
+# The deploy job targets a GitHub Environment. When that environment has
+# "Required reviewers" configured, GitHub pauses the run and waits for a human
+# to approve before any cluster is touched — the same `require_approval` pattern
+# the platform enforces on its own agents, applied to deployment.
+#
+# One-time setup (Settings → Environments):
+#   * create the environment (e.g. `staging`, `production`)
+#   * add Required reviewers           ← this is the approval gate
+#   * add a `KUBECONFIG` secret (base64-encoded kubeconfig for that cluster)
+# The target cluster needs a SPIRE agent and Keycloak (see the chart README).
+#
+# Actions are pinned to full commit SHAs (mutable tags can be repointed).
+# =============================================================================
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment (must exist, with required reviewers)
+        type: environment
+        required: true
+      image_tag:
+        description: Image tag to deploy (its signature is verified first)
+        required: true
+      bundle_revision:
+        description: Policy bundle revision to stamp (optional)
+        required: false
+
+permissions:
+  contents: read
+
+# Never run two deploys into the same environment at once.
+concurrency:
+  group: deploy-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # The approval gate: a run stops here until a required reviewer approves.
+    environment: ${{ inputs.environment }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+        with:
+          version: v3.16.3
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+
+      # Supply chain: refuse to deploy anything our release workflow did not sign.
+      - name: verify image signatures
+        run: |
+          repo="ghcr.io/${GITHUB_REPOSITORY,,}"
+          for svc in api tools agent gateway; do
+            cosign verify "$repo/$svc:${{ inputs.image_tag }}" \
+              --certificate-identity-regexp "https://github.com/${{ github.repository }}/.github/workflows/release.yml@refs/tags/.*" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          done
+
+      - name: configure cluster access
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" | base64 -d > ~/.kube/config
+
+      # The bundle is a build artifact, versioned and (in production) signed.
+      - name: build and apply the policy bundle
+        env:
+          POLICY_REVISION: ${{ inputs.bundle_revision }}
+        run: |
+          ./scripts/build-bundle.sh
+          kubectl -n agent-platform create configmap opa-bundle \
+            --from-file=authz.rego=dist/bundle/authz.rego \
+            --from-file=data.json=dist/bundle/data.json \
+            --from-file=.manifest=dist/bundle/.manifest \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      # --atomic: helm rolls back automatically if the release fails or times out.
+      - name: helm upgrade
+        run: |
+          helm upgrade --install agent-platform deploy/helm/agent-platform \
+            --namespace agent-platform --create-namespace \
+            --set image.registry="ghcr.io/${GITHUB_REPOSITORY,,}" \
+            --set image.tag="${{ inputs.image_tag }}" \
+            --atomic --wait --timeout 10m
+
+      - name: post-deploy smoke test
+        run: |
+          kubectl -n agent-platform rollout status deploy/api --timeout=120s
+          kubectl -n agent-platform port-forward svc/api 8080:8080 &
+          sleep 5
+          curl -fsS localhost:8080/healthz
+          # The deployed platform must still refuse every attack.
+          ./scripts/attack-tests.sh
+
+      # If the smoke test fails after a successful release, roll back by hand.
+      - name: roll back
+        if: failure()
+        run: helm -n agent-platform rollback agent-platform --wait --timeout 5m

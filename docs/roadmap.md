@@ -93,7 +93,10 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       (`deploy/helm/agent-platform`); SPIRE and Keycloak are documented
       prerequisites, the policy bundle a signed build artifact
 - [ ] Managed data stores (approvals and agent run state are in-memory today)
-- [ ] CI/CD with approval gates
+- [x] **CI/CD with approval gates** — release builds + signs images/bundle/chart;
+      deploy verifies signatures, applies the chart behind a GitHub Environment
+      approval gate, smoke-tests (incl. the attack suite) and rolls back
+      (`docs/ci-cd.md`)
 - [ ] Real sandbox integrations behind the existing tool interfaces
 - [ ] Finalize `docs/real-world-adoption.md` and the runbook
 - [ ] **Gate:** deployed end-to-end; runbook + adoption guide complete
