@@ -1,0 +1,19 @@
+apiVersion: v2
+name: agent-platform
+description: >-
+  AI agent identity platform — SPIFFE workload identity, OAuth token exchange,
+  OPA policy, human approvals, and OpenTelemetry observability.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/fkadusei/agent-identity-platform
+sources:
+  - https://github.com/fkadusei/agent-identity-platform
+keywords:
+  - agents
+  - spiffe
+  - oauth
+  - opa
+  - security
+maintainers:
+  - name: fkadusei

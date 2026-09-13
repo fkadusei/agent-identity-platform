@@ -15,7 +15,10 @@
   every decision names its revision), **supply chain** (keyless cosign signing +
   Kyverno admission policy), **enrollment + role administration** (self-service
   signup, admin user management, real login, server-side role enforcement —
-  ADR-0011), **UI polish**, and the **operator guide**. Next: Phase 3.
+  ADR-0011), **UI polish**, and the **operator guide**. Phase 3 has started: a
+  cloud-agnostic **Helm chart** (`deploy/helm/agent-platform`) with
+  ingress/TLS and CI linting. Next: managed data stores, CI/CD with approval
+  gates, sandbox integrations, runbook.
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
@@ -67,10 +70,12 @@ cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip in
 
 ## Immediate next task
 
-**Phase 3 — deploy and adoption.** Phase 2 is closed (gate passed). Start with a
-cloud-agnostic **Helm chart + values** (replacing `deploy/kind/`), ingress + TLS,
-and CI/CD with approval gates; then real sandbox integrations behind the existing
-tool interfaces, and finalize `docs/real-world-adoption.md` + the runbook. See
+**Phase 3 — deploy and adoption.** Started: a cloud-agnostic **Helm chart**
+(`deploy/helm/agent-platform`) now deploys the platform from values, with
+ingress/TLS, and CI lints/renders it. Remaining Phase 3: managed data stores
+(approvals and agent run state are in-memory), CI/CD with approval gates, real
+sandbox integrations behind the existing tool interfaces, and finalizing
+`docs/real-world-adoption.md` + the runbook. See
 [`docs/roadmap.md`](docs/roadmap.md#phase-3--deploy-and-adoption).
 
 Open from the backlog: **multi-tenant isolation (threat T9)**, TLS for the

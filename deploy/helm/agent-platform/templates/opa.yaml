@@ -1,0 +1,94 @@
+{{- /*
+OPA — the policy engine. It loads a versioned bundle (authz.rego + data.json +
+.manifest) from an existing ConfigMap. The bundle is a build artifact, produced
+by scripts/build-bundle.sh and (in production) signed — the chart does not
+generate it, so what runs is always the reviewed, versioned policy.
+*/ -}}
+{{- if .Values.opa.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: opa
+  labels:
+    app: opa
+    {{- include "agent-platform.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: opa
+  template:
+    metadata:
+      labels:
+        app: opa
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: opa
+          image: {{ .Values.opa.image }}
+          args:
+            - run
+            - --server
+            - --addr=0.0.0.0:8181
+            - --bundle
+            - /bundles
+            - --log-level=info
+            # Structured decision logs: each decision names its bundle revision.
+            - --set=decision_logs.console=true
+          ports:
+            - name: http
+              containerPort: 8181
+          securityContext:
+            {{- include "agent-platform.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            # Bundle files are mounted individually: a whole-ConfigMap mount adds
+            # Kubernetes' "..data" directory, which OPA's bundle loader would try
+            # to read as bundle data.
+            - name: bundle
+              mountPath: /bundles/authz.rego
+              subPath: authz.rego
+              readOnly: true
+            - name: bundle
+              mountPath: /bundles/data.json
+              subPath: data.json
+              readOnly: true
+            - name: bundle
+              mountPath: /bundles/.manifest
+              subPath: .manifest
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: bundle
+          configMap:
+            name: {{ .Values.opa.bundleConfigMap }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: opa
+  labels:
+    app: opa
+    {{- include "agent-platform.labels" . | nindent 4 }}
+spec:
+  selector:
+    app: opa
+  ports:
+    - name: http
+      port: 8181
+      targetPort: 8181
+{{- end }}

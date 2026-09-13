@@ -101,7 +101,8 @@ app/web           React UI: console, approval queue, audit (Phase 1)
 app/tools         MCP tool servers (Phase 1)
 app/simulators    synthetic CRM / orders / payments / ticketing (Phase 1)
 policy/           OPA allow / deny / require-approval + tests (Phase 1)
-deploy/           kind (Phase 1) → Helm (Phase 3)
+deploy/kind/      local kind manifests (Phase 1)
+deploy/helm/      cloud-agnostic Helm chart (Phase 3)
 infra/            SPIRE, Keycloak, OPA, gateway, observability
 docs/             design, security, decisions, adoption, guides
 ```

@@ -123,3 +123,18 @@ jobs:
         run: |
           npm ci || npm install
           npm run build
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310  # v5.0.1
+        with:
+          version: v3.16.3
+      - name: lint and render the chart
+        run: |
+          helm lint deploy/helm/agent-platform
+          helm template agent-platform deploy/helm/agent-platform >/dev/null
+          # The toggles must render too (ingress on, observability off).
+          helm template agent-platform deploy/helm/agent-platform \
+            --set ingress.enabled=true --set observability_stack.enabled=false >/dev/null
