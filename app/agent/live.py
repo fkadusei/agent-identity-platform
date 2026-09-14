@@ -54,7 +54,11 @@ class LiveDeps:
         return {name: tool for name, tool in TOOLS.items() if name in allowed}
 
     def decide(self, task: str) -> dict:
-        return decide_tool(task, self.allowed_tools())
+        allowed = self.allowed_tools()
+        # Tell the model what it may NOT use too, and refuse deterministically if
+        # it asks for one of those (see decide_tool).
+        unavailable = {name: tool for name, tool in TOOLS.items() if name not in allowed}
+        return decide_tool(task, allowed, unavailable)
 
     def call_tool(self, tool: str, args: dict, approval_id: str | None) -> ToolCallResult:
         body = dict(args)

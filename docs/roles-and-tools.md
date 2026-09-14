@@ -58,10 +58,12 @@ login → token (roles) ─▶ agent ─▶ tool server ─▶ policy ─▶ all
   policy, and refuses what the roles do not grant. Nothing else can bypass it.
 - **The agent's filtering is convenience, not a control.** It asks policy which
   tools the caller's roles permit (`data.agentnhi.authz.tools_for_roles`) and
-  offers the model only those, so it does not propose a tool that will be denied.
-  If policy is unreachable the agent offers **no** tools (fails closed), and if the
-  model finds no tool that fits the task it reports that instead of quietly doing
-  something else.
+  offers the model only those. It also *names* the tools the role may not use and
+  **refuses deterministically** if the model asks for one — because hiding them
+  makes a small model substitute a different, allowed tool and the run then
+  *looks* like it succeeded (a refund request quietly becoming "list orders").
+  When nothing fits, the run reports that, with the model's reason, and executes
+  nothing. If policy is unreachable the agent offers **no** tools (fails closed).
 - **The UI is convenience too.** `/auth/login` returns the caller's tools (from
   policy), so the console can show what they may call and needs no copy of the
   matrix.
