@@ -10,8 +10,11 @@ import {
   getRoles,
   grantRole,
   listApprovals,
+  clearSession,
   listUsers,
+  loadSession,
   login,
+  saveSession,
   resetUserPassword,
   resumeTask,
   revokeRole,
@@ -36,7 +39,13 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(null);
+  // Restored from sessionStorage, so a refresh keeps you signed in.
+  const [session, setSessionState] = useState<Session | null>(() => loadSession());
+  const setSession = (next: Session | null) => {
+    setSessionState(next);
+    if (next) saveSession(next);
+    else clearSession();
+  };
   const [tab, setTab] = useState<Tab>("console");
   const [signupEnabled, setSignupEnabled] = useState(false);
   const [agentId, setAgentId] = useState("");
