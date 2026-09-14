@@ -6,12 +6,13 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if command -v gitleaks >/dev/null 2>&1; then
+if [ -n "${GITLEAKS:-}" ] && [ -x "${GITLEAKS}" ]; then
+  GL="$GITLEAKS"
+elif command -v gitleaks >/dev/null 2>&1; then
   GL=$(command -v gitleaks)
-elif [ -x /tmp/gitleaks ]; then
-  GL=/tmp/gitleaks
 else
-  echo "gitleaks not found. Install it:  brew install gitleaks" >&2
+  echo "gitleaks not found. Install it (brew install gitleaks), or point at a" >&2
+  echo "downloaded binary:  GITLEAKS=/path/to/gitleaks $0" >&2
   exit 1
 fi
 

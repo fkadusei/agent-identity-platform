@@ -2,23 +2,25 @@
 
 **The resume-here document.** Updated at the end of every work session.
 
+> Machine-specific notes (absolute paths, local tool locations, the SSH signing
+> setup) live in `NOTES.md`, which is **gitignored** — this file is the
+> project-level record.
+
 ---
 
 - **Project:** agent-identity-platform — an identity and authorization layer for
   AI agents (SPIFFE workload identity → OAuth delegation → OPA authorization →
   human approval → audit, with tenancy).
 - **Status:** **Phases 1–3 complete**, both gates closed, and **every threat in
-  the threat model addressed**. The platform runs end to end on a 3-node kind
-  cluster and has since grown a set of production-hardening slices beyond the
-  original plan.
+  the threat model addressed**. The platform runs end to end on a 3-node
+  Kubernetes cluster (kind) and has grown a set of production-hardening slices
+  beyond the original plan.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
 - **Last updated:** 2026-09-14
 
 ## Resume in 60 seconds
 
 ```sh
-cd /Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform
 ./start.sh          # brings it up (builds on first run, resumes after) + prints the URL
 ./status.sh         # is it up? how many pods ready? what URL?
 ./stop.sh           # stop it (keeps data); ./stop.sh --delete removes the cluster
@@ -40,9 +42,12 @@ Then open **http://localhost:8080**. Demo users:
 ```sh
 .venv/bin/python -m pytest -q          # app: 118 passed (14 Postgres tests skip)
 sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed
-/tmp/opa test policy/                  # policy: 31 passed
+opa test policy/                       # policy: 31 passed
+```
 
-# the Postgres-backed tests too (they skip without a database):
+The Postgres-backed tests **skip** without a database. To run them:
+
+```sh
 docker run -d --rm --name ap-test-pg -e POSTGRES_DB=agent_platform \
   -e POSTGRES_USER=agent -e POSTGRES_PASSWORD=agent -p 55432:5432 postgres:17-alpine
 PGHOST=localhost PGPORT=55432 PGUSER=agent PGPASSWORD=agent PGDATABASE=agent_platform \
@@ -67,7 +72,8 @@ End-to-end, on the cluster:
 **Phase 1 — the platform.**
 - `sdk/agentnhi/` — identity (SVIDs), RFC 8693 exchange, token verification
   (`aud` + `azp`), policy client (fail-closed), audit (redaction).
-- `policy/authz.rego` — allow / deny / require-approval, deny-by-default.
+- `policy/authz.rego` — role → tool matrix; allow / deny / require-approval;
+  deny-by-default.
 - `app/simulators/` — synthetic CRM/orders/payments/ticketing.
 - `app/tools/` — the policy enforcement point (HTTP + MCP transports).
 - `app/approvals/` + `app/api/` — approvals, tasks, audit, login/enrollment,
@@ -112,8 +118,7 @@ End-to-end, on the cluster:
 - **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway plus a service mesh
   (Linkerd) for every other in-cluster hop (`docs/tls.md`).
 - **HA for the app tier** — api/tools/agent/gateway/opa at 2 replicas with
-  anti-affinity and PodDisruptionBudgets, on a 3-node kind cluster
-  (`docs/ha.md`).
+  anti-affinity and PodDisruptionBudgets (`docs/ha.md`).
 - **Autoscaling** — those services scale 2→5 on CPU (`docs/autoscaling.md`).
 - **Role → tool matrix** — an explicit table in the policy; the agent offers only
   the permitted tools and refuses deterministically otherwise; the tool server
@@ -137,12 +142,10 @@ backlog in [`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
 
 ## The repository is public
 
-This changed what the docs must be. What that means in practice:
-
 - **No secrets, ever.** `.env` is gitignored and generated; the realm is rendered
-  from `realm.json.tmpl`; CI fails if `.env` is ever tracked, and gitleaks scans
-  the tree and the full history (`./scripts/scan-secrets.sh`). The demo passwords
-  and the trust domain (`acme.com`) are documentation, not credentials.
+  from `realm.json.tmpl`; CI fails if `.env` is tracked, and gitleaks scans the
+  tree and the full history (`./scripts/scan-secrets.sh`). The demo passwords and
+  the trust domain (`acme.com`) are documentation, not credentials.
 - **Everything here is synthetic.** No real customer data, no card data — see
   [`docs/data-handling.md`](docs/data-handling.md).
 - **Security reports** go through GitHub's *Report a vulnerability* (private
@@ -150,8 +153,7 @@ This changed what the docs must be. What that means in practice:
 - **Contributions** follow [`CONTRIBUTING.md`](CONTRIBUTING.md); `main` is
   branch-protected.
 - The docs are written to be read by strangers: they explain the *why*, name the
-  trade-offs, and mark what is deliberately **not** implemented (multi-tenant
-  depth, HA for stateful components, SPIFFE-native transport).
+  trade-offs, and mark what is deliberately **not** implemented.
 
 ## Decisions made
 
@@ -186,28 +188,6 @@ gh pr create --fill
 gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 ```
 
-## Environment & manual steps
-
-- Local tools: Docker, `kind`, `kubectl`, `gh`, `helm`, `linkerd`, and (optional)
-  `gitleaks` / `opa` / `actionlint` under `/tmp`.
-- Ollama runs on the host (`ollama serve`); the gateway reaches it at
-  `host.docker.internal:11434`.
-
-### Signed commits (one-time setup, for reference)
-
-Commits must be signed. This uses **SSH signing**. The same SSH key is registered
-on GitHub **twice** — once for authentication, once for signing.
-
-1. <https://github.com/settings/ssh/new> → **Key type: Signing Key** → paste
-   `~/.ssh/id_ed25519.pub`.
-2. ```sh
-   git config --global gpg.format ssh
-   git config --global user.signingkey /Users/felixadusei/.ssh/id_ed25519.pub  # absolute: ~ does not expand
-   git config --global commit.gpgsign true
-   git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
-   ```
-3. `git log --show-signature -1` → expect `Good "git" signature`.
-
 ## Known issues / gotchas
 
 - **Keycloak re-import:** `setup.sh` recreates Keycloak each run (ephemeral H2,
@@ -219,8 +199,8 @@ on GitHub **twice** — once for authentication, once for signing.
   and entries; a `setup.sh` re-run restores them. Registration entries are created
   **per attested agent**, or workloads on other nodes get no identity.
 - **Role changes lag** by up to one token lifetime (5 minutes).
-- The `gh` token lacks `admin:public_key`, so SSH/signing keys are added in the
-  GitHub web UI.
+- **A failed run says so.** The agent never substitutes a tool the role may not
+  call; it reports that nothing was executed.
 
 ## Key files map
 
