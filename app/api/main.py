@@ -15,7 +15,7 @@ Endpoints:
     POST /tasks/resume             resume a paused run
     POST /approvals                create a pending approval (agent's token)
     GET  /approvals?status=pending the approval queue
-    POST /approvals/{id}/decision  approve/deny     (manager/platform_admin role)
+    POST /approvals/{id}/decision  approve/deny                 (manager role)
     POST /approvals/verify         used by tool servers (in trust domain)
     POST /audit/events             ingest an audit record (from the services)
     GET  /audit                    the audit timeline (newest first)
@@ -190,7 +190,7 @@ def verify_approval(body: dict, store: ApprovalStore = Depends(get_store)) -> di
 def decide_approval(
     approval_id: str,
     body: dict,
-    delegation: Delegation = Depends(require_roles("manager", "platform_admin")),
+    delegation: Delegation = Depends(require_roles("manager")),
     store: ApprovalStore = Depends(get_store),
 ) -> dict:
     approval = store.decide(

@@ -10,7 +10,7 @@ See also [ADR-0011](decisions/ADR-0011-enrollment-and-role-administration.md).
 | `support_rep` | run agent tasks (which then pass policy) |
 | `manager` | approve/deny held actions (refunds above the auto-approval limit) |
 | `privacy` | access PII tools (via policy; approval still required) |
-| `platform_admin` | administer users and roles |
+| `platform_admin` | administer users and roles — **not** tools or approvals |
 
 A role is only real if the **server** enforces it. The UI hides what you cannot
 do, but every check that matters lives in `app/api/authz.py`

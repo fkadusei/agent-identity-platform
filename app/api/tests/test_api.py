@@ -99,6 +99,21 @@ def test_decision_requires_a_manager_role(client):
     assert resp.status_code == 403
 
 
+def test_a_platform_admin_cannot_decide(client):
+    created = client.post(
+        "/approvals", json={"tool": "refunds.issue", "args": {}}, headers={"Authorization": "Bearer x"}
+    ).json()
+    # Administering users is not the same as approving business actions.
+    _as(Delegation(user="admin", workload="spiffe://agent", audience="mcp-tools",
+                   roles=("platform_admin",)))
+    resp = client.post(
+        f"/approvals/{created['id']}/decision",
+        json={"approved": True},
+        headers={"Authorization": "Bearer y"},
+    )
+    assert resp.status_code == 403
+
+
 def test_self_approval_is_refused(client):
     created = client.post(
         "/approvals", json={"tool": "refunds.issue", "args": {}}, headers={"Authorization": "Bearer x"}
