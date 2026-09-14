@@ -72,3 +72,6 @@ data/
 
 # Local port-forward pid (start.sh/stop.sh)
 .port-forward.pid
+
+# Local, machine-specific notes (never committed)
+NOTES.md
