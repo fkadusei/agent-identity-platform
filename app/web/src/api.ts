@@ -43,7 +43,14 @@ const json = (method: string, token: string, body?: any): RequestInit => ({
 });
 
 // --- auth + enrollment -----------------------------------------------------
-export type Session = { user: string; roles: string[]; tenant: string; tools: string[]; token: string };
+export type Session = {
+  user: string;
+  roles: string[];
+  tenant: string;
+  tools: string[];
+  expiresAt: number;
+  token: string;
+};
 
 export const authConfig = () => request("/auth/config");
 
@@ -60,9 +67,48 @@ export const login = async (username: string, password: string): Promise<Session
     roles: r.roles ?? [],
     tenant: r.tenant ?? "",
     tools: r.tools ?? [],
+    expiresAt: r.expires_at ?? 0,
     token: r.access_token,
   };
 };
+
+// --- the session survives a refresh ----------------------------------------
+// sessionStorage, not localStorage: it lives for the tab and dies with it. A
+// stored session whose token has expired is dropped rather than used, so a
+// refresh after the token's 5 minutes lands on the sign-in page instead of a
+// screen full of errors.
+const SESSION_KEY = "agent-platform.session";
+
+export function saveSession(s: Session): void {
+  try {
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(s));
+  } catch {
+    /* private mode etc. — the session just won't persist */
+  }
+}
+
+export function clearSession(): void {
+  try {
+    sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function loadSession(): Session | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const s = JSON.parse(raw) as Session;
+    if (!s?.token || (s.expiresAt && Date.now() / 1000 > s.expiresAt)) {
+      clearSession();
+      return null;
+    }
+    return s;
+  } catch {
+    return null;
+  }
+}
 
 export const enroll = (form: {
   username: string;

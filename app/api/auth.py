@@ -97,6 +97,9 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
         # Surfaced so callers (the UI, scripts) never need to decode the token.
         "tenant": delegation.tenant,
         "tools": allowed,
+        # When the token expires (from the verified claims), so the UI can drop a
+        # stale session instead of showing errors after a refresh.
+        "expires_at": delegation.claims.get("exp"),
         "access_token": token,
     }
 
