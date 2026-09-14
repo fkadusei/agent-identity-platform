@@ -187,12 +187,13 @@ def decide_tool(
             # Refuse here rather than let it pick something else instead.
             return {"tool": None, "args": {}, "reason": f"your role may not call {chosen}"}
         if not chosen:
-            # The model declined (no permitted tool fits) — keep its explanation.
+            # The model declined. Its own "reason" is unreliable — a small model
+            # tends to echo a tool *description* ("High-risk: policy may require
+            # approval"), which tells the user nothing. Say something useful.
             return {
                 "tool": None,
                 "args": {},
-                "reason": decision.get("reason")
-                or "no permitted tool fits this task — nothing was executed",
+                "reason": "no tool your role may call fits this task — nothing was executed",
             }
         if chosen in tools:
             tool = tools[decision["tool"]]

@@ -422,8 +422,14 @@ function ResultCard({
           </li>
         )}
         <li>
-          Policy decided <b>{STATUS_LABEL[outcome.status] ?? outcome.status}</b>
-          {outcome.reason && <> — {outcome.reason}</>}
+          {outcome.status === "error" ? (
+            <>The run stopped — {outcome.reason}</>
+          ) : (
+            <>
+              Policy decided <b>{STATUS_LABEL[outcome.status] ?? outcome.status}</b>
+              {outcome.reason && <> — {outcome.reason}</>}
+            </>
+          )}
         </li>
       </ol>
 
