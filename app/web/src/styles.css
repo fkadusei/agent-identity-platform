@@ -85,3 +85,14 @@ input {
   white-space: nowrap;
 }
 .chain .arrow { color: var(--muted); }
+
+/* --- roles & tools matrix ------------------------------------------------- */
+.matrixwrap { overflow-x: auto; margin: 14px 0; }
+.matrix { border-collapse: collapse; font-size: 13px; }
+.matrix th, .matrix td { border: 1px solid var(--line); padding: 6px 10px; text-align: center; white-space: nowrap; }
+.matrix thead th { background: var(--panel); color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+.matrix th.mine { color: var(--accent); border-bottom-color: var(--accent); }
+.matrix td.mine { background: #141d2e; }
+.matrix .toolcol { text-align: left; }
+.matrix .yes { color: var(--green); font-weight: 700; }
+.matrix .no { color: #3a4655; }

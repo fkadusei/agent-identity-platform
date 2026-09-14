@@ -1,6 +1,7 @@
 """The platform API: login/enrollment, user administration, approvals, audit.
 
 Endpoints:
+    GET  /roles                    the role -> tool matrix (from policy)
     GET  /auth/config              is self-service signup enabled?
     POST /auth/login               username/password -> token (+roles)
     POST /enroll                   self-service account creation (no roles)
@@ -42,6 +43,7 @@ from agentnhi.tokens import Delegation
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.authz import current_delegation, require_roles
+from app.api.roles import router as roles_router
 from app.approvals import ApprovalStore
 from app.approvals.store import build_store
 from app.common import metrics
@@ -61,6 +63,7 @@ app.add_middleware(
 )
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(roles_router)
 # Durable when DATABASE_URL is set (a restart no longer forgets approvals).
 _store = build_store()
 _audit: deque[dict] = deque(maxlen=500)
