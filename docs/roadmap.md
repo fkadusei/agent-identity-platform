@@ -5,6 +5,10 @@ Living checklist. Updated at the end of every work session (see
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
+**Current totals:** 118 app tests · 34 SDK tests · 31 policy tests · 10 required
+CI checks · PRs #1–#50. Phases 1–3 complete; every threat in the threat model
+addressed. The repo is public.
+
 ---
 
 ## Phase 0 — Foundations, security, documentation
@@ -15,15 +19,15 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
       `SECURITY.md`
 - [x] CI security workflow (`security.yml`) + repo checks (`ci.yml`)
 - [x] Verified the hook blocks a test secret and gitleaks finds no leaks
-- [x] ADRs 0001–0010 recorded
+- [x] ADRs 0001–0011 recorded
 - [x] `docs/threat-model.md`, `docs/data-handling.md`, `docs/glossary.md`,
       `CONTRIBUTING.md`
-- [x] `docs/real-world-adoption.md` (draft)
+- [x] `docs/real-world-adoption.md` (finalized in Phase 3)
 - [x] `docs/visualization/index.html` — interactive 3D architecture (light/dark)
 - [x] `README.md`, `HANDOFF.md`, `LICENSE`
 - [x] Cross-links with `enterprise-agent-nhi`
 - [x] Git repo created and pushed
-- [ ] **Gate:** security DoD met, plan + adoption doc reviewed by owner
+- [x] **Gate:** security DoD met, plan + adoption doc reviewed by owner
 
 ## Phase 1 — Reusable core + realistic local app
 
