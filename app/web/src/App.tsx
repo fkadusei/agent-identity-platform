@@ -52,7 +52,9 @@ export default function App() {
 
   const has = (role: string) => !!session?.roles.includes(role);
   const isAdmin = has("platform_admin");
-  const canApprove = has("manager") || isAdmin;
+  // Approving is a business decision: the manager role, not platform_admin
+  // (which administers users and, deliberately, can call no tools).
+  const canApprove = has("manager");
   const tabs: Tab[] = ["console", "approvals", "audit", ...(isAdmin ? (["admin"] as Tab[]) : [])];
 
   const signOut = () => {

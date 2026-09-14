@@ -18,6 +18,12 @@ A user with several roles gets the **union**. Every tool in the catalogue must b
 granted to some role — a test asserts it against the catalogue injected into the
 policy bundle, so a new tool cannot be silently uncallable.
 
+`platform_admin` is deliberately outside all of this: it administers **users**, and
+can neither call tools nor approve/deny held actions. Approving a refund is a
+business decision (`manager`), and keeping it out of the administrator's hands is
+separation of duties — the person who can grant themselves any role should not
+also be able to push business actions through.
+
 On top of the matrix, the same rules as before: refunds are tiered (≤50 allow /
 ≤500 manager approval / >500 deny), PII needs the `privacy` role **and**
 approval, everything is tenant-scoped, and bulk actions are never allowed.
