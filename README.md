@@ -11,10 +11,12 @@ realistic application: a **customer-support & refunds copilot** where a support
 rep delegates to an agent, high-risk actions require human approval, and every
 action is identity- and policy-governed.
 
-> **Status: Phase 0 — foundations, security, and documentation.**
-> No application code yet by design; the security baseline and handoff come
-> first. See [`docs/roadmap.md`](docs/roadmap.md) and
-> [`HANDOFF.md`](HANDOFF.md).
+> **Status: complete.** Phases 1–3 are done, both gates are closed, and every
+> threat in the [threat model](docs/threat-model.md) is addressed. The platform
+> runs end to end on a 3-node Kubernetes cluster (kind): SPIFFE identity, OAuth
+> delegation, policy, approvals, a service mesh, durable state, HA, autoscaling
+> and a role → tool matrix. See [`HANDOFF.md`](HANDOFF.md) and
+> [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Why
 
@@ -23,62 +25,81 @@ never expires on its own, and cannot say *which* agent did what. Because an agen
 contains a model that can be talked into things, that is a breach waiting to
 happen. This platform removes the key and replaces it with an identity.
 
-## Architecture (target)
+## See it running
+
+```sh
+git clone git@github.com:fkadusei/agent-identity-platform.git
+cd agent-identity-platform
+./start.sh          # builds on first run (~10-15 min); resumes quickly after
+```
+
+Then open **http://localhost:8080** and sign in:
+
+| user | password | role | can |
+| --- | --- | --- | --- |
+| `alice` | `alice123` | support_rep | everything but PII |
+| `bella` | `bella123` | billing | orders + refunds only |
+| `dana` | `dana1234` | read_only | reads only |
+| `manager` | `manager123` | manager | reads + refund quotes; approves |
+| `admin` | `admin123` | platform_admin | administers users; no tools, no approvals |
+
+Ask the console for *"Issue a refund of 200 dollars for order o-1001"* as alice:
+it is held for approval. Approve it as the manager and it is issued. Ask for
+$1000 and it is refused; ask as dana and it is refused with a clear reason.
+`./status.sh` tells you if it is up; `./stop.sh` stops it.
+
+Other ways in: the **Roles** tab shows the role → tool matrix (read from the
+policy); [`docs/visualization/index.html`](docs/visualization/index.html) is an
+interactive 3D architecture (double-click it, no server needed).
+
+## Architecture
 
 ```mermaid
 flowchart TB
-    U["Support rep"] -- OIDC --> KC["Keycloak<br/>token exchange (RFC 8693)"]
-    U --> WEB["Web UI / API"]
+    U["Support rep"] -- "OIDC login" --> WEB["Web UI / API"]
     WEB --> AG["Agent runtime<br/>LangGraph · approvals"]
-    AG -- "scoped token (aud + azp)" --> MCP["MCP tool servers"]
-    MCP --> OPA["OPA<br/>allow / deny / require-approval"]
-    MCP -- "own exchange, never forwarded" --> SIM["Simulators (→ real sandboxes)"]
-    AG -.-> GW["LLM gateway (Phase 2)"]
-    MCP -.-> AUD["Audit + OpenTelemetry"]
-    SA["SPIRE agent"] -- "SVID (no secrets)" --> AG
+    AG -- "scoped token (aud + azp)" --> PEP["Tool servers<br/>policy enforcement point"]
+    PEP --> OPA["OPA<br/>role → tool · allow / deny / require-approval"]
+    PEP -- "tenant-scoped" --> SIM["Sandbox (→ real systems)"]
+    AG -- "SPIFFE mTLS" --> GW["LLM gateway<br/>holds the model key · rate/cost limits"]
+    AG & PEP & WEB & GW --> PG[("Postgres<br/>approvals · run checkpoints · limits")]
+    SA["SPIRE agent"] -- "SVID, no secrets" --> AG & GW
+    MESH["Linkerd mesh<br/>mTLS on every hop"] -.-> WEB & PEP & OPA
+    OBS["OpenTelemetry → Jaeger · Prometheus → Grafana"] -.-> AG & PEP
 ```
-
-## See it in 3D
-
-Open [`docs/visualization/index.html`](docs/visualization/index.html) in a
-browser (double-click it — no server needed): orbit the layers, press
-**▶ Play flow** to walk the eight hops, click any component for its role, and
-toggle **⚠ Defences** to watch five attacks get blocked. Includes a
-light/dark/auto theme toggle.
 
 ## Security invariants
 
 Held everywhere — code, config, tests, logs, traces, prompts:
 
-1. No secret is ever committed (`.env` is local; `.env.example` is the template).
+1. No secret is ever committed (`.env` is local and gitignored; `.env.example` is
+   the template).
 2. No secret or token in logs, traces, or errors.
 3. **Synthetic data only** — never real customer, card, or personal data.
 4. **No card data, ever** — the payments path handles only opaque tokens.
 5. Identity over secrets; least privilege; no token forwarding.
 6. Human approval for high-risk actions, with no self-approval.
+7. Roles gate tools, on the server; the tenant comes from the identity, never the
+   request.
 
 See [`SECURITY.md`](SECURITY.md), [`docs/threat-model.md`](docs/threat-model.md),
 and [`docs/data-handling.md`](docs/data-handling.md).
 
-## Getting started (Phase 0)
-
-The application arrives in Phase 1. Today you can set up the security baseline
-and read the design:
+## Verify it
 
 ```sh
-git clone git@github.com:fkadusei/agent-identity-platform.git
-cd agent-identity-platform
-./scripts/install-hooks.sh     # enable the secret-guard pre-commit hook
-./scripts/scan-secrets.sh      # scan the tree + full history (needs gitleaks)
+.venv/bin/python -m pytest -q           # app tests (118; 14 Postgres ones skip)
+sdk/.venv/bin/python -m pytest sdk -q   # SDK (34)
+opa test policy/                        # policy (31)
+
+./scripts/demo.sh          # read → refund → approval → issued
+./scripts/attack-tests.sh  # all six attacks blocked
+./scripts/tenancy-tests.sh # tenant isolation, claim → policy → data
+./scripts/role-tools.sh    # who may call which tool
+./scripts/tls-check.sh     # every in-cluster edge is mTLS
+./scripts/ha-check.sh      # replicas spread; an eviction is survivable
+./scripts/scan-secrets.sh  # no secrets in the tree or the full history
 ```
-
-Then read, in order:
-
-1. [`docs/real-world-adoption.md`](docs/real-world-adoption.md) — what this is and how to adopt it
-2. [`docs/glossary.md`](docs/glossary.md) — every term in plain language
-3. [`docs/threat-model.md`](docs/threat-model.md) — what it defends against
-4. [`docs/decisions/`](docs/decisions/) — why each choice was made (ADRs)
-5. [`HANDOFF.md`](HANDOFF.md) — where the build is and how to resume
 
 ## Documentation
 
@@ -88,26 +109,35 @@ Then read, in order:
 | Developers | [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`docs/decisions/`](docs/decisions/) |
 | Security | [`SECURITY.md`](SECURITY.md) · [`docs/threat-model.md`](docs/threat-model.md) · [`docs/roles-and-tools.md`](docs/roles-and-tools.md) · [`docs/tls.md`](docs/tls.md) |
 | Data | [`docs/data-stores.md`](docs/data-stores.md) · [`docs/tenancy.md`](docs/tenancy.md) · [`docs/data-handling.md`](docs/data-handling.md) |
-| Resuming work | [`HANDOFF.md`](HANDOFF.md) · [`docs/roadmap.md`](docs/roadmap.md) |
 | Operators | [`docs/operator-guide.md`](docs/operator-guide.md) · [`docs/ha.md`](docs/ha.md) · [`docs/autoscaling.md`](docs/autoscaling.md) · [`docs/secrets.md`](docs/secrets.md) |
 | Platform engineers | [`docs/ci-cd.md`](docs/ci-cd.md) · [`docs/llm-gateway.md`](docs/llm-gateway.md) · [`deploy/helm/agent-platform/`](deploy/helm/agent-platform/) |
-| Users (plain language) | `docs/guides/` (added as features land) |
+| Resuming work | [`HANDOFF.md`](HANDOFF.md) · [`docs/roadmap.md`](docs/roadmap.md) |
+| Users (plain language) | [`docs/guides/`](docs/guides/) |
 
 ## Repository layout
 
 ```
-sdk/agentnhi/     reusable identity/policy plumbing (Phase 1)
-app/agent         LangGraph agent with approval interrupts (Phase 1)
-app/api           FastAPI: sessions, tasks, approvals, audit (Phase 1)
-app/web           React UI: console, approval queue, audit (Phase 1)
-app/tools         MCP tool servers (Phase 1)
-app/simulators    synthetic CRM / orders / payments / ticketing (Phase 1)
-policy/           OPA allow / deny / require-approval + tests (Phase 1)
-deploy/kind/      local kind manifests (Phase 1)
-deploy/helm/      cloud-agnostic Helm chart (Phase 3)
-infra/            SPIRE, Keycloak, OPA, gateway, observability
+sdk/agentnhi/     reusable identity / delegation / policy / audit plumbing
+app/agent         LangGraph agent with approval interrupts
+app/api           FastAPI: login, enrollment, user admin, tasks, approvals, audit
+app/web           React UI: console, approvals, roles, audit, admin
+app/tools         policy enforcement point (HTTP + MCP transports)
+app/gateway       the only egress to a model; SPIFFE mTLS; rate/cost limits
+app/sandbox       synthetic systems exposed over HTTP (the tools' backend)
+app/simulators    synthetic CRM / orders / payments / ticketing
+app/approvals     the approvals store (in-memory | Postgres)
+policy/           OPA: role → tool, allow / deny / require-approval + tests
+deploy/kind/      local kind manifests
+deploy/helm/      cloud-agnostic Helm chart
 docs/             design, security, decisions, adoption, guides
+scripts/          setup, demo, and the verification suites
 ```
+
+## Contributing
+
+Issues and pull requests are welcome — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
+Security problems: **do not** open a public issue; use GitHub's *Report a
+vulnerability* ([`SECURITY.md`](SECURITY.md)).
 
 ## License
 

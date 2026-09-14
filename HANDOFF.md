@@ -4,111 +4,154 @@
 
 ---
 
-- **Project:** agent-identity-platform
-- **Status:** Phases 1–3 **complete** — both gates closed (Phase 2 hardening on
-  2026-09-12; Phase 3 deploy/adoption once the platform ran end to end).
-  **Phase 1:** SPIFFE identity, OAuth exchange, OPA policy, approvals, the
-  LangGraph agent, the MCP tool boundary, the React UI, and the kind deployment.
-  **Phase 2:** the **LLM gateway** (SPIFFE mTLS; the agent holds no model
-  credential), **secrets out of git/manifests**, **observability** (OTel traces
-  with identity → collector → Jaeger, plus platform metrics → Prometheus → a
-  provisioned Grafana dashboard), the **policy lifecycle** (versioned bundle;
-  every decision names its revision), **supply chain** (keyless cosign signing +
-  Kyverno admission policy), **enrollment + role administration** (ADR-0011),
-  **UI polish**, and the **operator guide** (the runbook). **Phase 3:** a
-  cloud-agnostic **Helm chart** (`deploy/helm/agent-platform`) with ingress/TLS,
-  **CI/CD with an approval gate** (`release.yml` + `deploy.yml`,
-  `docs/ci-cd.md`), **managed data stores** (durable approvals + run checkpoints
-  in Postgres, `docs/data-stores.md`), **real sandbox integrations** (a backend
-  seam + sandbox service, `docs/integrations.md`), and the finalized
-  **adoption guide** (`docs/real-world-adoption.md`). Since then: **multi-tenant
-  isolation (threat T9)** — the tenant is an identity attribute, policy denies an
-  unscoped caller, and every data accessor scopes by tenant (`docs/tenancy.md`,
-  `scripts/tenancy-tests.sh`). Then **TLS/mTLS everywhere**: SPIFFE mTLS on
-  agent↔gateway plus a service mesh (Linkerd) for every other in-cluster hop,
-  Keycloak, OPA and the observability stack included (`docs/tls.md`,
-  `scripts/tls-check.sh`). Then **per-agent rate and cost limits** at the LLM
-  gateway, keyed on the caller's JWT-SVID-proven SPIFFE ID, with durable counters
-  (`docs/llm-gateway.md`). Then **HA for the app tier**: api/tools/agent/gateway/
-  opa at 2 replicas with anti-affinity and PodDisruptionBudgets, on a 3-node kind
-  cluster (`docs/ha.md`, `scripts/ha-check.sh`). Then **autoscaling**: the
-  stateless services scale 2→5 on CPU (`docs/autoscaling.md`). Then **tenancy
-  depth**: approvals are scoped by tenant, so one tenant's managers never see or
-  decide another's queue (`docs/tenancy.md`). Then the **role -> tool matrix**:
-  an explicit table in the policy, the agent offering only the permitted tools,
-  enforced at the tool server (`docs/roles-and-tools.md`). The threat model is
-  fully addressed.
-- **Last updated:** 2026-09-13
-- **Last updated:** 2026-09-12
-- **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
+- **Project:** agent-identity-platform — an identity and authorization layer for
+  AI agents (SPIFFE workload identity → OAuth delegation → OPA authorization →
+  human approval → audit, with tenancy).
+- **Status:** **Phases 1–3 complete**, both gates closed, and **every threat in
+  the threat model addressed**. The platform runs end to end on a 3-node kind
+  cluster and has since grown a set of production-hardening slices beyond the
+  original plan.
+- **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Local path:** `/Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform`
+- **Last updated:** 2026-09-14
 
 ## Resume in 60 seconds
 
 ```sh
 cd /Users/felixadusei/Development/AI_Engineering/OpenCode/agent-identity-platform
-./scripts/install-hooks.sh          # enable the secret guard (once per clone)
-./scripts/scan-secrets.sh           # verify: no secrets in tree or history
-git log --oneline -8                # where we are
-cat docs/roadmap.md                 # what's done / next
+./start.sh          # brings it up (builds on first run, resumes after) + prints the URL
+./status.sh         # is it up? how many pods ready? what URL?
+./stop.sh           # stop it (keeps data); ./stop.sh --delete removes the cluster
 ```
 
-Test everything that exists so far:
+Then open **http://localhost:8080**. Demo users:
+
+| user | password | role | can |
+| --- | --- | --- | --- |
+| `alice` | `alice123` | support_rep | everything but PII |
+| `bella` | `bella123` | billing | orders + refunds only |
+| `dana` | `dana1234` | read_only | reads only |
+| `manager` | `manager123` | manager | reads + refund quotes; approves |
+| `admin` | `admin123` | platform_admin | administers users; no tools, no approvals |
+| `grace` | `grace123` | support_rep (tenant `globex`) | the second tenant |
+
+## Test everything
 
 ```sh
-# SDK (identity, exchange, tokens, policy, audit) — 32 tests
-cd sdk && .venv/bin/pytest && cd ..        # (or: python -m venv .venv && pip install -e sdk[dev])
+.venv/bin/python -m pytest -q          # app: 118 passed (14 Postgres tests skip)
+sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed
+/tmp/opa test policy/                  # policy: 31 passed
 
-# policy — 14 tests
-/tmp/opa test policy/ -v                   # (or: brew install opa)
-
-# app (simulators + tool enforcement + MCP) — 21 tests
-.venv/bin/pip install -e sdk -r requirements-dev.txt
-.venv/bin/python -m pytest
+# the Postgres-backed tests too (they skip without a database):
+docker run -d --rm --name ap-test-pg -e POSTGRES_DB=agent_platform \
+  -e POSTGRES_USER=agent -e POSTGRES_PASSWORD=agent -p 55432:5432 postgres:17-alpine
+PGHOST=localhost PGPORT=55432 PGUSER=agent PGPASSWORD=agent PGDATABASE=agent_platform \
+  .venv/bin/python -m pytest -q
+docker rm -f ap-test-pg
 ```
 
-## Where we are
+End-to-end, on the cluster:
 
-- **Phase 0 — complete.** Security baseline, ADRs 0001–0010, docs, governance.
-- **Phase 1 — backend complete.** Merged so far (84 tests):
-  - `sdk/agentnhi/` — identity, exchange, tokens (`aud`+`azp`), policy
-    (fail-closed), audit (redaction) — 32 tests
-  - `policy/authz.rego` — allow / deny / require-approval matrix — 14 tests
-  - `app/simulators/` — synthetic CRM/orders/payments/ticketing — 10 tests
-  - `app/tools/` — enforcement core + FastAPI and MCP transports — 11 tests
-  - `app/approvals/` + `app/api/` — approvals store + endpoints — 13 tests
-  - `app/agent/` — LangGraph with approval interrupts — 4 tests
-  - `deploy/kind/` + `scripts/` — SPIRE/Keycloak/OPA + api/tools/agent on kind;
-    `demo.sh` (approval flow) and `attack-tests.sh` (5 attacks blocked)
-- **Next: Phase 2** — production hardening. Done so far: the **LLM gateway**
-  (`app/gateway/`, SPIFFE mTLS), **secrets out of git** (`.env` +
-  `docs/secrets.md`), **observability** (`app/common/telemetry.py` + the
-  collector/Jaeger manifests), the **policy lifecycle**
-  (`scripts/build-bundle.sh` + `docs/policy-lifecycle.md`), and **supply chain**
-  (`scripts/sign-bundle.sh` + the Kyverno policy + `docs/supply-chain.md`).
-  Remaining: the operator guide.
+```sh
+./scripts/demo.sh           # read -> $200 refund -> approval -> issued
+./scripts/attack-tests.sh   # all six attacks blocked
+./scripts/tenancy-tests.sh  # tenant isolation: claim -> policy -> data
+./scripts/role-tools.sh     # who may call which tool (no LLM)
+./scripts/tls-check.sh      # every in-cluster edge is mTLS
+./scripts/ha-check.sh       # replicas spread; an eviction is survivable
+./logs.sh --last            # a trace of every interaction
+```
+
+## What is built
+
+**Phase 1 — the platform.**
+- `sdk/agentnhi/` — identity (SVIDs), RFC 8693 exchange, token verification
+  (`aud` + `azp`), policy client (fail-closed), audit (redaction).
+- `policy/authz.rego` — allow / deny / require-approval, deny-by-default.
+- `app/simulators/` — synthetic CRM/orders/payments/ticketing.
+- `app/tools/` — the policy enforcement point (HTTP + MCP transports).
+- `app/approvals/` + `app/api/` — approvals, tasks, audit, login/enrollment,
+  user administration.
+- `app/agent/` — LangGraph with approval interrupts.
+- `app/web/` — the React UI (console, approvals, **roles**, audit, admin).
+- `deploy/kind/` + `scripts/` — the local cluster and the demo suites.
+
+**Phase 2 — hardening.**
+- **LLM gateway** (`app/gateway/`) — SPIFFE mTLS; the agent holds no model
+  credential. Per-agent rate and cost limits, keyed on the caller's
+  JWT-SVID-proven SPIFFE ID, durable in Postgres (`docs/llm-gateway.md`).
+- **Secrets out of git/manifests** — generated into a gitignored `.env`, rendered
+  into the realm, mounted as Secrets (`docs/secrets.md`).
+- **Observability** — OpenTelemetry traces with identity attributes → collector →
+  Jaeger; platform metrics → Prometheus → a provisioned Grafana dashboard
+  (`docs/observability.md`).
+- **Policy lifecycle** — a versioned bundle; every decision names its revision
+  (`docs/policy-lifecycle.md`).
+- **Supply chain** — keyless cosign signing + a Kyverno admission policy
+  (`docs/supply-chain.md`, ADR-0010).
+- **Enrollment + role administration** — self-service signup (toggleable), admin
+  user management via a least-privilege Keycloak service account, real login,
+  server-side role enforcement (ADR-0011, `docs/enrollment-and-roles.md`).
+- **UI polish**, and the **operator guide** (`docs/operator-guide.md`).
+
+**Phase 3 — deploy and adoption.**
+- **Helm chart** (`deploy/helm/agent-platform`) — values-driven, ingress/TLS.
+- **CI/CD with an approval gate** — `release.yml` builds/signs images, the bundle
+  and the chart; `deploy.yml` verifies signatures and applies the chart behind a
+  GitHub Environment approval gate (`docs/ci-cd.md`).
+- **Managed data stores** — approvals and run checkpoints durable in Postgres
+  (`docs/data-stores.md`).
+- **Real sandbox integrations** — a backend seam (simulator | HTTP) plus a
+  sandbox service (`docs/integrations.md`).
+- **Adoption guide** (`docs/real-world-adoption.md`).
+
+**Since then (beyond the original plan).**
+- **Multi-tenant isolation (threat T9)** and **tenancy depth** — the tenant is an
+  identity attribute; policy denies an unscoped caller; every data accessor scopes
+  by tenant; approvals are tenant-scoped (`docs/tenancy.md`).
+- **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway plus a service mesh
+  (Linkerd) for every other in-cluster hop (`docs/tls.md`).
+- **HA for the app tier** — api/tools/agent/gateway/opa at 2 replicas with
+  anti-affinity and PodDisruptionBudgets, on a 3-node kind cluster
+  (`docs/ha.md`).
+- **Autoscaling** — those services scale 2→5 on CPU (`docs/autoscaling.md`).
+- **Role → tool matrix** — an explicit table in the policy; the agent offers only
+  the permitted tools and refuses deterministically otherwise; the tool server
+  enforces (`docs/roles-and-tools.md`).
+- **A Roles & tools page** in the UI, driven by the policy.
 
 ## Immediate next task
 
-**Phases 1–3 are complete**, both gates closed, and every threat in the model is
-addressed (T9 tenancy included). Next, pick from the open backlog in
-[`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
+Phases 1–3 are complete and every threat is addressed. Next, pick from the open
+backlog in [`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
 
-- **HA for stateful components** — SPIRE (shared datastore + cloud KMS),
-  Keycloak (external DB + clustering), Postgres (managed HA), the sandbox
-  (in-memory). The app tier is already replicated (`docs/ha.md`).
-- **Custom-metric autoscaling** — scale on the approval backlog / request
-  rate via a Prometheus Adapter (CPU autoscaling is done).
+- **HA for stateful components** — SPIRE (shared datastore + cloud KMS), Keycloak
+  (external DB + clustering), Postgres (managed HA), the sandbox (in-memory). The
+  app tier is already replicated (`docs/ha.md`).
+- **Custom-metric autoscaling** — scale on the approval backlog / request rate via
+  a Prometheus Adapter (CPU autoscaling is done).
 - **SPIFFE-native transport** — the mesh uses Linkerd's own identity; extending
   SPIFFE mTLS to every hop (and the browser edge via ingress TLS) is a further
   step.
+- **Per-tenant role → tool maps** — the matrix is global today.
 
-Note: secrets live in a gitignored `.env` (generated by `setup.sh`); the realm is
-rendered from `realm.json.tmpl`. `setup.sh` recreates Keycloak each run so the
-fresh realm (and its client secrets) is imported. Traces go to the in-cluster
-collector (`OTEL_EXPORTER_OTLP_ENDPOINT`); `./scripts/show-trace.sh` prints the
-latest end-to-end trace. The OPA bundle is built by `scripts/build-bundle.sh`
-(revision stamped into every decision) and signed by `scripts/sign-bundle.sh`.
+## The repository is public
+
+This changed what the docs must be. What that means in practice:
+
+- **No secrets, ever.** `.env` is gitignored and generated; the realm is rendered
+  from `realm.json.tmpl`; CI fails if `.env` is ever tracked, and gitleaks scans
+  the tree and the full history (`./scripts/scan-secrets.sh`). The demo passwords
+  and the trust domain (`acme.com`) are documentation, not credentials.
+- **Everything here is synthetic.** No real customer data, no card data — see
+  [`docs/data-handling.md`](docs/data-handling.md).
+- **Security reports** go through GitHub's *Report a vulnerability* (private
+  advisory), never a public issue — see [`SECURITY.md`](SECURITY.md).
+- **Contributions** follow [`CONTRIBUTING.md`](CONTRIBUTING.md); `main` is
+  branch-protected.
+- The docs are written to be read by strangers: they explain the *why*, name the
+  trade-offs, and mark what is deliberately **not** implemented (multi-tenant
+  depth, HA for stateful components, SPIFFE-native transport).
 
 ## Decisions made
 
@@ -124,102 +167,89 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 - ADR-0008 Documentation and handoff strategy
 - ADR-0009 Provider-agnostic LLM + identity-authenticated gateway
 - ADR-0010 Supply-chain signing with cosign (keyless Sigstore)
+- ADR-0011 Self-service enrollment and role administration
 
-## Open questions / blockers
+## Governance (as configured)
 
-- **Signed commits** — **DONE and verified end to end.** Local
-  `git log --show-signature` reports a good signature, and GitHub marks pushed
-  commits **Verified** (confirmed via the commits API: `"verified": true`).
-  Setup steps for other machines are in "Signed commits (one-time setup)" below.
-- **Branch protection is ENABLED** on `main`: PR-only (0 required approvals, so
-  the owner can self-merge), no force-push, no deletions, linear history,
-  conversation resolution, enforced for admins.
-  **Consequence: `main` is no longer pushable directly — changes go via a branch
-  + PR:**
-  ```sh
-  git switch -c feat/short-name
-  git push -u origin HEAD
-  gh pr create --fill
-  gh pr merge --squash --delete-branch     # linear history => squash/rebase only
-  ```
-- **GHAS** (secret scanning / CodeQL) — enable on the repo if available; the OSS
-  CI tooling covers the same ground meanwhile.
+- **`main` is branch-protected:** PR-only, 0 required approvals (the owner
+  self-merges), no force-push, no deletions, linear history, conversation
+  resolution, enforced for admins.
+- **All 10 CI checks are required** on `main`, so a failing check blocks the merge:
+  `app-tests, dependencies, helm, opa-tests, repo-checks, sast, sdk-tests,
+  secrets, supply-chain, web-build`.
+- **Commits are signed** (SSH) and GitHub-verified.
+
+```sh
+git switch -c feat/short-name
+git push -u origin HEAD
+gh pr create --fill
+gh pr merge --squash --delete-branch     # linear history => squash/rebase only
+```
 
 ## Environment & manual steps
 
-- Local tools used: Docker, `kind`, `kubectl`, `gh`, and (optional) `gitleaks`
-  at `/tmp/gitleaks` for local scans.
+- Local tools: Docker, `kind`, `kubectl`, `gh`, `helm`, `linkerd`, and (optional)
+  `gitleaks` / `opa` / `actionlint` under `/tmp`.
+- Ollama runs on the host (`ollama serve`); the gateway reaches it at
+  `host.docker.internal:11434`.
 
-### Signed commits (one-time setup)
+### Signed commits (one-time setup, for reference)
 
-Commits must be signed. This uses **SSH signing** (simpler than GPG). The same
-SSH key can be registered on GitHub **twice** — once for authentication, once
-for signing — so adding it a second time is normal and expected.
+Commits must be signed. This uses **SSH signing**. The same SSH key is registered
+on GitHub **twice** — once for authentication, once for signing.
 
-**Step 1 — register the key as a SIGNING key on GitHub.** The option people miss
-is the **"Key type"** dropdown on the *New SSH key* form:
-
-1. Open <https://github.com/settings/ssh/new>
-2. **Title**: e.g. `MacBook signing`
-3. **Key type**: choose **Signing Key**   ← this is the dropdown you were looking for
-4. **Key**: paste the contents of `~/.ssh/id_ed25519.pub`
-5. Click **Add SSH key**
-
-If you already added the key as an *Authentication Key*, add it **again** and
-select *Signing Key* — one key, two registrations. (If you truly see no "Key
-type" dropdown, use the URL above; it exists on the current GitHub web UI. The
-mobile app does not support signing keys.)
-
-**Step 2 — configure git.** Already done on this machine, for reference:
-
-```sh
-git config --global gpg.format ssh
-git config --global user.signingkey /Users/felixadusei/.ssh/id_ed25519.pub  # absolute path: ~ does NOT expand here
-git config --global commit.gpgsign true
-git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers      # enables local verification
-```
-
-**Step 3 — verify.**
-
-```sh
-git log --show-signature -1     # local: expect 'Good "git" signature'
-# after pushing, GitHub shows a green "Verified" badge on the commit
-```
-
-If a pushed commit shows **Unverified**, the signing key is not registered on
-GitHub — redo Step 1. (Signing itself is working locally; that is a separate
-failure mode from the key not being registered.)
+1. <https://github.com/settings/ssh/new> → **Key type: Signing Key** → paste
+   `~/.ssh/id_ed25519.pub`.
+2. ```sh
+   git config --global gpg.format ssh
+   git config --global user.signingkey /Users/felixadusei/.ssh/id_ed25519.pub  # absolute: ~ does not expand
+   git config --global commit.gpgsign true
+   git config --global gpg.ssh.allowedSignersFile ~/.ssh/allowed_signers
+   ```
+3. `git log --show-signature -1` → expect `Good "git" signature`.
 
 ## Known issues / gotchas
 
-- The `gh` token lacks `admin:public_key`, so adding the SSH/signing key must be
-  done in the GitHub web UI (or refresh the token scope).
-- Local secret scans use `/tmp/gitleaks` if `gitleaks` is not on `PATH`.
-- CI: `security.yml` secret scanning always runs; SAST/dependency/image jobs are
-  conditional and activate as code lands.
+- **Keycloak re-import:** `setup.sh` recreates Keycloak each run (ephemeral H2,
+  `IGNORE_EXISTING`), so accounts enrolled at runtime are lost. The realm file is
+  the source of truth.
+- **OPA bundle:** the files are mounted with `subPath`, which does not update in
+  place — `setup.sh` restarts OPA after a new revision.
+- **SPIRE datastore** is an `emptyDir`: a SPIRE-server restart forgets its agents
+  and entries; a `setup.sh` re-run restores them. Registration entries are created
+  **per attested agent**, or workloads on other nodes get no identity.
+- **Role changes lag** by up to one token lifetime (5 minutes).
+- The `gh` token lacks `admin:public_key`, so SSH/signing keys are added in the
+  GitHub web UI.
 
 ## Key files map
 
 | Path | What it is |
 |---|---|
-| `SECURITY.md` | security invariants + reporting |
-| `docs/threat-model.md` | 10 threats, mitigations, tests |
-| `docs/data-handling.md` | synthetic-only rule, PII, PCI, redaction |
-| `docs/roadmap.md` | phase checklist |
-| `docs/real-world-adoption.md` | adoption guide (draft) |
-| `docs/decisions/` | ADRs |
-| `.gitleaks.toml` | secret rules + narrow allowlist |
-| `.githooks/pre-commit` | local secret guard |
-| `scripts/scan-secrets.sh` | tree + history scan |
-| `.github/workflows/security.yml` | CI security job |
+| `start.sh` / `status.sh` / `stop.sh` | one-command bring-up / check / stop |
+| `SECURITY.md` | security invariants + private reporting |
+| `CONTRIBUTING.md` | how to contribute |
+| `docs/threat-model.md` | 10 threats, mitigations, and the test for each |
+| `docs/roles-and-tools.md` | the role → tool matrix |
+| `docs/tenancy.md` | tenant isolation, at every layer |
+| `docs/tls.md` | transport security (SPIFFE + mesh) |
+| `docs/ha.md`, `docs/autoscaling.md` | redundancy and scaling |
+| `docs/llm-gateway.md` | the gateway, identity, rate/cost limits |
+| `docs/data-stores.md` | durable state (Postgres) |
+| `docs/operator-guide.md` | the runbook |
+| `docs/real-world-adoption.md` | adoption guide + production checklist |
+| `docs/roadmap.md` | phase checklist + backlog |
+| `docs/decisions/` | ADRs 0001–0011 |
+| `docs/guides/` | plain-language user guides |
 | `docs/visualization/index.html` | interactive 3D architecture (open by double-click) |
+| `scripts/` | setup, demo, and the verification suites |
 
 ## How to verify
 
 ```sh
 ./scripts/scan-secrets.sh      # expect: no leaks in tree or history
-# hook self-test: construct a realistic fake key at runtime, confirm it blocks
-# (the literal below deliberately does not contain a secret-shaped string)
+./status.sh                    # expect: cluster up, pods ready, the URL
+# the pre-commit hook, self-tested (the literal below is not secret-shaped):
 printf 'LLM_API_KEY=sk-%s\n' "$(printf 'A%.0s' $(seq 1 24))" > t.txt
 git add t.txt && .githooks/pre-commit; echo "exit=$? (expect 1)"; git reset -q t.txt; rm -f t.txt
 ```
