@@ -156,12 +156,12 @@ def _chat(prompt: str) -> str:
 
 
 def decide_tool(task: str, tools: dict, fallback: dict | None = None) -> dict:
-    """Return {"tool", "args", "reason"}; falls back deterministically on error."""
-    fallback = fallback or {
-        "tool": "crm.customer.read",
-        "args": {"customer_id": "c-100"},
-        "reason": "fallback: default lookup",
-    }
+    """Return {"tool", "args", "reason"}.
+
+    If the model cannot produce a usable decision we return **no tool** — never a
+    different one. Silently substituting another action is worse than failing: a
+    "refund $1000" that quietly becomes a customer lookup looks like success.
+    """
     try:
         content = _chat(_prompt(task, tools))
         decision = json.loads(content)
@@ -172,4 +172,11 @@ def decide_tool(task: str, tools: dict, fallback: dict | None = None) -> dict:
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])
     except Exception as exc:  # noqa: BLE001 - never block the run on the model
         audit("llm.fallback", reason=str(exc)[:200])
-    return fallback
+
+    if fallback:
+        return fallback
+    return {
+        "tool": None,
+        "args": {},
+        "reason": "the model did not choose a usable tool — nothing was executed",
+    }

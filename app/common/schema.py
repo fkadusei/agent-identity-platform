@@ -22,7 +22,9 @@ def _coerce(value, json_type: str | None):
         if json_type == "string":
             return value if isinstance(value, str) else str(value)
     except (TypeError, ValueError):
-        return value
+        # Fail closed: an unparseable number becomes None, never the raw value.
+        # Policy must not be handed "-" or "lots" and have to reason about it.
+        return None if json_type in ("number", "integer") else value
     return value
 
 

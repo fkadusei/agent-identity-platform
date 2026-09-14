@@ -91,3 +91,28 @@ test_missing_tenant_reason_is_clear if {
 test_allow_still_holds_with_a_tenant if {
   decision == "allow" with input as base
 }
+
+# --- a refund needs a positive, numeric amount ------------------------------
+test_refund_without_an_amount_is_denied if {
+  decision == "deny" with input as object.remove(refund(200), ["amount"])
+}
+
+test_refund_with_a_zero_amount_is_denied if {
+  decision == "deny" with input as refund(0)
+}
+
+test_refund_with_a_negative_amount_is_denied if {
+  decision == "deny" with input as refund(-5)
+}
+
+test_refund_with_a_non_numeric_amount_is_denied if {
+  decision == "deny" with input as object.union(refund(200), {"amount": "-"})
+}
+
+test_refund_with_a_string_amount_is_denied if {
+  decision == "deny" with input as object.union(refund(200), {"amount": "200"})
+}
+
+test_refund_amount_reason_is_clear if {
+  contains(reason, "positive") with input as refund(0)
+}

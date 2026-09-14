@@ -55,8 +55,23 @@ is_trusted if input.agent == trusted_agent
 
 has_role(role) if role in input.roles
 
+# A refund must name a positive, numeric amount. Without this a missing or null
+# amount falls through to `allow` (nothing matches, and the default is only
+# reached when no rule fires).
+is_positive_number(v) if {
+  is_number(v)
+  v > 0
+}
+
 # A deny condition: the workload is not the trusted agent.
 deny if not is_trusted
+
+# A deny condition: a refund without a valid amount (missing, null, "0", "-",
+# "lots", negative). The amount is the whole risk of the action.
+deny if {
+  input.tool == refund_tool
+  not is_positive_number(input.amount)
+}
 
 # A deny condition: the caller carries no tenant, so nothing can be scoped to
 # them. Fail closed — an unscoped identity gets no data.
@@ -132,6 +147,12 @@ decision := "allow" if {
 default reason := "denied by default: no rule permitted this action"
 
 reason := "denied: untrusted workload identity" if not is_trusted
+
+reason := "denied: a refund needs a positive, numeric amount" if {
+  is_trusted
+  input.tool == refund_tool
+  not is_positive_number(input.amount)
+}
 
 reason := "denied: caller has no tenant (unscoped identity)" if {
   is_trusted

@@ -40,6 +40,13 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
 
     def plan(state: AgentState) -> dict:
         decision = deps.decide(state["task"])
+        if not decision.get("tool"):
+            # The model produced no usable decision. Do NOT quietly do something
+            # else — a refund request must never turn into a customer lookup.
+            return {
+                "status": "error",
+                "reason": decision.get("reason", "no tool was selected"),
+            }
         return {
             "tool": decision["tool"],
             "args": decision.get("args", {}),
@@ -84,6 +91,9 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
     def after_decision(state: AgentState) -> str:
         return "call_tool" if state.get("status") == "approved" else END
 
+    def after_plan(state: AgentState) -> str:
+        return END if state.get("status") == "error" else "call_tool"
+
     graph = StateGraph(AgentState)
     graph.add_node("plan", plan)
     graph.add_node("call_tool", call_tool)
@@ -91,7 +101,7 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
     graph.add_node("await_decision", await_decision)
 
     graph.add_edge(START, "plan")
-    graph.add_edge("plan", "call_tool")
+    graph.add_conditional_edges("plan", after_plan, {"call_tool": "call_tool", END: END})
     graph.add_conditional_edges(
         "call_tool", after_call, {"create_approval": "create_approval", END: END}
     )
