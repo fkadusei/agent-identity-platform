@@ -100,6 +100,9 @@ export const decideApproval = (id: string, approved: boolean, token: string, not
 
 export const getAudit = () => request("/audit?limit=100");
 
+// The role -> tool matrix, straight from the policy.
+export const getRoles = (token: string) => request("/roles", { headers: auth(token) });
+
 // --- admin: user management (requires the platform_admin role) -------------
 export const listUsers = (token: string) => request("/admin/users", { headers: auth(token) });
 

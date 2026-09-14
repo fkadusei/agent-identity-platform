@@ -7,6 +7,7 @@ import {
   enroll,
   getAllApprovals,
   getAudit,
+  getRoles,
   grantRole,
   listApprovals,
   listUsers,
@@ -19,7 +20,7 @@ import {
   type Session,
 } from "./api";
 
-type Tab = "console" | "approvals" | "audit" | "admin";
+type Tab = "console" | "approvals" | "roles" | "audit" | "admin";
 
 // The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
 const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
@@ -55,7 +56,7 @@ export default function App() {
   // Approving is a business decision: the manager role, not platform_admin
   // (which administers users and, deliberately, can call no tools).
   const canApprove = has("manager");
-  const tabs: Tab[] = ["console", "approvals", "audit", ...(isAdmin ? (["admin"] as Tab[]) : [])];
+  const tabs: Tab[] = ["console", "approvals", "roles", "audit", ...(isAdmin ? (["admin"] as Tab[]) : [])];
 
   const signOut = () => {
     setSession(null);
@@ -117,6 +118,7 @@ export default function App() {
             {tab === "approvals" && (
               <Approvals session={session} agentId={agentId} canApprove={canApprove} />
             )}
+            {tab === "roles" && <Roles session={session} />}
             {tab === "audit" && <Audit />}
             {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} />}
           </main>
@@ -755,6 +757,81 @@ function Audit() {
         ))}
         {events.length === 0 && <p className="hint">No events yet.</p>}
       </div>
+    </section>
+  );
+}
+
+function Roles({ session }: { session: Session }) {
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getRoles(session.token)
+      .then(setData)
+      .catch((e) => setError(String(e)));
+  }, [session.token]);
+
+  if (error)
+    return (
+      <section>
+        <h2>Roles &amp; tools</h2>
+        <div className="error">{error}</div>
+      </section>
+    );
+  if (!data)
+    return (
+      <section>
+        <h2>Roles &amp; tools</h2>
+        <p className="hint">Loading…</p>
+      </section>
+    );
+
+  const roles: string[] = Object.keys(data.roles);
+  const tools: string[] = data.tools;
+  const mine: string[] = data.you?.roles ?? [];
+  const may = (role: string, tool: string) => (data.roles[role] ?? []).includes(tool);
+
+  return (
+    <section>
+      <h2>Roles &amp; tools</h2>
+      <p className="hint">
+        Which role may call which tool — the policy itself, the same table the tool
+        server enforces. Your roles are highlighted.
+      </p>
+      <div className="matrixwrap">
+        <table className="matrix">
+          <thead>
+            <tr>
+              <th className="toolcol">tool</th>
+              {roles.map((r) => (
+                <th key={r} className={mine.includes(r) ? "mine" : ""}>
+                  {r}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {tools.map((t) => (
+              <tr key={t}>
+                <td className="toolcol">
+                  <code>{t}</code>
+                </td>
+                {roles.map((r) => (
+                  <td key={r} className={mine.includes(r) ? "mine" : ""}>
+                    {may(r, t) ? <span className="yes">✓</span> : <span className="no">·</span>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="hint">
+        Refunds: up to <b>${data.limits?.auto}</b> allowed, up to{" "}
+        <b>${data.limits?.approval}</b> needs a manager, above that refused. PII needs
+        the <b>privacy</b> role <b>and</b> approval. Everything is scoped to your
+        tenant, and <b>platform_admin</b> calls no tools and does not approve.
+      </p>
     </section>
   );
 }

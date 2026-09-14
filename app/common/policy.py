@@ -28,3 +28,36 @@ def tools_for_roles(
         return set(resp.json().get("result") or [])
     except Exception:  # noqa: BLE001 - fail closed: no tools rather than all tools
         return set()
+
+
+def _opa_get(opa_url: str, path: str, *, client: Any | None = None, timeout: float = 3.0) -> Any:
+    """Read a document from OPA. Returns None on any error (the caller decides)."""
+    url = f"{opa_url.rstrip('/')}/v1/data/{path}"
+    try:
+        if client is not None:
+            resp = client.get(url, timeout=timeout)
+        else:
+            with httpx.Client() as http:
+                resp = http.get(url, timeout=timeout)
+        resp.raise_for_status()
+        return resp.json().get("result")
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def role_matrix(opa_url: str, **kwargs) -> dict:
+    """The role -> tools table, straight from the policy."""
+    return _opa_get(opa_url, "agentnhi/authz/role_tools", **kwargs) or {}
+
+
+def catalogue(opa_url: str, **kwargs) -> list:
+    """The tool catalogue, injected into the bundle at build time."""
+    return _opa_get(opa_url, "tools", **kwargs) or []
+
+
+def refund_limits(opa_url: str, **kwargs) -> dict:
+    """The refund tiers, so a page can describe them without hardcoding."""
+    return {
+        "auto": _opa_get(opa_url, "agentnhi/authz/auto_refund_limit", **kwargs),
+        "approval": _opa_get(opa_url, "agentnhi/authz/approval_refund_limit", **kwargs),
+    }
