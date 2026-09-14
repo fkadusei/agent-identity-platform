@@ -7,10 +7,14 @@ run carries the caller's token again — see `/resume`.
 """
 from __future__ import annotations
 
+import os
 import uuid
 from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
+
+from agentnhi import Settings, TokenRejected, TokenVerifier
+from agentnhi.tokens import Delegation
 
 from app.agent.graph import build_agent, resume_task, run_task
 from app.agent.live import LiveDeps
@@ -23,7 +27,28 @@ enable_forwarding()
 setup_telemetry("agent")
 instrument_fastapi(app)
 _runs: dict[str, Any] = {}
+_verifier: TokenVerifier | None = None
 _checkpointer: Any = None
+
+
+def _delegation(token: str) -> Delegation:
+    """Verify the caller's token before doing anything with it.
+
+    The agent accepts tokens audienced to *itself* (its SPIFFE ID). The client
+    that logged the user in (`azp`) is not constrained, and the roles it returns
+    decide which tools the model is offered.
+    """
+    global _verifier
+    if _verifier is None:
+        base = Settings.from_env()
+        _verifier = TokenVerifier(
+            Settings(
+                keycloak_issuer=base.keycloak_issuer,
+                audience=os.environ.get("AGENT_SPIFFE_ID", ""),
+                trusted_workload=None,
+            )
+        )
+    return _verifier.verify(token)
 _checkpointer_ready = False
 
 
@@ -55,8 +80,15 @@ def run(body: dict, authorization: str | None = Header(default=None)) -> dict:
     if not task:
         raise HTTPException(status_code=400, detail="task is required")
 
+    try:
+        delegation = _delegation(token)
+    except TokenRejected as exc:
+        raise HTTPException(status_code=403, detail=f"identity rejected: {exc}")
+
     thread_id = body.get("thread_id") or f"t-{uuid.uuid4().hex[:8]}"
-    agent = build_agent(LiveDeps(user_token=token), checkpointer=get_checkpointer())
+    agent = build_agent(
+        LiveDeps(user_token=token, roles=delegation.roles), checkpointer=get_checkpointer()
+    )
     _runs[thread_id] = agent
     outcome = run_task(agent, task, thread_id, token)
     return {"thread_id": thread_id, **outcome}
@@ -73,7 +105,14 @@ def resume(body: dict, authorization: str | None = Header(default=None)) -> dict
         # is durable we can rebuild the agent from the caller's token and resume.
         if not (token and get_checkpointer()):
             raise HTTPException(status_code=404, detail="unknown thread_id")
-        agent = build_agent(LiveDeps(user_token=token), checkpointer=get_checkpointer())
+        try:
+            delegation = _delegation(token)
+        except TokenRejected as exc:
+            raise HTTPException(status_code=403, detail=f"identity rejected: {exc}")
+        agent = build_agent(
+            LiveDeps(user_token=token, roles=delegation.roles),
+            checkpointer=get_checkpointer(),
+        )
         _runs[thread_id] = agent
 
     outcome = resume_task(agent, thread_id, bool(body.get("approved")))

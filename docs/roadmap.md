@@ -102,6 +102,9 @@ Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 - [x] **Tenancy depth** — approvals are scoped by tenant (create, list,
       decide, verify), keyed on the caller's identity; a manager sees only their
       own tenant's queue (`docs/tenancy.md`)
+- [x] **Role -> tool matrix** — an explicit table in policy/authz.rego; the
+      agent offers only the permitted tools, the tool server enforces, and
+      `scripts/role-tools.sh` shows it end to end (`docs/roles-and-tools.md`)
 - The tools' in-memory simulator state resets on restart (fine for the demo).
 
 ## Phase 3 — Deploy and adoption

@@ -31,10 +31,13 @@ def _tool_manifest(tools: dict) -> str:
 
 def _prompt(task: str, tools: dict) -> str:
     return (
-        "You are a customer-support agent. Choose exactly one tool to handle the task.\n"
+        "You are a customer-support agent. Choose exactly one tool from the list "
+        "below to handle the task.\n"
         f"Available tools:\n{_tool_manifest(tools)}\n\n"
         f'Task: "{task}"\n\n'
-        "Reply with ONLY JSON of the form "
+        "If none of the listed tools fits the task, reply with "
+        '{"tool": null, "reason": "<why>"} — never substitute a different tool.\n'
+        "Otherwise reply with ONLY JSON of the form "
         '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>"}.'
     )
 

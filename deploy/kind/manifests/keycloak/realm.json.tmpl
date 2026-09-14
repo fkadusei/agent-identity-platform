@@ -9,7 +9,9 @@
       { "name": "support_rep" },
       { "name": "manager" },
       { "name": "privacy" },
-      { "name": "platform_admin" }
+      { "name": "platform_admin" },
+      { "name": "read_only" },
+      { "name": "billing" }
     ]
   },
   "users": [
@@ -67,6 +69,34 @@
       "realmRoles": ["support_rep"],
       "credentials": [
         { "type": "password", "value": "grace123", "temporary": false }
+      ]
+    },
+    {
+      "username": "dana",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Dana",
+      "lastName": "Reader",
+      "email": "dana@example.com",
+      "requiredActions": [],
+      "attributes": { "tenant": ["acme"] },
+      "realmRoles": ["read_only"],
+      "credentials": [
+        { "type": "password", "value": "dana1234", "temporary": false }
+      ]
+    },
+    {
+      "username": "bella",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Bella",
+      "lastName": "Billing",
+      "email": "bella@example.com",
+      "requiredActions": [],
+      "attributes": { "tenant": ["acme"] },
+      "realmRoles": ["billing"],
+      "credentials": [
+        { "type": "password", "value": "bella123", "temporary": false }
       ]
     },
     {
