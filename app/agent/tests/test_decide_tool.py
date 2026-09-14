@@ -20,13 +20,15 @@ def test_a_forbidden_tool_is_refused_not_substituted(monkeypatch):
     assert "may not call refunds.issue" in got["reason"]
 
 
-def test_a_declined_task_keeps_the_models_reason(monkeypatch):
+def test_a_declined_task_gets_a_clear_message(monkeypatch):
+    # A small model echoes a tool *description* as its reason, which says nothing
+    # useful ("High-risk: policy may require approval"). We compose the message.
     monkeypatch.setattr(
-        llm, "_chat", lambda _p: '{"tool": null, "reason": "not permitted for your role"}'
+        llm, "_chat", lambda _p: '{"tool": null, "reason": "High-risk: policy may require approval"}'
     )
     got = llm.decide_tool("issue a refund of 500", ALLOWED, FORBIDDEN)
     assert got["tool"] is None
-    assert got["reason"] == "not permitted for your role"
+    assert got["reason"] == "no tool your role may call fits this task — nothing was executed"
 
 
 def test_an_allowed_tool_is_chosen(monkeypatch):
