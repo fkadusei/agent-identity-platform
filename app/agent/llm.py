@@ -29,17 +29,28 @@ def _tool_manifest(tools: dict) -> str:
     return "\n".join(lines)
 
 
-def _prompt(task: str, tools: dict) -> str:
-    return (
-        "You are a customer-support agent. Choose exactly one tool from the list "
-        "below to handle the task.\n"
-        f"Available tools:\n{_tool_manifest(tools)}\n\n"
-        f'Task: "{task}"\n\n'
-        "If none of the listed tools fits the task, reply with "
-        '{"tool": null, "reason": "<why>"} — never substitute a different tool.\n'
+def _prompt(task: str, tools: dict, unavailable: dict | None = None) -> str:
+    parts = [
+        "You are a customer-support agent. Choose exactly one tool from the "
+        "available list to handle the task.\n",
+        f"Available tools:\n{_tool_manifest(tools)}\n\n",
+    ]
+    if unavailable:
+        # Naming the forbidden tools matters: if we simply hide them, a small
+        # model substitutes a different (allowed) tool and the run *looks* like it
+        # succeeded — which is exactly the confusion this avoids.
+        parts.append(
+            "NOT permitted for this user's role (never choose these):\n"
+            f"{_tool_manifest(unavailable)}\n\n"
+        )
+    parts.append(f'Task: "{task}"\n\n')
+    parts.append(
+        "If the task needs a tool that is not permitted, or none of the available "
+        'tools fits, reply with {"tool": null, "reason": "<why>"}.\n'
         "Otherwise reply with ONLY JSON of the form "
         '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>"}.'
     )
+    return "".join(parts)
 
 
 def _extract_args(task: str) -> dict:
@@ -158,7 +169,9 @@ def _chat(prompt: str) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
-def decide_tool(task: str, tools: dict, fallback: dict | None = None) -> dict:
+def decide_tool(
+    task: str, tools: dict, unavailable: dict | None = None, fallback: dict | None = None
+) -> dict:
     """Return {"tool", "args", "reason"}.
 
     If the model cannot produce a usable decision we return **no tool** — never a
@@ -166,9 +179,22 @@ def decide_tool(task: str, tools: dict, fallback: dict | None = None) -> dict:
     "refund $1000" that quietly becomes a customer lookup looks like success.
     """
     try:
-        content = _chat(_prompt(task, tools))
+        content = _chat(_prompt(task, tools, unavailable))
         decision = json.loads(content)
-        if decision.get("tool") in tools:
+        chosen = decision.get("tool")
+        if chosen and chosen in (unavailable or {}):
+            # Deterministic: the model asked for a tool this role may not use.
+            # Refuse here rather than let it pick something else instead.
+            return {"tool": None, "args": {}, "reason": f"your role may not call {chosen}"}
+        if not chosen:
+            # The model declined (no permitted tool fits) — keep its explanation.
+            return {
+                "tool": None,
+                "args": {},
+                "reason": decision.get("reason")
+                or "no permitted tool fits this task — nothing was executed",
+            }
+        if chosen in tools:
             tool = tools[decision["tool"]]
             args = _fill_gaps(tool, dict(decision.get("args") or {}), task)
             return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
