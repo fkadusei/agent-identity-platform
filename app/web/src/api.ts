@@ -43,7 +43,7 @@ const json = (method: string, token: string, body?: any): RequestInit => ({
 });
 
 // --- auth + enrollment -----------------------------------------------------
-export type Session = { user: string; roles: string[]; tenant: string; token: string };
+export type Session = { user: string; roles: string[]; tenant: string; tools: string[]; token: string };
 
 export const authConfig = () => request("/auth/config");
 
@@ -59,6 +59,7 @@ export const login = async (username: string, password: string): Promise<Session
     user: r.user,
     roles: r.roles ?? [],
     tenant: r.tenant ?? "",
+    tools: r.tools ?? [],
     token: r.access_token,
   };
 };

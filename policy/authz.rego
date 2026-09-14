@@ -1,52 +1,76 @@
-# =============================================================================
-# Authorization policy for the support & refunds platform.
-#
-# Three outcomes, with explicit precedence: deny > require_approval > allow.
-# If nothing matches, the answer is deny (the default).
-#
-# Input contract:
-#   input.agent   the acting workload's SPIFFE ID (from the token's azp)
-#   input.user    the human the action is for (from the token's sub/username)
-#   input.roles   the human's roles, e.g. ["support_rep"] or ["support_rep","manager"]
-#   input.tool    the tool being called, e.g. "refunds.issue"
-#   input.amount  the refund amount (only for refund tools)
-#
-# Output:
-#   decision      "allow" | "deny" | "require_approval"
-#   reason        a human-readable explanation (recorded in the audit trail)
-#
-# Tested by policy/tests/authz_test.rego (runs in CI).
-# =============================================================================
 package agentnhi.authz
 
 import rego.v1
 
-# ---------------------------------------------------------------------------
-# Configuration — the parts a reviewer would change.
-# ---------------------------------------------------------------------------
+# =============================================================================
+# Authorization policy for the support & refunds platform.
+#
+# Three outcomes, precedence deny > require_approval > allow.
+#
+# Input contract:
+#   input.agent   the acting workload's SPIFFE ID (from the token's azp)
+#   input.user    the human the action is for
+#   input.roles   the human's roles, e.g. ["support_rep"]
+#   input.tenant  the human's tenant
+#   input.tool    the tool being called
+#   input.amount  the refund amount (refund tools only)
+#
+# Output:
+#   decision      "allow" | "deny" | "require_approval"
+#   reason        one human-readable string (an `else` chain, so never a set)
+#
+# Tested by policy/tests/authz_test.rego (runs in CI).
+# =============================================================================
+
 trusted_agent := "spiffe://acme.com/ns/agent-platform/sa/agent"
 
-# Tools a support rep may use freely.
-low_risk_tools := {
-  "crm.customer.read",
-  "crm.orders.list",
-  "tickets.read",
-  "tickets.reply.draft",
-  "refunds.quote",
+# ---------------------------------------------------------------------------
+# WHO MAY CALL WHAT — the review surface.
+#
+# A role can only call the tools listed here, and every tool in the catalogue
+# must appear somewhere (a test asserts it against data.tools). Adding a tool
+# without granting it to a role leaves it uncallable, by design.
+# ---------------------------------------------------------------------------
+role_tools := {
+  "support_rep": {
+    "crm.customer.read",
+    "crm.orders.list",
+    "tickets.read",
+    "tickets.reply.draft",
+    "refunds.quote",
+    "refunds.issue",
+  },
+  "billing": {"crm.orders.list", "refunds.quote", "refunds.issue"},
+  "read_only": {"crm.customer.read", "crm.orders.list", "tickets.read"},
+  # `privacy` includes the read tools so the role is usable on its own — you need
+  # a customer id before you can read their PII.
+  "privacy": {
+    "privacy.pii.read",
+    "crm.customer.read",
+    "crm.orders.list",
+    "tickets.read",
+  },
+  "manager": {"crm.customer.read", "crm.orders.list", "tickets.read", "refunds.quote"},
+  "platform_admin": set(),
 }
 
-pii_tools := {"privacy.pii.read"}
 refund_tool := "refunds.issue"
+pii_tools := {"privacy.pii.read"}
 auto_refund_limit := 50        # <= this: allowed outright
 approval_refund_limit := 500   # <= this (and > auto): needs approval; above: denied
 
-# The bundle revision, injected at build time as data.agentnhi.policy_version
-# (see scripts/build-bundle.sh) and recorded with every decision — so you can
-# always answer "which policy revision decided this?". Falls back to "dev" when
-# the raw file is run directly (e.g. `opa test policy/`).
+# The bundle revision, stamped at build time (scripts/build-bundle.sh) and
+# recorded with every decision. Falls back to "dev" for the raw file.
 default policy_version := "dev"
 
 policy_version := data.agentnhi.policy_version if data.agentnhi.policy_version
+
+# The tool catalogue, injected at build time. Empty when the raw file is run
+# directly (e.g. `opa test policy/`), in which case the unknown-tool rule is
+# skipped rather than denying everything.
+catalogue := data.tools if data.tools
+
+default catalogue := []
 
 # ---------------------------------------------------------------------------
 # Predicates
@@ -55,76 +79,114 @@ is_trusted if input.agent == trusted_agent
 
 has_role(role) if role in input.roles
 
+# The union of the caller's roles' tools.
+may_call(tool) if {
+  some role in input.roles
+  tool in role_tools[role]
+}
+
+# The tools a set of roles may call — the agent asks for this so the model is
+# offered only what it could actually use (the policy stays the enforcement).
+tools_for_roles := tools if {
+  tools := {tool | some role in input.roles; some tool in role_tools[role]}
+}
+
 # A refund must name a positive, numeric amount. Without this a missing or null
-# amount falls through to `allow` (nothing matches, and the default is only
-# reached when no rule fires).
+# amount falls through to allow.
 is_positive_number(v) if {
   is_number(v)
   v > 0
 }
 
-# A deny condition: the workload is not the trusted agent.
+# ---------------------------------------------------------------------------
+# Deny conditions (each guarded; `deny` is a set, so several may hold)
+# ---------------------------------------------------------------------------
 deny if not is_trusted
 
-# A deny condition: a refund without a valid amount (missing, null, "0", "-",
-# "lots", negative). The amount is the whole risk of the action.
 deny if {
+  is_trusted
+  not input.tenant
+}
+
+deny if {
+  is_trusted
+  input.tenant
+  count(catalogue) > 0
+  not input.tool in catalogue
+}
+
+deny if {
+  is_trusted
+  input.tenant
+  not may_call(input.tool)
+}
+
+deny if {
+  is_trusted
+  input.tenant
+  startswith(input.tool, "bulk.")
+}
+
+deny if {
+  is_trusted
+  input.tenant
+  may_call(input.tool)
   input.tool == refund_tool
   not is_positive_number(input.amount)
 }
 
-# A deny condition: the caller carries no tenant, so nothing can be scoped to
-# them. Fail closed — an unscoped identity gets no data.
-deny if not input.tenant
-
-# A deny condition: bulk actions are never permitted.
-deny if startswith(input.tool, "bulk.")
-
-# A deny condition: refunds above the approval ceiling.
 deny if {
+  is_trusted
+  input.tenant
+  may_call(input.tool)
   input.tool == refund_tool
+  is_positive_number(input.amount)
   input.amount > approval_refund_limit
 }
 
-# A deny condition: PII access for someone without the privacy role.
-deny if {
-  input.tool in pii_tools
-  not has_role("privacy")
-}
-
-# Approval condition: refunds above the auto-approval limit.
+# ---------------------------------------------------------------------------
+# Approval conditions
+# ---------------------------------------------------------------------------
 needs_approval if {
   is_trusted
-  has_role("support_rep")
+  input.tenant
+  may_call(input.tool)
   input.tool == refund_tool
+  is_positive_number(input.amount)
   input.amount > auto_refund_limit
   input.amount <= approval_refund_limit
 }
 
-# Approval condition: any PII access by a privacy-role holder.
 needs_approval if {
   is_trusted
+  input.tenant
+  may_call(input.tool)
   input.tool in pii_tools
   has_role("privacy")
 }
 
-# Allow condition: low-risk tools for a support rep.
+# ---------------------------------------------------------------------------
+# Allow conditions
+# ---------------------------------------------------------------------------
 allow if {
   is_trusted
-  has_role("support_rep")
-  input.tool in low_risk_tools
+  input.tenant
+  may_call(input.tool)
+  input.tool != refund_tool
+  not input.tool in pii_tools
 }
 
-# Allow condition: small refunds for a support rep.
 allow if {
   is_trusted
-  has_role("support_rep")
+  input.tenant
+  may_call(input.tool)
   input.tool == refund_tool
+  is_positive_number(input.amount)
   input.amount <= auto_refund_limit
 }
 
 # ---------------------------------------------------------------------------
-# Resolution — exactly one branch fires, because each is guarded.
+# Resolution
 # ---------------------------------------------------------------------------
 default decision := "deny"
 
@@ -142,63 +204,55 @@ decision := "allow" if {
 }
 
 # ---------------------------------------------------------------------------
-# Reasons (recorded in the audit trail)
+# The reason — an `else` chain, so exactly one string is returned. (Separate
+# rules for the same name would produce a *set* whenever two bodies matched,
+# which the SDK, the audit and the UI all expect to be a string.)
 # ---------------------------------------------------------------------------
-default reason := "denied by default: no rule permitted this action"
-
 reason := "denied: untrusted workload identity" if not is_trusted
 
-reason := "denied: a refund needs a positive, numeric amount" if {
-  is_trusted
+else := "denied: caller has no tenant (unscoped identity)" if not input.tenant
+
+else := sprintf("denied: %v is not a known tool", [input.tool]) if {
+  count(catalogue) > 0
+  not input.tool in catalogue
+}
+
+else := "denied: bulk actions are not permitted" if startswith(input.tool, "bulk.")
+
+else := sprintf("denied: your role may not call %v", [input.tool]) if not may_call(input.tool)
+
+else := "denied: a refund needs a positive, numeric amount" if {
   input.tool == refund_tool
   not is_positive_number(input.amount)
 }
 
-reason := "denied: caller has no tenant (unscoped identity)" if {
-  is_trusted
-  not input.tenant
-}
-
-reason := "denied: bulk actions are not permitted" if startswith(input.tool, "bulk.")
-
-reason := sprintf(
+else := sprintf(
   "denied: refund of %v exceeds the approval ceiling of %v",
   [input.amount, approval_refund_limit],
 ) if {
   input.tool == refund_tool
+  is_positive_number(input.amount)
   input.amount > approval_refund_limit
 }
 
-reason := "denied: PII access requires the privacy role" if {
+else := "denied: PII access requires the privacy role" if {
   input.tool in pii_tools
   not has_role("privacy")
 }
 
-reason := sprintf(
+else := sprintf(
   "requires manager approval: refund of %v is above the auto-approval limit of %v",
   [input.amount, auto_refund_limit],
 ) if {
   needs_approval
-  not deny
   input.tool == refund_tool
 }
 
-reason := "requires privacy approval: PII access" if {
+else := "requires privacy approval: PII access" if {
   needs_approval
-  not deny
   input.tool in pii_tools
 }
 
-reason := "allowed: low-risk tool for support_rep" if {
-  allow
-  not deny
-  not needs_approval
-  input.tool in low_risk_tools
-}
+else := sprintf("allowed: %v is within your role", [input.tool]) if allow
 
-reason := sprintf("allowed: refund of %v is within the auto-approval limit", [input.amount]) if {
-  allow
-  not deny
-  not needs_approval
-  input.tool == refund_tool
-}
+else := "denied by default: no rule permitted this action"

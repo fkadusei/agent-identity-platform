@@ -84,6 +84,11 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
         raise HTTPException(status_code=502, detail=f"login produced an unusable token: {exc}")
 
     roles = platform_roles(delegation.roles)
+    # The tools this caller's roles permit — read from the policy, so the UI has
+    # no second copy of the role -> tool matrix.
+    from app.common.policy import tools_for_roles
+
+    allowed = sorted(tools_for_roles(Settings.from_env().opa_url, delegation.roles))
     metrics.LOGINS.labels("ok").inc()
     audit("auth.login", user=username, roles=roles)
     return {
@@ -91,6 +96,7 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
         "roles": roles,
         # Surfaced so callers (the UI, scripts) never need to decode the token.
         "tenant": delegation.tenant,
+        "tools": allowed,
         "access_token": token,
     }
 

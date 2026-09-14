@@ -24,8 +24,10 @@ class LiveDeps:
         settings: Settings | None = None,
         tool_server_url: str | None = None,
         approvals_url: str | None = None,
+        roles: tuple[str, ...] = (),
     ):
         self._user_token = user_token
+        self._roles = tuple(roles)
         self._settings = settings or Settings.from_env()
         self._tool_server_url = (tool_server_url or os.environ.get("TOOL_SERVER_URL", "http://tools:8000")).rstrip("/")
         self._approvals_url = (approvals_url or os.environ.get("APPROVALS_URL", "http://api:8080")).rstrip("/")
@@ -40,8 +42,19 @@ class LiveDeps:
             client_assertion=svid,
         )
 
+    def allowed_tools(self) -> dict:
+        """The catalogue filtered to what this caller's roles may call.
+
+        Read from the policy, so the tools offered and the tools allowed cannot
+        drift. Fails closed: if the policy is unreachable, no tools are offered.
+        """
+        from app.common.policy import tools_for_roles
+
+        allowed = tools_for_roles(self._settings.opa_url, self._roles)
+        return {name: tool for name, tool in TOOLS.items() if name in allowed}
+
     def decide(self, task: str) -> dict:
-        return decide_tool(task, TOOLS)
+        return decide_tool(task, self.allowed_tools())
 
     def call_tool(self, tool: str, args: dict, approval_id: str | None) -> ToolCallResult:
         body = dict(args)

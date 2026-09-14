@@ -267,7 +267,8 @@ function Console({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const canRun = session.roles.includes("support_rep");
+  // The tools the caller's roles permit, from the policy (via login).
+  const canRun = session.tools.length > 0;
 
   const run = async () => {
     setBusy(true);
@@ -316,8 +317,14 @@ function Console({
       <h2>Ask the agent</h2>
       {!canRun && (
         <p className="hint">
-          The agent acts on behalf of a support rep. Sign in as a user with the{" "}
-          <b>support_rep</b> role to run tasks; approvers decide them.
+          Your role cannot call any tools. Ask an admin to grant you a role (for
+          example <b>support_rep</b> or <b>read_only</b>).
+        </p>
+      )}
+      {canRun && (
+        <p className="hint">
+          Your role may call: {session.tools.map((t) => <code key={t}>{t}</code>).reduce(
+            (acc, el) => (acc === null ? el : [acc, " ", el]), null as any)}
         </p>
       )}
       <textarea value={task} onChange={(e) => setTask(e.target.value)} rows={2} />

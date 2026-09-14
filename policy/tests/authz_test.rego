@@ -116,3 +116,77 @@ test_refund_with_a_string_amount_is_denied if {
 test_refund_amount_reason_is_clear if {
   contains(reason, "positive") with input as refund(0)
 }
+
+# =============================================================================
+# The role -> tool matrix
+# =============================================================================
+all_tools := [
+  "crm.customer.read", "crm.orders.list", "tickets.read", "tickets.reply.draft",
+  "refunds.quote", "refunds.issue", "privacy.pii.read",
+]
+
+expected_role_tools := {
+  "support_rep": {"crm.customer.read", "crm.orders.list", "tickets.read", "tickets.reply.draft", "refunds.quote", "refunds.issue"},
+  "billing": {"crm.orders.list", "refunds.quote", "refunds.issue"},
+  "read_only": {"crm.customer.read", "crm.orders.list", "tickets.read"},
+  "privacy": {"privacy.pii.read", "crm.customer.read", "crm.orders.list", "tickets.read"},
+  "manager": {"crm.customer.read", "crm.orders.list", "tickets.read", "refunds.quote"},
+  "platform_admin": set(),
+}
+
+for_role(role, tool) := object.union(base, {"roles": [role], "tool": tool, "amount": 25})
+
+test_a_role_may_call_every_tool_it_grants if {
+  some role, tools in expected_role_tools
+  some tool in tools
+  decision != "deny" with input as for_role(role, tool)
+}
+
+test_a_role_is_denied_every_tool_it_does_not_grant if {
+  some role, tools in expected_role_tools
+  some tool in all_tools
+  not tool in tools
+  decision == "deny" with input as for_role(role, tool)
+}
+
+test_every_catalogue_tool_is_granted_to_some_role if {
+  some tool in all_tools
+  some role in object.keys(expected_role_tools)
+  tool in expected_role_tools[role]
+}
+
+test_roles_are_the_union_when_a_user_has_several if {
+  tools_for_roles == {"crm.orders.list", "refunds.quote", "refunds.issue", "crm.customer.read", "tickets.read"} with input as object.union(base, {"roles": ["read_only", "billing"]})
+}
+
+# --- unknown tools and the reason chain -------------------------------------
+
+test_an_unknown_tool_is_denied if {
+  decision == "deny" with input as object.union(base, {"tool": "admin.delete_everything"})
+    with data.tools as all_tools
+}
+
+test_a_tool_outside_the_catalogue_is_denied if {
+  reason == "denied: admin.wipe is not a known tool" with input as object.union(base, {"tool": "admin.wipe"})
+    with data.tools as all_tools
+}
+
+# The reason is an `else` chain, so overlapping conditions still yield ONE string
+# (separate rules would return a set, which the SDK, audit and UI cannot read).
+test_reason_is_always_a_single_string if {
+  some doc in [
+    base,
+    refund(1000),
+    refund(0),
+    object.remove(base, ["tenant"]),
+    object.union(base, {"agent": ROGUE}),
+    object.union(base, {"roles": ["read_only"], "tool": "refunds.issue", "amount": 0}),
+    object.union(base, {"roles": ["read_only"], "tool": "bulk.refund"}),
+    object.union(base, {"tool": "admin.wipe"}),
+  ]
+  is_string(reason) with input as doc
+}
+
+test_a_denied_role_gets_a_clear_reason if {
+  reason == "denied: your role may not call refunds.issue" with input as for_role("read_only", "refunds.issue")
+}

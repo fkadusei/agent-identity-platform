@@ -34,7 +34,10 @@
   cluster (`docs/ha.md`, `scripts/ha-check.sh`). Then **autoscaling**: the
   stateless services scale 2→5 on CPU (`docs/autoscaling.md`). Then **tenancy
   depth**: approvals are scoped by tenant, so one tenant's managers never see or
-  decide another's queue (`docs/tenancy.md`). The threat model is fully addressed.
+  decide another's queue (`docs/tenancy.md`). Then the **role -> tool matrix**:
+  an explicit table in the policy, the agent offering only the permitted tools,
+  enforced at the tool server (`docs/roles-and-tools.md`). The threat model is
+  fully addressed.
 - **Last updated:** 2026-09-13
 - **Last updated:** 2026-09-12
 - **Repo:** `github.com/fkadusei/agent-identity-platform` (private)
