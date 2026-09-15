@@ -19,6 +19,8 @@ import httpx
 
 from agentnhi import audit
 
+from app.agent.guardrails import GuardrailError, check_decision
+
 
 def _tool_manifest(tools: dict) -> str:
     lines = []
@@ -198,6 +200,11 @@ def decide_tool(
         if chosen in tools:
             tool = tools[decision["tool"]]
             args = _fill_gaps(tool, dict(decision.get("args") or {}), task)
+            try:
+                check_decision(tool, args)
+            except GuardrailError as exc:
+                audit("llm.guardrail", tool=tool.name, reason=str(exc)[:200])
+                return {"tool": None, "args": {}, "reason": str(exc)}
             return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])
     except Exception as exc:  # noqa: BLE001 - never block the run on the model

@@ -49,15 +49,18 @@ Legend: **open** · *partly done* (say which half).
 - **Lands in:** `deploy/kind/manifests/keycloak/keycloak.yaml`.
 - **Verified by:** the Trivy exception can be deleted because the control holds.
 
-## S5 — Agent guardrails + evals
+## S5 — Agent guardrails + evals — **done**
 
 - **What:** input/output guardrails on the agent, and an evaluation suite (a set
   of tasks with expected tool/decision) run in CI.
 - **Why:** the last unbuilt Phase 2 feature. Policy constrains what the agent may
   *do*; nothing yet constrains what it may be *asked*, or measures whether it
   picks the right tool.
-- **Lands in:** `app/agent/`, `app/tests/`, CI.
-- **Verified by:** the eval suite failing when the model picks the wrong tool.
+- **Built:** `app/agent/guardrails.py` (the task before the model, the decision
+  before the tool) and `app/agent/evals.py` (10 cases; stubbed in CI, `--live`
+  against the real model). See [`guardrails-and-evals.md`](guardrails-and-evals.md).
+- **Still open:** output-*content* checks, and a live eval in CI (deliberately
+  absent — it would be flaky).
 
 ## S6 — Custom-metric autoscaling
 
