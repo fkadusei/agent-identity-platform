@@ -108,7 +108,7 @@ opa test policy/                        # policy (31)
 
 | Audience | Start here |
 |---|---|
-| Everyone | [`docs/real-world-adoption.md`](docs/real-world-adoption.md) · [`docs/glossary.md`](docs/glossary.md) |
+| Everyone | [`docs/overview.html`](docs/overview.html) — what this is and why, in plain language · [`docs/overview-brief.html`](docs/overview-brief.html) — a shorter version to send on · [`docs/real-world-adoption.md`](docs/real-world-adoption.md) · [`docs/glossary.md`](docs/glossary.md) |
 | Developers | [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`docs/decisions/`](docs/decisions/) |
 | Security | [`SECURITY.md`](SECURITY.md) · [`docs/threat-model.md`](docs/threat-model.md) · [`docs/roles-and-tools.md`](docs/roles-and-tools.md) · [`docs/guardrails-and-evals.md`](docs/guardrails-and-evals.md) · [`docs/privacy.md`](docs/privacy.md) |
 | Data | [`docs/data-stores.md`](docs/data-stores.md) · [`docs/tenancy.md`](docs/tenancy.md) · [`docs/data-handling.md`](docs/data-handling.md) |
