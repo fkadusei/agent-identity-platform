@@ -251,11 +251,14 @@ const SCENE_DATA = {
     { from: "mcp", to: "sim", color: 0x4dffb8, css: "#4dffb8", lift: 1.6,
       label: "6. If allowed: the MCP server does its OWN exchange → simulator (the original token is never forwarded)",
       explain: "For downstream calls the MCP server performs its own token exchange, scoped to the simulator. The inbound token is never forwarded — the audience and azp would not match anyway." },
-    { from: "agent", to: "approver", color: 0x4da3ff, css: "#4da3ff", lift: 3.2,
-      label: "7. If approval is required: the run PAUSES, the approver decides, then the run resumes and the tool executes",
-      explain: "High-risk actions (e.g. a large refund) require human approval. The agent's run pauses via a LangGraph interrupt; an authenticated approver records a decision; the run resumes idempotently and only then does the tool execute. No self-approval." },
+    { from: "agent", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 2.4,
+      label: "7. If approval is required: the run PAUSES and a pending approval is recorded",
+      explain: "High-risk actions (e.g. a large refund) require human approval. The agent's run pauses via a LangGraph interrupt, and a pending approval is written to the approvals store — bound to the exact tool, arguments, user and agent, so it cannot be replayed for a different action." },
+    { from: "approver", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 3.0,
+      label: "8. The approver decides; the decision is recorded (no self-approval), and the run resumes",
+      explain: "An authenticated approver records the decision in the store, and the requester can never approve their own request. Only then does the run resume idempotently and the tool execute." },
     { from: "agent", to: "gateway", color: 0x4da3ff, css: "#4da3ff",
-      label: "8. LLM calls go through the identity-authenticated gateway (the agent holds no key)",
+      label: "9. LLM calls go through the identity-authenticated gateway (the agent holds no key)",
       explain: "The agent authenticates to the LLM gateway with its SPIFFE identity. The gateway holds the model provider key and redacts PII before egress, so the agent never holds a secret and no sensitive data leaves." }
   ],
 
@@ -270,7 +273,7 @@ const SCENE_DATA = {
       caption: "Token forwarding: audience/azp mismatch → refused." },
     { badge: "A3", tag: "injection", from: "agent", to: "opa", lift: -2.4,
       caption: "Prompt injection: the model asks for a forbidden tool → policy denies it." },
-    { badge: "A4", tag: "bypass", from: "agent", to: "approvals", lift: 2.4,
+    { badge: "A4", tag: "bypass", from: "agent", to: "approvals", lift: -2.6,
       caption: "Approval bypass: no recorded approval → the tool refuses to run." },
     { badge: "A5", tag: "PII", from: "agent", to: "gateway", lift: 3.2,
       caption: "Data egress: PII is redacted before it leaves; synthetic data only." }
@@ -830,7 +833,7 @@ function animate() {
       else {
         stopPlayback(); highlightStep(-1); currentStep = -1;
         setCaption("Trust flow complete ✓",
-          "Eight hops, zero static credentials. Every call carried a short-lived, audience-scoped token; every decision was checked by OPA and written to the audit stream.",
+          "Nine hops, zero static credentials. Every call carried a short-lived, audience-scoped token; every decision was checked by OPA and written to the audit stream.",
           "#4dffb8");
       }
     }
