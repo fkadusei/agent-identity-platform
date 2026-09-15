@@ -10,4 +10,9 @@ COPY app /workspace/app
 ENV PYTHONPATH=/workspace
 RUN useradd --uid 1000 --create-home app
 USER app
+# The git revision this image was built from. scripts/check-images.sh compares it
+# with HEAD, so "it works on kind" can be checked rather than assumed.
+ARG GIT_SHA=unknown
+ENV GIT_SHA=$GIT_SHA
+
 CMD ["python", "-m", "app.gateway.run"]

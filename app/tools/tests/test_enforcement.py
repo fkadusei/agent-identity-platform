@@ -170,3 +170,37 @@ def test_an_unscoped_identity_gets_no_data():
     )
     result = e.call("token", "crm.customer.read", {"customer_id": "c-100"})
     assert result.result == {"error": "unknown customer"}
+
+
+def test_every_tool_audit_record_carries_the_tenant():
+    """The privacy view scopes by tenant, so a record missing one is invisible.
+
+    This is exactly how a PII `tool.allowed` row went missing from the trail: the
+    other three audit calls carried the tenant and that one did not. One case per
+    outcome, so no call site can quietly drop it again.
+    """
+    from agentnhi import set_sink
+
+    records: list[dict] = []
+    set_sink(records.append)
+    try:
+        enforcer().call("token", "crm.customer.read", {"customer_id": "c-100"})  # allowed
+        enforcer(decision=Decision.DENY).call(  # denied
+            "token", "refunds.issue", {"order_id": "o-1001", "amount": 1000}
+        )
+        enforcer(decision=Decision.REQUIRE_APPROVAL).call(  # held
+            "token", "refunds.issue", {"order_id": "o-1001", "amount": 200}
+        )
+        enforcer().call("token", "crm.customer.read", {})  # tool.error (missing arg)
+    finally:
+        set_sink(None)
+
+    tool_events = [r for r in records if str(r.get("event", "")).startswith("tool.")]
+    assert {r["event"] for r in tool_events} == {
+        "tool.allowed",
+        "tool.denied",
+        "tool.approval_required",
+        "tool.error",
+    }, sorted(r["event"] for r in tool_events)
+    for record in tool_events:
+        assert record.get("tenant") == "acme", record

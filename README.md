@@ -97,6 +97,8 @@ opa test policy/                        # policy (31)
 ./scripts/attack-tests.sh  # all six attacks blocked
 ./scripts/tenancy-tests.sh # tenant isolation, claim → policy → data
 ./scripts/role-tools.sh    # who may call which tool
+# the pods are running the code you just built (build-stamped with the git SHA)
+./scripts/check-images.sh
 ./scripts/tls-check.sh     # every in-cluster edge is mTLS
 ./scripts/ha-check.sh      # replicas spread; an eviction is survivable
 ./scripts/scan-secrets.sh  # no secrets in the tree or the full history
