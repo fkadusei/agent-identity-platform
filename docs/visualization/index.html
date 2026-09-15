@@ -220,9 +220,9 @@ const SCENE_DATA = {
       config: "policy/" },
 
     /* ---- DATA & OVERSIGHT ---- */
-    { id: "sim", plane: "data", x: -6, z: 0, label: "Simulators",
-      desc: "Synthetic CRM / orders / payments / ticketing (swap for real sandboxes later). Never real customer, card, or personal data.",
-      config: "app/simulators/" },
+    { id: "sim", plane: "data", x: -6, z: 0, label: "Simulated systems",
+      desc: "Stand-ins for the real CRM, orders, payments and ticketing systems — the systems an action lands on, holding synthetic data only. The agent never calls these directly: the tool server does, after policy allows it, with its own credentials. Swap for real sandboxes in app/tools/backends.py.",
+      config: "app/simulators/ · app/tools/backends.py" },
     { id: "approvals", plane: "data", x: 0, z: 0, label: "Approvals store",
       desc: "Pending approvals and decisions; the agent's run resumes idempotently when a decision is recorded.",
       config: "app/api/" },
