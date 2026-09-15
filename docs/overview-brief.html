@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent Identity Platform — a short brief</title>
+<style>
+  :root{ --bg:#0d1117; --panel:#161b22; --border:#30363d; --text:#e6edf3; --dim:#8b949e;
+         --blue:#2f81f7; --green:#3fb950; --red:#ff5d5d; --purple:#bc8cff; --amber:#d29922; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--text); font-size:14px; line-height:1.65;
+        font-family:"SF Mono",Menlo,Consolas,"Courier New",monospace; }
+  .wrap{ max-width:820px; margin:0 auto; padding:40px 24px 80px; }
+  h1{ font-size:23px; line-height:1.35; margin:0 0 10px; }
+  h1 span{ color:var(--blue); }
+  .lede{ color:var(--dim); font-size:14.5px; margin:0 0 28px; }
+  h2{ font-size:16px; margin:34px 0 4px; }
+  h3{ font-size:13px; margin:20px 0 4px; color:var(--blue); }
+  p{ margin:9px 0; }
+  ul{ margin:9px 0; padding-left:20px; } li{ margin:4px 0; }
+  code{ background:rgba(110,118,129,.18); padding:1px 5px; border-radius:4px; font-size:12.5px; }
+  table{ width:100%; border-collapse:collapse; margin:12px 0; font-size:12.5px; }
+  th,td{ text-align:left; padding:7px 9px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th{ color:var(--dim); font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
+  .box{ background:var(--panel); border:1px solid var(--border); border-radius:8px; padding:14px 16px; margin:14px 0; }
+  .box.plain{ border-left:3px solid var(--blue); }
+  .box.warn{ border-left:3px solid var(--amber); }
+  .ok{ color:var(--green); } .no{ color:var(--red); } .mut{ color:var(--purple); }
+  .flow{ background:var(--panel); border:1px solid var(--border); border-radius:8px;
+         padding:14px; margin:14px 0; font-size:12.5px; line-height:1.9; }
+  .flow b{ color:var(--blue); }
+  footer{ margin-top:44px; padding-top:18px; border-top:1px solid var(--border);
+          color:var(--dim); font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Agent Identity Platform <span>— a short brief</span></h1>
+<p class="lede">What an AI agent needs before you let it touch a real system: an identity of its own,
+limits it cannot argue with, a human in the loop for the things that matter, and a record of
+everything it did.</p>
+
+<h2>The problem</h2>
+
+<p>An agent that can issue refunds is dangerous in a way ordinary software is not. It <b>decides</b>
+which action to take rather than following instructions. It acts <b>on behalf of a person</b>, and
+should be able to do exactly what that person may do — no more. And it is <b>instructed in plain
+language</b>, which means its input is untrusted text that may contain instructions of its own.</p>
+
+<p>The usual shortcut — give the agent a broad credential and trust the prompt — fails all three.</p>
+
+<div class="box plain">
+  <p><b>The principle:</b> the model proposes, and something outside the model disposes. The model
+  is never the security control. Replace it with a hostile one tomorrow and the platform refuses the
+  same actions it refuses today.</p>
+</div>
+
+<h2>What was built</h2>
+
+<p>A working platform on a local Kubernetes cluster, for an ordinary domain — a customer support desk
+that can look customers up and issue refunds. The interesting part is not the assistant; it is
+everything standing between the assistant and the money.</p>
+
+<ul>
+  <li><b>An agent</b> that takes a plain-language task and can only use the tools the caller's role
+  permits.</li>
+  <li><b>A tool server</b> — the only thing that can touch customer data, and the only place where
+  permission is really decided.</li>
+  <li><b>A rulebook</b> (policy) answering allow / refuse / ask-a-human, read by both the agent and
+  the tool server, versioned and signed so every decision records which revision decided it.</li>
+  <li><b>Approvals</b> bound to one exact request, with no self-approval and no replay.</li>
+  <li><b>Identity</b> for every workload, with no passwords or long-lived keys anywhere; the agent
+  acts for the human with a short-lived, narrowly-scoped token rather than passing their credentials
+  along.</li>
+  <li><b>A console</b> where the security becomes visible: what your role allows, why a refund was
+  held, who approved it, what has been looked at.</li>
+  <li><b>Guardrails and evals</b>, plus traces, metrics and an audit trail that is cleaned of
+  secrets and personal data <i>before</i> it is written.</li>
+</ul>
+
+<h2>How one request flows</h2>
+
+<div class="flow">
+A support agent types: <b>"Refund $200 for order o-1001"</b><br>
+<b>1.</b> They sign in. Their token says who they are, their role, and their customer.<br>
+<b>2.</b> The agent verifies that token itself — right issuer, right audience, not expired.<br>
+<b>3.</b> A guardrail reads the task: empty, absurd, or an instruction-override attempt is refused
+before any model is called.<br>
+<b>4.</b> Policy is asked which tools this role may use. The model is offered only those, and told
+what it may <i>not</i> use, so it cannot silently pick something else.<br>
+<b>5.</b> The model proposes <code>refunds.issue</code> for $200. Its job ends here.<br>
+<b>6.</b> A second guardrail checks the proposal — a missing amount is refused, never guessed.<br>
+<b>7.</b> The agent trades the human's token for a short-lived one saying <i>"the agent, for this
+human, in this customer"</i>. The original token is not forwarded.<br>
+<b>8.</b> The tool server verifies that token and asks policy the real question: may this role, in
+this customer, call this tool, with this amount?<br>
+<b>9.</b> $200 is above the automatic limit, so policy says: <span class="mut">ask a manager</span>.
+Nothing happens yet.<br>
+<b>10.</b> The run pauses and appears in a manager's queue, bound to that exact refund. A different
+person approves it.<br>
+<b>11.</b> The agent resumes carrying the approval. Everything is re-checked, the approval is valid
+for exactly this request, and the refund runs.<br>
+<b>12.</b> One audit record: who, for whom, which customer, which tool, the decision, the reason,
+and which revision of the rulebook decided it.
+</div>
+
+<div class="box plain">
+  <p><b>Why the checks sit where they do.</b> Steps 3 and 6 are convenience — a fast, clear answer
+  for obvious cases. Step 8 is the control. Delete the guardrails, let a hostile model propose
+  anything, and step 8 still refuses. The rule of the codebase is that the model's output is never
+  treated as permission.</p>
+</div>
+
+<h2>The technology, and why</h2>
+
+<table>
+  <tr><th>Layer</th><th>Choice</th><th>Why</th></tr>
+  <tr><td>Identity</td><td>SPIFFE / SPIRE</td><td>An identity that cannot be copied or phished, with no shared secret to leak. The foundation everything else stands on.</td></tr>
+  <tr><td>Policy</td><td>OPA / Rego</td><td>Rules live outside the application, so changing what is permitted is a reviewed, signed policy change — read by both the agent and the enforcement point.</td></tr>
+  <tr><td>Sign-in</td><td>Keycloak</td><td>Standards-based, and able to mint tokens carrying the role and customer the platform depends on.</td></tr>
+  <tr><td>Agent</td><td>Python, LangGraph</td><td>An explicit state machine, which makes "pause and wait for a human" part of the flow rather than an exception bolted on.</td></tr>
+  <tr><td>Model</td><td>Ollama, 3B parameters</td><td>Runs locally, no data leaves the machine, no bill. A small model also fails in interesting ways, which is what a security platform should be tested against.</td></tr>
+  <tr><td>Services</td><td>FastAPI</td><td>The point is the design, so the code should not need explaining.</td></tr>
+  <tr><td>Transport</td><td>Linkerd mesh, mTLS</td><td>Every internal hop encrypted and authenticated without changing application code.</td></tr>
+  <tr><td>Data</td><td>PostgreSQL</td><td>Approvals, paused runs and the audit trail must outlive a restart and agree across replicas.</td></tr>
+  <tr><td>Console</td><td>React, TypeScript</td><td>How the security becomes visible to the people who use it.</td></tr>
+  <tr><td>Observability</td><td>OpenTelemetry, Jaeger, Prometheus, Grafana</td><td>Open standards, so nothing is locked to one vendor.</td></tr>
+  <tr><td>Delivery</td><td>Helm, kind, GitHub Actions</td><td>One command locally; a chart for a real cluster; ten required checks and a human gate before deployment.</td></tr>
+  <tr><td>Supply chain</td><td>Cosign, Kyverno</td><td>Images signed by the pipeline, and verified by the cluster before anything runs.</td></tr>
+</table>
+
+<h2>Decisions worth knowing</h2>
+
+<div class="box">
+  <h3>The model is never the control</h3>
+  <p>The agent is offered only the tools the role permits, and told what it may not use — so it
+  cannot quietly substitute one action for another. Refusing beats improvising: a $1,000 refund
+  silently downgraded to a lookup would <i>look</i> like success while doing something else.</p>
+</div>
+
+<div class="box">
+  <h3>Uncertainty resolves towards "no"</h3>
+  <p>A missing amount, a value that is not a number, a blank field, an unreachable policy engine —
+  all refuse. Each of these was a real bug, each of which had let something through by being treated
+  as "probably fine".</p>
+</div>
+
+<div class="box">
+  <h3>An approval is bound to a request, not to a person</h3>
+  <p>Recording "a manager approved a refund" would be simpler and could be reused. Binding it to the
+  exact tool, arguments, human and customer makes replay impossible.</p>
+</div>
+
+<div class="box">
+  <h3>Audit is cleaned at the source</h3>
+  <p>Redaction happens where a record is created, not where it is read. Anything else is a promise
+  you must keep in every future reader, forever.</p>
+</div>
+
+<h2>What verifying it found</h2>
+
+<p>Every item below was found by running the platform and disbelieving the result — not by reading
+the code. They are the most useful thing in the repository: a list of the ways this kind of system
+goes wrong.</p>
+
+<ul>
+  <li>The setup script did not restart the services it had just reconfigured, so changes silently
+  did not take effect.</li>
+  <li>The sign-in server dropped a custom attribute, so roles and customers vanished from tokens and
+  permissions were evaluated against nothing.</li>
+  <li>Workload identities were registered per <i>service</i> rather than per instance, so a new
+  replica could not get an identity — visible only when you scale.</li>
+  <li>A certificate reloaded in-process just before expiry worked in tests and broke after about a
+  day in a long-running process.</li>
+  <li>Policy allowed a refund through with a missing, null or dash-shaped amount.</li>
+  <li>Two audit fields were missing the customer, so an oversight view silently dropped the events
+  it existed to show.</li>
+  <li>The audit trail was held in memory per replica: with two replicas, each held a <i>different</i>
+  half of the events, and a restart erased them. An oversight view built on that is not incomplete,
+  it is wrong.</li>
+  <li>An access check was misread as a stale deployment when the real cause was a missing field —
+  nothing could prove which version was running, so build identity was made verifiable.</li>
+</ul>
+
+<p>Almost every one of these was a case of the system <i>appearing</i> to work. That is why the
+repository now contains scripts that prove its claims: an attack suite, a customer-isolation suite,
+a role check, a transport check, a redundancy check, a secrets scan, and a build-identity check.</p>
+
+<h2>What is deliberately not built</h2>
+
+<p>Stated plainly, because a reference implementation that hides its edges teaches the wrong
+lesson.</p>
+
+<ul>
+  <li><b>Some infrastructure is single-instance.</b> The identity server, sign-in server and
+  database each run as one copy; losing one takes the platform down until it returns. Making them
+  highly available needs shared storage and an external key service — real work, deliberately out of
+  scope, and written down rather than implied.</li>
+  <li><b>The model is small.</b> It sometimes declines a task it could have done. That is a quality
+  limit, not a security one: enforcement does not care how good the model is.</li>
+  <li><b>The systems the agent acts on are simulated.</b> There is no real billing system behind the
+  refunds — the point is the identity, policy and approval machinery.</li>
+  <li><b>Some attribution depends on the model.</b> When a request is refused before reaching the
+  tool server, the record can only name the tool if the model asked for one by name. A small model
+  often just declines. Guessing from the request text was considered and rejected: a keyword guess
+  would give a privacy view exactly the false confidence it must not have.</li>
+  <li><b>Demo credentials are in the repository</b> — fictional users with known passwords, so anyone
+  can run it. The production pattern for secrets is a separate, real mechanism.</li>
+</ul>
+
+<h2>Running it</h2>
+
+<p>Docker, a local Kubernetes cluster tool and the model runtime, then one command to bring it up and
+a handful of scripts that check it behaves:</p>
+
+<div class="flow">
+<b>./start.sh</b> — bring the platform up and print the console URL<br>
+<b>scripts/demo.sh</b> — the happy path: ask, get held for approval, approve, complete<br>
+<b>scripts/attack-tests.sh</b> — six attacks, all of which must be blocked<br>
+<b>scripts/tenancy-tests.sh</b> — one customer cannot reach another's data<br>
+<b>scripts/role-tools.sh</b> — each role gets exactly the tools it should<br>
+<b>scripts/tls-check.sh</b> — every internal connection is encrypted and authenticated<br>
+<b>scripts/ha-check.sh</b> — replicas are spread out, and losing one is survivable<br>
+<b>scripts/check-images.sh</b> — the running services are the build you think they are
+</div>
+
+<footer>
+  <p>Agent Identity Platform — a reference implementation of identity, policy and human oversight
+  for AI agents. A longer version, with the full request flow, the decision records and the
+  documentation map, is in <code>docs/overview.html</code> in the repository.</p>
+</footer>
+
+</div>
+</body>
+</html>
