@@ -30,7 +30,6 @@ convenience, never the control.
 from __future__ import annotations
 
 import os
-from collections import deque
 from pathlib import Path
 
 import httpx
@@ -45,6 +44,7 @@ from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.authz import current_delegation, require_roles
 from app.api.roles import router as roles_router
+from app.audit.store import build_audit_store
 from app.approvals import ApprovalStore
 from app.approvals.store import build_store
 from app.common import metrics
@@ -65,9 +65,13 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(roles_router)
-# Durable when DATABASE_URL is set (a restart no longer forgets approvals).
+# Both durable when DATABASE_URL is set (a restart no longer forgets them).
 _store = build_store()
-_audit: deque[dict] = deque(maxlen=500)
+# The audit trail used to be an in-memory deque in *this* process, which meant two
+# replicas each held a different subset of the events and a rollout wiped it. An
+# oversight view cannot be built on that, so it uses the same durable store the
+# approvals do, and falls back to memory only when there is no database.
+_audit = build_audit_store()
 
 
 @app.middleware("http")
@@ -226,7 +230,7 @@ def decide_approval(
 # ---------------------------------------------------------------------------
 @app.post("/audit/events")
 def ingest_audit(record: dict) -> dict:
-    _audit.appendleft(record)
+    _audit.append(record)
     metrics.AUDIT_EVENTS.labels(str(record.get("event", "unknown"))).inc()
     return {"ok": True}
 
@@ -239,14 +243,7 @@ def get_audit(
     sub: str | None = None,
 ) -> list[dict]:
     """The audit timeline (newest first), narrowable by event, tool, or user."""
-    events = list(_audit)
-    if event:
-        events = [e for e in events if e.get("event") == event]
-    if tool:
-        events = [e for e in events if e.get("tool") == tool]
-    if sub:
-        events = [e for e in events if e.get("sub") == sub]
-    return events[: max(1, min(limit, 500))]
+    return _audit.query(limit=max(1, min(limit, 500)), event=event, tool=tool, sub=sub)
 
 
 # ---------------------------------------------------------------------------
@@ -270,14 +267,12 @@ def privacy_access(
     it. Reading PII needs the `privacy` role *and* manager approval, so a request
     and its approval are two records about the same act.
 
-    Two limits worth stating plainly, because this is an oversight view:
+    The trail is durable and shared (see app/audit/store.py), so every replica
+    gives the same answer and a restart does not clear it.
 
-    * the trail holds what *this* process received — audit is an in-memory deque,
-      so with more than one API replica the view is partial and a restart clears
-      it (see docs/privacy.md);
-    * a request from a role with no PII access never reaches the tool server (the
-      agent only offers permitted tools), so it leaves no `tool.denied` record
-      here. What is below is every attempt the *tool server* saw.
+    One limit remains: a request from a role with no PII access never reaches the
+    tool server — the agent only offers permitted tools — so it leaves no
+    `tool.denied` record. What is below is every attempt the *tool server* saw.
     """
     tenant = delegation.tenant or ""
     access = [
@@ -291,10 +286,8 @@ def privacy_access(
             "policy_version": e.get("policy_version", ""),
             "at": e.get("ts", 0),
         }
-        for e in _audit
-        if e.get("tool") == PII_TOOL
-        and e.get("event") in _TOOL_EVENTS
-        and (e.get("tenant") or "") == tenant
+        for e in _audit.query(tool=PII_TOOL, tenant=tenant, limit=500)
+        if e.get("event") in _TOOL_EVENTS
     ]
     approvals = [a.as_dict() for a in store.all(tenant) if a.tool == PII_TOOL]
     return {"tool": PII_TOOL, "tenant": tenant, "access": access, "approvals": approvals}
