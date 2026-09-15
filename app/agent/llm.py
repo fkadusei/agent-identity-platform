@@ -187,7 +187,15 @@ def decide_tool(
         if chosen and chosen in (unavailable or {}):
             # Deterministic: the model asked for a tool this role may not use.
             # Refuse here rather than let it pick something else instead.
-            return {"tool": None, "args": {}, "reason": f"your role may not call {chosen}"}
+            return {
+                "tool": None,
+                "args": {},
+                "reason": f"your role may not call {chosen}",
+                "refused": True,
+                # The one case where we know what was asked for: the model named a
+                # tool that exists but is not offered to this role.
+                "refused_tool": chosen,
+            }
         if not chosen:
             # The model declined. Its own "reason" is unreliable — a small model
             # tends to echo a tool *description* ("High-risk: policy may require
@@ -196,6 +204,7 @@ def decide_tool(
                 "tool": None,
                 "args": {},
                 "reason": "no tool your role may call fits this task — nothing was executed",
+                "refused": True,
             }
         if chosen in tools:
             tool = tools[decision["tool"]]
@@ -204,7 +213,8 @@ def decide_tool(
                 check_decision(tool, args)
             except GuardrailError as exc:
                 audit("llm.guardrail", tool=tool.name, reason=str(exc)[:200])
-                return {"tool": None, "args": {}, "reason": str(exc)}
+                return {"tool": None, "args": {}, "reason": str(exc), "refused": True,
+                        "refused_tool": tool.name}
             return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])
     except Exception as exc:  # noqa: BLE001 - never block the run on the model

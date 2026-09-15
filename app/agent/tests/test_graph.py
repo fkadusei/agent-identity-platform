@@ -77,3 +77,24 @@ def test_downstream_failure_is_reported_not_raised():
     out = run_task(build_agent(_RaisingDeps()), "refund o-1001", "t-5", "user-token")
     assert out["status"] == "error"
     assert "token exchange failed" in out["reason"]
+
+
+def test_a_refusal_is_not_an_error():
+    # To whoever is on call these are different events: a refusal is the agent
+    # declining to act, an error is something being broken.
+    plan = {
+        "tool": None,
+        "reason": "your role may not call privacy.pii.read",
+        "refused": True,
+        "refused_tool": "privacy.pii.read",
+    }
+    out = run_task(build_agent(ScriptedDeps(plan, [])), "read the PII", "t-refuse", "user-token")
+    assert out["status"] == "refused"
+    assert out["refused_tool"] == "privacy.pii.read"
+    assert out["reason"] == "your role may not call privacy.pii.read"
+
+
+def test_an_unusable_model_answer_is_an_error():
+    plan = {"tool": None, "reason": "the model did not choose a usable tool"}
+    out = run_task(build_agent(ScriptedDeps(plan, [])), "anything", "t-broken", "user-token")
+    assert out["status"] == "error"

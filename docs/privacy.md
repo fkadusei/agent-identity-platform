@@ -36,19 +36,30 @@ two API replicas each pod held a *different* subset of the events (measured: 8 a
 trail survives a restart — verified on kind by posting events, restarting the API,
 and reading them back from both pods.
 
-## One limit, stated plainly
+## Refusals before the tool server
 
-**A refusal can happen before the tool server.** The agent is only offered the
-tools your role may call (`allowed_tools()` from the same policy), so when `alice`
-(a support rep) asks for PII, the model is never given `privacy.pii.read` at all
-and the tool server never emits `tool.denied`. The agent refuses it instead, and
-today that refusal is neither audited nor labelled as a refusal — the run comes
-back as `status: "error"` with *"no tool your role may call fits this task"*. So
-"who tried to look at PII and was turned away" is missing from the trail, which is
-the most interesting row a privacy view could have. Fixing it means auditing the
-agent-side refusal (with the user and tenant, and without storing the raw task
-text, which may itself contain personal data) and giving the run a `refused`
-status instead of `error`.
+The agent is only offered the tools your role may call (`allowed_tools()` from the
+same policy), so a request that needs a tool you cannot have is refused *before*
+the tool server ever sees it — no `tool.denied` is emitted, because nothing was
+attempted. Two things now cover that:
+
+- the run reports `status: "refused"`, distinct from `error` (something broken);
+- the agent records an `agent.refused` event with the user, the tenant, and the
+  reason — **not** the task text, which is free-form and may itself contain the
+  personal data this view exists to protect.
+
+When the model names a tool it may not call — it is told which tools are *not*
+permitted, precisely so it does not silently substitute another — the record names
+it, and the refusal appears here as a row: *alice · refused · privacy.pii.read*.
+`decide_tool` refuses that outright rather than letting the model pick something
+else instead (`app/agent/llm.py`).
+
+**The honest limit:** a small model often just *declines* instead of naming the
+tool it wanted. When that happens the refusal is still recorded and still shows in
+the generic **Audit** tab, but it cannot be attributed to `privacy.pii.read`, so it
+does not appear in this view. Attribution depends on the model naming a tool, which
+is why it is recorded as a separate event rather than guessed at from the task
+text.
 
 ## Trying it
 

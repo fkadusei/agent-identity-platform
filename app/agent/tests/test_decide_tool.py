@@ -49,3 +49,20 @@ def test_the_prompt_names_the_forbidden_tools(monkeypatch):
     # The model must be told what it may NOT use, or it substitutes.
     assert "NOT permitted" in seen["prompt"]
     assert "refunds.issue" in seen["prompt"]
+
+
+def test_a_refusal_says_so(monkeypatch):
+    # "refused" is what lets the caller tell "the agent declined to act" from
+    # "something is broken" — and refused_tool is the only case where we can name
+    # what was asked for, because the model named a real tool it may not call.
+    monkeypatch.setattr(llm, "_chat", lambda _p: '{"tool": "refunds.issue", "args": {}}')
+    got = llm.decide_tool("issue a refund of 500", ALLOWED, FORBIDDEN)
+    assert got["refused"] is True
+    assert got["refused_tool"] == "refunds.issue"
+
+
+def test_a_decline_is_a_refusal_with_nothing_to_name(monkeypatch):
+    monkeypatch.setattr(llm, "_chat", lambda _p: '{"tool": null, "reason": "no"}')
+    got = llm.decide_tool("issue a refund of 500", ALLOWED, FORBIDDEN)
+    assert got["refused"] is True
+    assert "refused_tool" not in got

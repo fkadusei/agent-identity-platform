@@ -97,6 +97,19 @@ def run(body: dict, authorization: str | None = Header(default=None)) -> dict:
     )
     _runs[thread_id] = agent
     outcome = run_task(agent, task, thread_id, token)
+    if outcome.get("status") == "refused":
+        # The agent declined to act. Nothing reached the tool server, so there is
+        # no tool.denied to find later — without this the only trace is a stdout
+        # line, and "who asked for something they may not have" is invisible.
+        # The task text is deliberately NOT recorded: it is free-form, and may
+        # itself contain the personal data this record is meant to protect.
+        audit(
+            "agent.refused",
+            sub=delegation.user,
+            tenant=delegation.tenant or "",
+            tool=outcome.get("refused_tool") or "",
+            reason=outcome.get("reason", "")[:200],
+        )
     return {"thread_id": thread_id, **outcome}
 
 

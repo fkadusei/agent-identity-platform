@@ -250,9 +250,18 @@ def get_audit(
 # Privacy: who looked at personal data, why, and who approved it
 # ---------------------------------------------------------------------------
 PII_TOOL = "privacy.pii.read"
-# Every event the tool server can emit about a tool call. A PII read leaves
-# exactly one of these, so the trail is complete rather than a sample.
-_TOOL_EVENTS = {"tool.allowed", "tool.denied", "tool.approval_required", "tool.error"}
+# Everything that can be said about an attempt on PII: the tool server's four
+# outcomes, plus the agent refusing *before* the tool server ever sees the call
+# (the agent is only offered the tools a role may call, so `alice` asking for PII
+# never reaches it). Without agent.refused, "who tried and was turned away" — the
+# most interesting row a privacy view has — would be missing.
+_TOOL_EVENTS = {
+    "tool.allowed",
+    "tool.denied",
+    "tool.approval_required",
+    "tool.error",
+    "agent.refused",
+}
 
 
 @app.get("/privacy/access")
@@ -281,7 +290,13 @@ def privacy_access(
             "user": e.get("sub", ""),
             "tool": e.get("tool", ""),
             "decision": e.get("decision")
-            or ("approval_required" if e.get("event") == "tool.approval_required" else ""),
+            or (
+                "approval_required"
+                if e.get("event") == "tool.approval_required"
+                else "refused"
+                if e.get("event") == "agent.refused"
+                else ""
+            ),
             "reason": e.get("reason", ""),
             "policy_version": e.get("policy_version", ""),
             "at": e.get("ts", 0),
