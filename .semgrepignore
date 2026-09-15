@@ -9,3 +9,8 @@
 deploy/kind/manifests/spire/
 docker/spire-agent.Dockerfile
 docker/spire-server.Dockerfile
+
+# Vendored third-party libraries (three.js, minified). Not our code, and not
+# something we would patch — Semgrep flags constructs inside the minified bundle.
+# We scan everything we write; these are dependencies, tracked by their version.
+docs/visualization/vendor/
