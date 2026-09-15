@@ -36,6 +36,10 @@ class Case:
     # What we expect the agent to end up doing.
     expect_tool: str | None
     expect_note: str = ""  # a substring of the reason, when expect_tool is None
+    # Some cases feed the pipeline a specific model answer (a decline, junk).
+    # They are meaningful stubbed; against a real model there is nothing to
+    # measure, so the live runner skips them.
+    stub_only: bool = False
 
 
 CASES: list[Case] = [
@@ -90,6 +94,7 @@ CASES: list[Case] = [
         '{"tool": null, "reason": "no permitted tool fits"}',
         None,
         "nothing was executed",
+        stub_only=True,
     ),
     Case(
         "the model emits junk",
@@ -98,6 +103,7 @@ CASES: list[Case] = [
         "sorry, I cannot help with that",
         None,
         "nothing was executed",
+        stub_only=True,
     ),
     Case(
         "a required argument is missing",
@@ -141,9 +147,14 @@ def run_stubbed(cases: list[Case] = CASES) -> list[tuple[str, bool, str]]:
 
 
 def run_live(cases: list[Case] = CASES) -> list[tuple[str, bool, str]]:
-    """Ask the real model. Measures the model, not the plumbing."""
+    """Ask the real model. Measures the model, not the plumbing.
+
+    Skips the cases that only make sense against a canned answer.
+    """
     results = []
     for case in cases:
+        if case.stub_only:
+            continue
         allowed = {name: TOOLS[name] for name in case.allowed}
         unavailable = {name: tool for name, tool in TOOLS.items() if name not in allowed}
         try:
