@@ -70,6 +70,7 @@
     font:inherit; font-size:12px; padding:8px 10px; border-radius:6px; cursor:pointer;
     text-align:left; transition:border-color .15s, color .15s, background .15s; backdrop-filter:var(--panel-blur); }
   button.ctl:hover{ border-color:var(--blue); }
+  button.ctl.off{ color:var(--dim); }
   #playBtn{ border-color:#2f81f7; color:var(--blue); font-weight:600; }
   #playBtn.playing{ border-color:var(--green); color:var(--green); }
   #defBtn.active{ border-color:var(--red); color:var(--red); background:rgba(255,93,93,.08); }
@@ -132,6 +133,7 @@
     <button class="ctl" id="nextBtn" title="Next hop">Step ▶</button>
   </div>
   <button class="ctl" id="viewBtn">▦ View: 3D</button>
+  <button class="ctl" id="autoBtn" title="Stop or resume the slow idle rotation">⟳ Auto-rotate: on</button>
   <button class="ctl" id="defBtn">⚠ Defences</button>
   <div id="hint">Left-drag rotate · wheel zoom · right-drag pan.<br>Click any node for its repo config.</div>
 </div>
@@ -655,6 +657,17 @@ if (window.matchMedia) {
 /* ============================== UI wiring ============================== */
 const $ = (id) => document.getElementById(id);
 const playBtn = $("playBtn"), defBtn = $("defBtn"), viewBtn = $("viewBtn");
+const autoBtn = $("autoBtn");
+
+// The scene drifts slowly when you leave it alone. Some people want it still
+// (reading a label, taking a screenshot, screen-sharing), so it is a toggle —
+// and turning it off never touches your own drag/zoom, only the idle drift.
+let autoRotate = true;
+autoBtn.addEventListener("click", () => {
+  autoRotate = !autoRotate;
+  autoBtn.textContent = autoRotate ? "⟳ Auto-rotate: on" : "❚❚ Auto-rotate: off";
+  autoBtn.classList.toggle("off", !autoRotate);
+});
 const capTitle = $("capTitle"), capBody = $("capBody");
 
 let playing = false, currentStep = -1, stepT = 0, defMode = false, is2D = false;
@@ -851,7 +864,7 @@ function animate() {
     });
   }
 
-  controls.update(dt, controls.idle() && !playing && !is2D);   // slow auto-orbit when idle
+  controls.update(dt, autoRotate && controls.idle() && !playing && !is2D);  // idle drift (toggleable)
   renderer.render(scene, camera);
 }
 
