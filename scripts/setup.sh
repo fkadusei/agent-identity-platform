@@ -84,8 +84,13 @@ say "2. build + load images"
 docker build -q -f docker/spire-server.Dockerfile -t agent-platform/spire-server-jti:demo . >/dev/null
 docker build -q -f docker/spire-agent.Dockerfile  -t agent-platform/spire-agent-nocache:demo . >/dev/null
 ok "spire-server-jti, spire-agent-nocache"
+# Stamp each image with the revision it was built from (scripts/check-images.sh).
+# A dirty tree is marked, because "the image matches HEAD" would be a lie.
+GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
+git diff --quiet 2>/dev/null || GIT_SHA="$GIT_SHA-dirty"
 for svc in api tools agent gateway sandbox; do
-  docker build -q -f "docker/$svc.Dockerfile" -t "agent-platform/$svc:demo" . >/dev/null
+  docker build -q --build-arg "GIT_SHA=$GIT_SHA" \
+    -f "docker/$svc.Dockerfile" -t "agent-platform/$svc:demo" . >/dev/null
   kind load docker-image "agent-platform/$svc:demo" --name agent-platform >/dev/null
   ok "agent-platform/$svc:demo"
 done
@@ -270,6 +275,9 @@ print(fetch_jwt_svid('unix:///run/spire/sockets/agent.sock', 'smoke-test'))" 2>/
 done
 [ -n "$OUT" ] || die "agent could not fetch its SVID"
 ok "agent holds a JWT-SVID issued to $SPIFFE_ID"
+
+say "are the pods running what we just built?"
+./scripts/check-images.sh
 
 say "SETUP COMPLETE"
 echo "Next: ./scripts/demo.sh        # the happy path + approval flow"

@@ -215,6 +215,11 @@ deploy/gateway`; a client without a valid SVID cannot even connect.
 ## 6. Observability and alerting
 
 - **Traces** — Jaeger: `kubectl -n agent-platform port-forward svc/jaeger 16686:16686`, or `./scripts/show-trace.sh`. Every trace carries the identity on its `policy.decision` span (`spiffe_id`, `sub`, `tool`, `decision`).
+- **Provenance** — `./scripts/check-images.sh` compares the git revision stamped into
+  each running container with `HEAD`, and fails if a pod is on an older build. Worth
+  running after any change you intend to verify: with a reused `:demo` tag and
+  `imagePullPolicy: IfNotPresent`, a rollout can look successful while an old pod — or
+  a terminating one — is still serving, and "it works on kind" then means nothing.
 - **Transport** — `./scripts/tls-check.sh` reports every in-cluster edge and fails if any is not mTLS (see [`tls.md`](tls.md)).
 - **Redundancy** — `./scripts/ha-check.sh` shows the replicas' spread and the PodDisruptionBudgets, then evicts a replica to prove the service survives (see [`ha.md`](ha.md)).
 - **Metrics** — Prometheus scrapes the API (`/metrics`), the collector and OPA. Platform counters: logins, policy decisions (from the audit stream), approval backlog, request rates.
