@@ -49,10 +49,12 @@ addressed. The repo is public.
 
 ## Phase 2 — Production hardening
 
-- [~] TLS/mTLS everywhere (done — `docs/tls.md`); HA for the app tier (done —
-      `docs/ha.md`); HA SPIRE (needs a shared datastore + cloud KMS);
-      persistent storage; hardened Keycloak
-      (mTLS done for the agent↔gateway hop; the rest is plaintext in-cluster)
+- [x] **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway, a Linkerd mesh for
+      every other in-cluster hop (`docs/tls.md`, `scripts/tls-check.sh`)
+- [~] **HA** — the app tier is replicated (`docs/ha.md`); still single-replica:
+      SPIRE (needs a shared datastore + cloud KMS), Keycloak (external DB +
+      clustering), Postgres (managed HA), the sandbox (in-memory)
+- [ ] Persistent storage for the stateful components; hardened Keycloak
 - [x] **Secrets out of git and manifests** — client secrets generated into a
       gitignored `.env`, the realm rendered from a template, values mounted as
       Kubernetes Secrets; the External Secrets Operator pattern is documented
@@ -67,7 +69,8 @@ addressed. The repo is public.
 - [x] Policy lifecycle — versioned OPA bundle (revision stamped into every
       decision, audit event, span and decision log), staged-rollout process
       (`docs/policy-lifecycle.md`)
-- [ ] Agent guardrails + evals; rate and cost limits
+- [x] **Rate and cost limits** at the LLM gateway (`docs/llm-gateway.md`)
+- [ ] Agent guardrails + evals
 - [x] Supply chain: SBOM + image scan (already in CI), **cosign (keyless
       Sigstore) signing + verification**, Kyverno admission policy
       (`docs/supply-chain.md`, ADR-0010)
@@ -81,9 +84,8 @@ addressed. The repo is public.
 - [x] Operator user guide — bring-up, health checks, common operations,
       incident-response playbooks, alerting, troubleshooting and the Phase 2 gate
       checklist (`docs/operator-guide.md`)
-- [x] **Gate:** threat model addressed (T9 multi-tenant isolation is documented
-      as *not* implemented — see the backlog), traces + dashboards live, secret
-      audit clean, all six attacks blocked
+- [x] **Gate:** threat model addressed (all ten threats, T9 tenancy included),
+      traces + dashboards live, secret audit clean, all six attacks blocked
 
 ## Backlog / known gaps
 
