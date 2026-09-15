@@ -25,18 +25,20 @@ decision. The **Privacy** tab (manager only) shows both.
 
 It is scoped to your tenant, like everything else.
 
-## Two limits, stated plainly
+## Where the trail lives
 
-**1. The audit store is per-process.** `_audit` is an in-memory deque in the API
-process (`app/api/main.py`). With more than one API replica, each pod holds a
-different subset of events — verified by querying both pods and finding 8 and 7
-events respectively — and a restart clears it. This affects the generic **Audit**
-tab too. For an oversight view that is a correctness problem, not a cosmetic one;
-the fix is to move audit events into the same durable store the approvals use
-(`app/approvals/store.py` already has the pattern, with a Postgres implementation
-and a `build_store()` switch). Tracked as the remaining part of **S10**.
+`app/audit/store.py`, with the same two-backend shape as the approvals:
+in-memory when no database is configured (so `./start.sh` needs no database), and
+a Postgres `audit_events` table when one is. This replaced an in-memory deque in
+the API process, which had made the view wrong rather than merely incomplete: with
+two API replicas each pod held a *different* subset of the events (measured: 8 and
+7), and a rollout cleared it. Now every replica gives the same answer and the
+trail survives a restart — verified on kind by posting events, restarting the API,
+and reading them back from both pods.
 
-**2. A refusal can happen before the tool server.** The agent is only offered the
+## One limit, stated plainly
+
+**A refusal can happen before the tool server.** The agent is only offered the
 tools your role may call (`allowed_tools()` from the same policy), so when `alice`
 (a support rep) asks for PII, the model is never given `privacy.pii.read` at all
 and the tool server never emits `tool.denied`. The agent refuses it instead, and

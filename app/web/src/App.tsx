@@ -876,11 +876,6 @@ function Privacy({ session }: { session: Session }) {
         agent before the tool server sees it, so it does not appear below. Scoped to
         tenant <b>{data.tenant}</b>.
       </p>
-      <p className="hint">
-        <b>Known limit:</b> these events are held in memory by the API replica that
-        served this request, so with more than one replica the trail can be partial,
-        and it does not survive a restart. Durable storage is the fix.
-      </p>
 
       <h3>Access attempts</h3>
       <div className="timeline">

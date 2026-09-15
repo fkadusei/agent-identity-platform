@@ -8,7 +8,7 @@ that a *decision* depends on is durable, state that is a *fixture* is not.
 | **Approvals** | Postgres (durable) | an approval outlives the request that created it; two replicas must agree |
 | **Agent run checkpoints** | Postgres (durable) | a paused run must be resumable after a restart, by any replica |
 | **Simulated systems** (the systems the tools act on) | in-memory | synthetic fixtures; a reset is harmless (and documented) |
-| **Audit timeline** | in-memory ring (500) | the durable audit record is the stdout stream, not this buffer |
+| **Audit timeline** | Postgres (durable) | "who looked at personal data, and who approved it" cannot be answered from a buffer that one replica holds and a restart clears |
 
 ## Selecting the backend
 
@@ -49,6 +49,22 @@ the in-memory store enforces, but atomic.
 
 `verify()` re-checks the approval against the *exact* request (tool, arguments,
 user, agent), so an approval cannot be replayed for a different action.
+
+## Audit
+
+`app/audit/store.py` follows the same shape as the approvals store: `AuditStore`
+(in-memory, bounded at 500) when no database is configured, `PostgresAuditStore`
+(the `audit_events` table) when one is, and `build_audit_store()` choosing.
+
+Only `ts`, `event`, `sub`, `tenant`, `tool` and `decision` are columns; the record
+itself is kept whole as `jsonb`, because the point of a trail is to be able to read
+what happened. Records arrive already redacted — `agentnhi.audit` strips secrets
+and personal data in the service that emits them, so nothing here decides what is
+safe to store.
+
+It used to be an in-memory deque in the API process, which made the privacy view
+wrong rather than merely incomplete: with two API replicas each pod held a
+different subset of the events, and a rollout cleared it.
 
 ## Agent run checkpoints
 

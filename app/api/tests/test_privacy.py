@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 from agentnhi import Delegation
 from app.api.authz import get_verifier
-from app.api.main import _audit, app, get_store
+from app.api.main import app, get_store
+from app.audit.store import AuditStore
 from app.approvals import ApprovalStore
 
 MANAGER = Delegation(
@@ -31,13 +32,19 @@ def store():
 
 
 @pytest.fixture
-def client(store):
-    _audit.clear()
+def audit(monkeypatch):
+    """A fresh audit store per test, swapped into the API module."""
+    store = AuditStore()
+    monkeypatch.setattr("app.api.main._audit", store)
+    return store
+
+
+@pytest.fixture
+def client(store, audit):
     app.dependency_overrides[get_verifier] = lambda: _Verifier(MANAGER)
     app.dependency_overrides[get_store] = lambda: store
     yield TestClient(app)
     app.dependency_overrides.clear()
-    _audit.clear()
 
 
 def _pii_event(**over):
@@ -59,8 +66,8 @@ def _get(client, **kw):
     return client.get("/privacy/access", headers={"Authorization": "Bearer x"}, **kw).json()
 
 
-def test_it_shows_the_access_trail(client):
-    _audit.appendleft(_pii_event())
+def test_it_shows_the_access_trail(client, audit):
+    audit.append(_pii_event())
     body = _get(client)
     assert body["tool"] == "privacy.pii.read"
     assert body["tenant"] == "acme"
@@ -70,25 +77,25 @@ def test_it_shows_the_access_trail(client):
     assert row["policy_version"] == "rev-7"
 
 
-def test_a_refused_attempt_is_on_the_trail_too(client):
+def test_a_refused_attempt_is_on_the_trail_too(client, audit):
     # The refusals are the point: "who tried" matters as much as "who read".
-    _audit.appendleft(_pii_event(event="tool.denied", decision="deny", sub="alice"))
+    audit.append(_pii_event(event="tool.denied", decision="deny", sub="alice"))
     (row,) = _get(client)["access"]
     assert (row["user"], row["decision"]) == ("alice", "deny")
 
 
-def test_a_held_attempt_reads_as_approval_required(client):
-    _audit.appendleft(_pii_event(event="tool.approval_required", decision=None))
+def test_a_held_attempt_reads_as_approval_required(client, audit):
+    audit.append(_pii_event(event="tool.approval_required", decision=None))
     assert _get(client)["access"][0]["decision"] == "approval_required"
 
 
-def test_other_tools_are_not_personal_data(client):
-    _audit.appendleft(_pii_event(tool="crm.customer.read"))
+def test_other_tools_are_not_personal_data(client, audit):
+    audit.append(_pii_event(tool="crm.customer.read"))
     assert _get(client)["access"] == []
 
 
-def test_it_is_scoped_to_your_tenant(client):
-    _audit.appendleft(_pii_event(tenant="globex"))
+def test_it_is_scoped_to_your_tenant(client, audit):
+    audit.append(_pii_event(tenant="globex"))
     assert _get(client)["access"] == []
 
 
