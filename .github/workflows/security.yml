@@ -93,8 +93,13 @@ jobs:
       - name: npm audit
         if: ${{ hashFiles('**/package.json') != '' }}
         run: |
+          # npm audit needs a resolved tree. Auditing a lockfile on its own now
+          # fails with "Invalid package tree, run npm install", and the endpoint
+          # it used to use is being retired — so install first. `npm ci` also
+          # proves the lockfile is in sync with package.json, which is worth
+          # failing on by itself.
           for pkg in $(find . -name package.json -not -path '*/node_modules/*' -not -path '*/dist/*'); do
-            (cd "$(dirname "$pkg")" && npm audit --audit-level=high)
+            (cd "$(dirname "$pkg")" && npm ci --ignore-scripts && npm audit --audit-level=high)
           done
 
   # ---------------------------------------------------------------------------
