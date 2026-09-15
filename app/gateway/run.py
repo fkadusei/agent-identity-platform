@@ -34,16 +34,20 @@ def _svid_files(socket: str) -> tuple[str, str]:
     raise SystemExit(f"could not obtain an X.509-SVID: {last}")
 
 
-def _renew(ctx: ssl.SSLContext, socket: str, every: int = 600) -> None:
-    """Re-fetch the SVID and swap it into the live context (new handshakes)."""
+def _restart_before_expiry(every: int) -> None:
+    """Exit before the SVID expires, so the pod restarts with a fresh one.
+
+    Reloading the certificate into a live SSLContext did not hold up: after about
+    a day, handshakes started failing with 'server disconnected'. A restarted
+    process is unambiguous — it fetches a new SVID at startup — and with two
+    replicas behind a PodDisruptionBudget the restart is invisible.
+
+    The interval must stay comfortably below the SVID lifetime (1h in the demo).
+    """
     while True:
         time.sleep(every)
-        try:
-            cert_file, key_file = write_mtls_files(socket)
-            ctx.load_cert_chain(certfile=cert_file, keyfile=key_file)
-            audit("gateway.svid_renewed")
-        except Exception as exc:  # noqa: BLE001 - keep serving the old cert
-            audit("gateway.svid_renew_failed", reason=str(exc)[:200])
+        audit("gateway.svid_restart", after_seconds=every)
+        os._exit(0)
 
 
 def main() -> None:
@@ -56,8 +60,11 @@ def main() -> None:
     ctx.load_verify_locations(bundle)
     ctx.verify_mode = ssl.CERT_REQUIRED  # mTLS: a client SVID is mandatory
 
-    # Renew well before the SVID expires (600s against a 1h lifetime).
-    threading.Thread(target=_renew, args=(ctx, socket), daemon=True).start()
+    threading.Thread(
+        target=_restart_before_expiry,
+        args=(int(os.environ.get("GATEWAY_SVID_RESTART_SECONDS", "3300")),),
+        daemon=True,
+    ).start()
 
     uvicorn.run(
         "app.gateway.app:app",

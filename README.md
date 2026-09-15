@@ -40,6 +40,7 @@ Then open **http://localhost:8080** and sign in:
 | `alice` | `alice123` | support_rep | everything but PII |
 | `bella` | `bella123` | billing | orders + refunds only |
 | `dana` | `dana1234` | read_only | reads only |
+| `priya` | `priya123` | privacy | reads PII (with approval) + the basic reads |
 | `manager` | `manager123` | manager | reads + refund quotes; approves |
 | `admin` | `admin123` | platform_admin | administers users; no tools, no approvals |
 
@@ -111,7 +112,7 @@ opa test policy/                        # policy (31)
 | Data | [`docs/data-stores.md`](docs/data-stores.md) · [`docs/tenancy.md`](docs/tenancy.md) · [`docs/data-handling.md`](docs/data-handling.md) |
 | Operators | [`docs/operator-guide.md`](docs/operator-guide.md) · [`docs/ha.md`](docs/ha.md) · [`docs/autoscaling.md`](docs/autoscaling.md) · [`docs/secrets.md`](docs/secrets.md) |
 | Platform engineers | [`docs/ci-cd.md`](docs/ci-cd.md) · [`docs/llm-gateway.md`](docs/llm-gateway.md) · [`deploy/helm/agent-platform/`](deploy/helm/agent-platform/) |
-| Resuming work | [`HANDOFF.md`](HANDOFF.md) · [`docs/roadmap.md`](docs/roadmap.md) |
+| Resuming work | [`HANDOFF.md`](HANDOFF.md) · [`docs/roadmap.md`](docs/roadmap.md) · [`docs/backlog.md`](docs/backlog.md) |
 | Users (plain language) | [`docs/guides/`](docs/guides/) |
 
 ## Repository layout

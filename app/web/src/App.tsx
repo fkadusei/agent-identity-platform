@@ -28,6 +28,21 @@ type Tab = "console" | "approvals" | "roles" | "audit" | "admin";
 // The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
 const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
 
+// Example tasks, each tied to the tool it exercises, so the console offers only
+// what this user's role can actually do — a privacy user sees the PII request, a
+// support rep sees the refunds. Without this the privacy path is invisible.
+const EXAMPLES: { label: string; task: string; tool: string }[] = [
+  { label: "Read a customer profile", task: "Get the profile of customer c-100", tool: "crm.customer.read" },
+  { label: "List a customer's orders", task: "List the orders for customer c-100", tool: "crm.orders.list" },
+  { label: "Read a ticket", task: "Read ticket t-5001", tool: "tickets.read" },
+  { label: "Draft a reply", task: "Draft a reply to ticket t-5001 apologising and saying a refund is on the way", tool: "tickets.reply.draft" },
+  { label: "Quote a refund", task: "How much of order o-1001 is refundable?", tool: "refunds.quote" },
+  { label: "Refund $25 — allowed", task: "Issue a refund of 25 dollars for order o-1001", tool: "refunds.issue" },
+  { label: "Refund $200 — needs a manager", task: "Issue a refund of 200 dollars for order o-1001", tool: "refunds.issue" },
+  { label: "Refund $1000 — refused", task: "Issue a refund of 1000 dollars for order o-1001", tool: "refunds.issue" },
+  { label: "Read a customer's PII — privacy role + approval", task: "Read the personal data (name, email, phone) of customer c-100", tool: "privacy.pii.read" },
+];
+
 // "spiffe://acme.com/ns/agent-platform/sa/agent" -> "sa/agent" (title has the rest).
 const shortId = (id: string) => id.split("/").filter(Boolean).slice(-2).join("/");
 
@@ -339,6 +354,15 @@ function Console({
           Your role may call: {session.tools.map((t) => <code key={t}>{t}</code>).reduce(
             (acc, el) => (acc === null ? el : [acc, " ", el]), null as any)}
         </p>
+      )}
+      {canRun && (
+        <div className="examples">
+          {EXAMPLES.filter((e) => session.tools.includes(e.tool)).map((e) => (
+            <button key={e.label} className="chip" onClick={() => setTask(e.task)}>
+              {e.label}
+            </button>
+          ))}
+        </div>
       )}
       <textarea value={task} onChange={(e) => setTask(e.target.value)} rows={2} />
       <button disabled={!canRun || busy} onClick={run}>

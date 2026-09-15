@@ -96,3 +96,8 @@ input {
 .matrix .toolcol { text-align: left; }
 .matrix .yes { color: var(--green); font-weight: 700; }
 .matrix .no { color: #3a4655; }
+
+/* --- example task chips ---------------------------------------------------- */
+.examples { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; color: var(--muted); }
+.chip:hover { color: var(--accent); border-color: var(--accent); }
