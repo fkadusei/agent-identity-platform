@@ -137,12 +137,13 @@ and how we would verify it:
 - **S1–S3** HA for the stateful components (SPIRE, Keycloak, Postgres) and
   persistent storage — the app tier is already replicated (`docs/ha.md`);
 - **S4** hardened Keycloak (production mode, TLS, no `start-dev`);
-- **S5** agent guardrails + evals — the last unbuilt Phase 2 feature;
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
 - **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser;
 - **S8** per-tenant role → tool maps;
 - **S9** durable sandbox/simulator state;
 - **S10** a purpose-built privacy view (the privacy role and PII flow exist).
+
+S5 (guardrails + evals) is done — see `docs/guardrails-and-evals.md`.
 
 ## The repository is public
 

@@ -13,10 +13,11 @@ from typing import Any
 
 from fastapi import FastAPI, Header, HTTPException
 
-from agentnhi import Settings, TokenRejected, TokenVerifier
+from agentnhi import Settings, TokenRejected, TokenVerifier, audit
 from agentnhi.tokens import Delegation
 
 from app.agent.graph import build_agent, resume_task, run_task
+from app.agent.guardrails import GuardrailError, check_task
 from app.agent.live import LiveDeps
 from app.common.audit_forward import enable_forwarding
 from app.common.db import connect, database_configured, database_url
@@ -79,6 +80,11 @@ def run(body: dict, authorization: str | None = Header(default=None)) -> dict:
     task = body.get("task")
     if not task:
         raise HTTPException(status_code=400, detail="task is required")
+    try:
+        check_task(task)
+    except GuardrailError as exc:
+        audit("agent.task_refused", reason=str(exc)[:200])
+        raise HTTPException(status_code=400, detail=str(exc))
 
     try:
         delegation = _delegation(token)

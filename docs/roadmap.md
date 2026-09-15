@@ -70,7 +70,8 @@ addressed. The repo is public.
       decision, audit event, span and decision log), staged-rollout process
       (`docs/policy-lifecycle.md`)
 - [x] **Rate and cost limits** at the LLM gateway (`docs/llm-gateway.md`)
-- [ ] Agent guardrails + evals
+- [x] Agent guardrails (task + decision) and an eval suite, stubbed in CI
+      (`docs/guardrails-and-evals.md`)
 - [x] Supply chain: SBOM + image scan (already in CI), **cosign (keyless
       Sigstore) signing + verification**, Kyverno admission policy
       (`docs/supply-chain.md`, ADR-0010)
