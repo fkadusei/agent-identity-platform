@@ -234,32 +234,32 @@ const SCENE_DATA = {
   /* Numbered trust flow, played one hop at a time. blue = identity, green = authorized. */
   flows: [
     { from: "user", to: "keycloak", color: 0x4da3ff, css: "#4da3ff",
-      label: "1. Rep signs in (OIDC) → user token",
-      explain: "The support rep authenticates with OIDC (authorization code + PKCE). Keycloak issues a user token representing the rep's identity — credentials are never shared with the agent." },
+      label: "1. The support rep signs in",
+      explain: "She proves who she is and gets a short-lived badge saying so. Her password never reaches the agent.\nTechnical: OIDC authorization-code + PKCE; Keycloak issues a user access token." },
     { from: "spire", to: "agent", color: 0x4da3ff, css: "#4da3ff",
-      label: "2. Workload attestation → SVID (no secrets)",
-      explain: "SPIRE attests the agent's Kubernetes workload (namespace + service account) and issues a short-lived SVID. No static credentials, nothing to steal or rotate by hand." },
+      label: "2. The agent is given its own identity",
+      explain: "The agent holds no password or key. The cluster proves which workload it is, and it is issued a short-lived ID card.\nTechnical: SPIRE attests the Kubernetes workload (namespace + service account) and issues an X.509/JWT SVID, rotated automatically." },
     { from: "agent", to: "keycloak", color: 0x4da3ff, css: "#4da3ff", lift: 1.4,
-      label: "3. RFC 8693 token exchange: SVID + rep token → scoped token (sub=rep, azp=agent, aud=mcp)",
-      explain: "The agent authenticates as its SPIFFE identity and exchanges the rep's token via RFC 8693 Standard Token Exchange V2. The result is short-lived, audience-bound to the MCP servers, and carries the delegation binding: sub = the rep, azp = the agent." },
+      label: "3. The agent borrows the rep's authority \u2014 narrowly",
+      explain: "The agent trades the rep's badge for a smaller one: still on behalf of the rep, but usable only at the tools, and only for minutes.\nTechnical: RFC 8693 token exchange, authenticated by the agent's SVID; the result is audience-scoped (aud=mcp-tools) with sub=rep, azp=agent." },
     { from: "agent", to: "mcp", color: 0x4dffb8, css: "#4dffb8",
-      label: "4. Tool call with the scoped token",
-      explain: "The agent calls an MCP tool with the scoped token. The MCP server verifies the signature, the audience, and the workload the token was issued to." },
+      label: "4. The agent asks for a tool",
+      explain: "It calls the tool it wants, presenting that narrow badge.\nTechnical: the tool server verifies the signature, the audience (aud), and who the token was issued to (azp)." },
     { from: "mcp", to: "opa", color: 0x4dffb8, css: "#4dffb8",
-      label: "5. Policy check: (agent, rep, tool) → allow / deny / require-approval",
-      explain: "The MCP server asks OPA: may this agent, acting for this rep, call this tool? Deny-by-default, with three outcomes — allow, deny, or require-approval. Rules are code: reviewed and tested." },
+      label: "5. The rules decide",
+      explain: "Before anything happens the rules are checked: may this agent, acting for this person, use this tool? If no rule says yes, the answer is no.\nTechnical: OPA evaluates (agent, user, roles, tenant, tool, args) \u2192 allow / deny / require_approval; deny-by-default." },
     { from: "mcp", to: "sim", color: 0x4dffb8, css: "#4dffb8", lift: 1.6,
-      label: "6. If allowed: the MCP server does its OWN exchange → simulator (the original token is never forwarded)",
-      explain: "For downstream calls the MCP server performs its own token exchange, scoped to the simulator. The inbound token is never forwarded — the audience and azp would not match anyway." },
+      label: "6. The tool does the work \u2014 with its own badge",
+      explain: "If it is allowed, the tool talks to the system behind it using its own credentials \u2014 not the ones it was handed.\nTechnical: the tool server performs its own exchange for the downstream audience; the inbound token is never forwarded." },
     { from: "agent", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 2.4,
-      label: "7. If approval is required: the run PAUSES and a pending approval is recorded",
-      explain: "High-risk actions (e.g. a large refund) require human approval. The agent's run pauses via a LangGraph interrupt, and a pending approval is written to the approvals store — bound to the exact tool, arguments, user and agent, so it cannot be replayed for a different action." },
+      label: "7. A risky action waits for a person",
+      explain: "For something high-risk, like a large refund, the agent stops and asks a manager. Nothing has happened yet.\nTechnical: the run pauses on a LangGraph interrupt; a pending approval is recorded, bound to the exact tool, arguments, user and agent." },
     { from: "approver", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 3.0,
-      label: "8. The approver decides; the decision is recorded (no self-approval), and the run resumes",
-      explain: "An authenticated approver records the decision in the store, and the requester can never approve their own request. Only then does the run resume idempotently and the tool execute." },
+      label: "8. A manager decides",
+      explain: "An authenticated manager approves or denies it \u2014 and cannot approve their own request. Only then does the agent carry on.\nTechnical: the decision is written to the approvals store; the run resumes idempotently." },
     { from: "agent", to: "gateway", color: 0x4da3ff, css: "#4da3ff",
-      label: "9. LLM calls go through the identity-authenticated gateway (the agent holds no key)",
-      explain: "The agent authenticates to the LLM gateway with its SPIFFE identity. The gateway holds the model provider key and redacts PII before egress, so the agent never holds a secret and no sensitive data leaves." }
+      label: "9. The model call goes through a guarded door",
+      explain: "The agent never holds the key to the AI model. It asks a gateway that does, over a connection both sides must prove themselves on.\nTechnical: SPIFFE mTLS to the LLM gateway, which holds the provider key, enforces per-agent rate/cost limits, and is the only egress." }
   ],
 
   /* Faint static edges: everything emits one identity-keyed audit record (thin orange). */
@@ -268,15 +268,15 @@ const SCENE_DATA = {
   /* Defence mode: red dashed edges whose pulse is blocked partway with a burst. */
   attacks: [
     { badge: "A1", tag: "attestation", from: "rogue", to: "spire", lift: 2.0,
-      caption: "Rogue workload: no attestation match → no identity, no token." },
+      caption: "An unrelated pod asks for an identity and gets nothing \u2014 the cluster cannot prove what it is.\nTechnical: no matching k8s_psat registration entry, so no SVID, so no token and no access." },
     { badge: "A2", tag: "replay", from: "mcp", to: "sim", lift: 3.4,
-      caption: "Token forwarding: audience/azp mismatch → refused." },
+      caption: "A captured badge is replayed at a different service and refused \u2014 it was only ever valid at one place.\nTechnical: audience (aud) and issued-to (azp) do not match the resource server." },
     { badge: "A3", tag: "injection", from: "agent", to: "opa", lift: -2.4,
-      caption: "Prompt injection: the model asks for a forbidden tool → policy denies it." },
+      caption: "Someone talks the model into asking for a tool it should not use, and the rules refuse it.\nTechnical: the model only proposes; OPA decides from the caller's identity and role, never from what the model says." },
     { badge: "A4", tag: "bypass", from: "agent", to: "approvals", lift: -2.6,
-      caption: "Approval bypass: no recorded approval → the tool refuses to run." },
+      caption: "A high-risk action tries to run without approval, and the tool refuses.\nTechnical: the tool server requires a recorded, matching approval; without one the call is refused." },
     { badge: "A5", tag: "PII", from: "agent", to: "gateway", lift: 3.2,
-      caption: "Data egress: PII is redacted before it leaves; synthetic data only." }
+      caption: "Personal data cannot leak out through the model \u2014 it is stripped before it leaves, and the data is synthetic anyway.\nTechnical: redaction at the gateway before egress; no card data anywhere, only opaque payment tokens." }
   ]
 };
 
@@ -695,7 +695,7 @@ function setCaption(title, body, css) {
 function idleCaption() {
   setCaption("Customer-support & refunds copilot",
     "A support rep delegates to an AI agent carrying a SPIFFE identity — no API keys, every tool call authorized by policy, high-risk actions approved by a human, tokens never forwarded, everything audited.\n" +
-    "Press ▶ to walk the 8-hop trust flow, or ⚠ to see how attacks are blocked.");
+    "Press ▶ to walk the 9-hop trust flow, or ⚠ to see how attacks are blocked.");
 }
 function highlightStep(idx) {
   // The selected hop is the subject: it stays bright and moving, everything else
