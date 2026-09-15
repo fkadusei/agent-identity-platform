@@ -355,6 +355,12 @@ function Console({
             (acc, el) => (acc === null ? el : [acc, " ", el]), null as any)}
         </p>
       )}
+      {canApprove && (
+        <p className="hint">
+          You are an approver: the actions you decide are in the <b>Approvals</b>{" "}
+          tab, not here. Running a task is what the requester does.
+        </p>
+      )}
       {canRun && (
         <div className="examples">
           {EXAMPLES.filter((e) => session.tools.includes(e.tool)).map((e) => (
@@ -562,12 +568,25 @@ function Approvals({
       <h2>Approval queue</h2>
       {!canApprove && (
         <p className="hint">
-          Deciding requires the <b>manager</b> (or platform_admin) role. Approving here
-          records the decision; the requester resumes the run from their console.
+          Deciding requires the <b>manager</b> role. Approving here records the
+          decision; the requester resumes the run from their console.
         </p>
       )}
       {error && <div className="error">{error}</div>}
-      {items.length === 0 && <p className="hint">Nothing pending.</p>}
+      {items.length === 0 && (
+        <p className="hint">
+          {canApprove ? (
+            <>
+              Nothing pending. <b>This is where you act.</b> To get something to
+              approve, sign in as <b>alice</b> (or <b>bella</b>, or <b>priya</b> for
+              PII) in another tab and ask for something that needs approval — a
+              refund of 200, say. It will appear here.
+            </>
+          ) : (
+            <>Nothing pending. A held action appears here while the agent waits.</>
+          )}
+        </p>
+      )}
       {items.map((a) => (
         <div className="card" key={a.id}>
           <div className="row">

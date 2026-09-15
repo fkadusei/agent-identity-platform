@@ -100,7 +100,10 @@ export function loadSession(): Session | null {
     const raw = sessionStorage.getItem(SESSION_KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as Session;
-    if (!s?.token || (s.expiresAt && Date.now() / 1000 > s.expiresAt)) {
+    const shaped = s && s.token && Array.isArray(s.roles) && Array.isArray(s.tools);
+    if (!shaped || (s.expiresAt && Date.now() / 1000 > s.expiresAt)) {
+      // Also drops a session stored by an older build, which would otherwise
+      // break the UI that now expects `tools`.
       clearSession();
       return null;
     }
