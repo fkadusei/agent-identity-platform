@@ -87,7 +87,7 @@ Legend: **open** · *partly done* (say which half).
 - **Lands in:** `policy/authz.rego` (key on tenant), the realm.
 - **Verified by:** the same role in two tenants getting different tools.
 
-## S9 — Durable sandbox / simulator state
+## S9 — Durable sandbox / simulated-system state
 
 - **What:** persist the synthetic data so it survives a restart, or make the
   sandbox stateless.

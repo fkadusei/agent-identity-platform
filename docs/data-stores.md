@@ -7,7 +7,7 @@ that a *decision* depends on is durable, state that is a *fixture* is not.
 | --- | --- | --- |
 | **Approvals** | Postgres (durable) | an approval outlives the request that created it; two replicas must agree |
 | **Agent run checkpoints** | Postgres (durable) | a paused run must be resumable after a restart, by any replica |
-| **Tool simulators** | in-memory | synthetic fixtures; a reset is harmless (and documented) |
+| **Simulated systems** (the systems the tools act on) | in-memory | synthetic fixtures; a reset is harmless (and documented) |
 | **Audit timeline** | in-memory ring (500) | the durable audit record is the stdout stream, not this buffer |
 
 ## Selecting the backend

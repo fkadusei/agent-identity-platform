@@ -125,7 +125,7 @@ app/web           React UI: console, approvals, roles, audit, admin
 app/tools         policy enforcement point (HTTP + MCP transports)
 app/gateway       the only egress to a model; SPIFFE mTLS; rate/cost limits
 app/sandbox       synthetic systems exposed over HTTP (the tools' backend)
-app/simulators    synthetic CRM / orders / payments / ticketing
+app/simulators    the simulated systems the tools act on (synthetic data)
 app/approvals     the approvals store (in-memory | Postgres)
 policy/           OPA: role → tool, allow / deny / require-approval + tests
 deploy/kind/      local kind manifests
