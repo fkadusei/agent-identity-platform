@@ -89,6 +89,10 @@ addressed. The repo is public.
 
 ## Backlog / known gaps
 
+The remaining work is tagged with stable IDs in
+[`backlog.md`](backlog.md) (S1–S10) so it can be referenced directly. The
+completed items are kept below for the record.
+
 - [x] **Multi-tenant isolation (threat T9)** — the tenant is an identity
       attribute; policy denies an unscoped caller and every data accessor scopes
       by tenant (`docs/tenancy.md`, `scripts/tenancy-tests.sh`)

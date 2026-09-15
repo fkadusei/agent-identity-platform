@@ -130,15 +130,19 @@ End-to-end, on the cluster:
 Phases 1–3 are complete and every threat is addressed. Next, pick from the open
 backlog in [`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
 
-- **HA for stateful components** — SPIRE (shared datastore + cloud KMS), Keycloak
-  (external DB + clustering), Postgres (managed HA), the sandbox (in-memory). The
-  app tier is already replicated (`docs/ha.md`).
-- **Custom-metric autoscaling** — scale on the approval backlog / request rate via
-  a Prometheus Adapter (CPU autoscaling is done).
-- **SPIFFE-native transport** — the mesh uses Linkerd's own identity; extending
-  SPIFFE mTLS to every hop (and the browser edge via ingress TLS) is a further
-  step.
-- **Per-tenant role → tool maps** — the matrix is global today.
+Each remaining slice has a stable ID — see
+[`docs/backlog.md`](docs/backlog.md) (S1–S10) for what it is, why, where it lands
+and how we would verify it:
+
+- **S1–S3** HA for the stateful components (SPIRE, Keycloak, Postgres) and
+  persistent storage — the app tier is already replicated (`docs/ha.md`);
+- **S4** hardened Keycloak (production mode, TLS, no `start-dev`);
+- **S5** agent guardrails + evals — the last unbuilt Phase 2 feature;
+- **S6** custom-metric autoscaling (CPU autoscaling is done);
+- **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser;
+- **S8** per-tenant role → tool maps;
+- **S9** durable sandbox/simulator state;
+- **S10** a purpose-built privacy view (the privacy role and PII flow exist).
 
 ## The repository is public
 
