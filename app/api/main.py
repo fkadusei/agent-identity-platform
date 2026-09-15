@@ -19,7 +19,7 @@ Endpoints:
     POST /approvals/{id}/decision  approve/deny                 (manager role)
     POST /approvals/verify         used by tool servers (in trust domain)
     POST /audit/events             ingest an audit record (from the services)
-    GET  /audit                    the audit timeline (filter by event/tool/user)
+    GET  /audit                    your tenant's audit timeline (event/tool/user)
     GET  /privacy/access           the PII access + approval trail   (manager)
     GET  /                         the web UI (when a build is present)
 
@@ -237,13 +237,25 @@ def ingest_audit(record: dict) -> dict:
 
 @app.get("/audit")
 def get_audit(
+    delegation: Delegation = Depends(current_delegation),
     limit: int = 100,
     event: str | None = None,
     tool: str | None = None,
     sub: str | None = None,
 ) -> list[dict]:
-    """The audit timeline (newest first), narrowable by event, tool, or user."""
-    return _audit.query(limit=max(1, min(limit, 500)), event=event, tool=tool, sub=sub)
+    """The audit timeline for the caller's tenant (newest first).
+
+    Authenticated and tenant-scoped. The trail names users, tools and decisions,
+    so leaving this open told anything that could reach the API about every
+    tenant's activity — including which of its users looked at personal data.
+    """
+    return _audit.query(
+        limit=max(1, min(limit, 500)),
+        event=event,
+        tool=tool,
+        sub=sub,
+        tenant=delegation.tenant or "",
+    )
 
 
 # ---------------------------------------------------------------------------
