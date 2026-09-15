@@ -153,7 +153,7 @@ export default function App() {
             )}
             {tab === "privacy" && <Privacy session={session} />}
             {tab === "roles" && <Roles session={session} />}
-            {tab === "audit" && <Audit />}
+            {tab === "audit" && <Audit session={session} />}
             {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} />}
           </main>
         </>
@@ -795,14 +795,14 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
   );
 }
 
-function Audit() {
+function Audit({ session }: { session: Session }) {
   const [events, setEvents] = useState<any[]>([]);
   useEffect(() => {
-    const load = async () => setEvents(await getAudit().catch(() => []));
+    const load = async () => setEvents(await getAudit(session.token).catch(() => []));
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, []);
+  }, [session.token]);
 
   return (
     <section>
