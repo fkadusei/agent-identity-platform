@@ -47,9 +47,28 @@ pipeline is covered without a model: the task guardrail, the role's tool list,
 the decision guardrail, and every refusal path. It runs in CI
 (`app/agent/tests/test_evals.py`), so it cannot silently rot.
 
-**Live** asks the real model and reports whether it chose what we expect. This is
-the one that measures the *model* rather than the plumbing — run it by hand,
-since a 3B model will not pass everything and CI should not depend on a model.
+**Live** asks the real model and reports whether it chose what we expect, and it
+**skips the cases that only make sense against a canned answer** (a model that
+"declines" or "emits junk" on demand). This is the one that measures the *model*
+rather than the plumbing — run it by hand, since a 3B model will not pass
+everything and CI should not depend on a model.
+
+### Reading the live output
+
+Today's `llama3.2:3b` scores around **5/8**, and the failures are the interesting
+part — they are the model, not the platform:
+
+- asked for PII it may not have, it **substitutes a different allowed tool**
+  (`crm.customer.read`) instead of declining. That is exactly the behaviour the
+  role → tool filter and the policy exist to catch, and it is why the tool server,
+  not the model, is the control;
+- asked for a refund it may not issue, it declines — a refusal, but with a
+  different reason than the case asserts, since only the stubbed run can pin the
+  exact message.
+
+So: **stubbed** answers "is the pipeline still correct?" (yes/no, in CI);
+**live** answers "how good is the model?" (a number that should improve, or that
+justifies the guardrails).
 
 The cases (10 today):
 
