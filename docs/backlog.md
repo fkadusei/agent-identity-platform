@@ -102,12 +102,25 @@ Legend: **open** · *partly done* (say which half).
 ## S10 — Privacy use case, end to end
 
 - **Partly done.** The `privacy` role, the PII tool and its approval gate exist,
-  and the console now offers a role-appropriate PII task; the seeded `priya` user
-  makes it reachable. **Open:** a purpose-built view (who has looked at PII, why,
-  and the approval trail), rather than reusing the generic approval queue.
-- **Lands in:** `app/web/`, `app/api/` (an audit filter by tool/decision).
+  and the console offers a role-appropriate PII task. The purpose-built view now
+  exists too: `GET /privacy/access` (manager only) and the **Privacy** tab show
+  the PII access trail — held / allowed / denied, with the policy reason and
+  bundle revision — next to the approval trail. `GET /audit` gained
+  `?event=&tool=&sub=` filters. See [`privacy.md`](privacy.md).
+- **Open — and this is the gate for calling S10 done:** the view reads an
+  in-memory, per-replica audit deque, so with two API replicas it is *partial*
+  (measured: the two pods held 8 and 7 different events) and a restart clears it.
+  An oversight view that silently misses events is worse than none. Fix: move
+  audit events into the durable store the approvals already use
+  (`app/approvals/store.py` has the pattern). The **Audit** tab has the same flaw.
+- **Open (smaller):** an agent-side refusal leaves no trace. `alice` asking for
+  PII is refused *before* the tool server (the agent is only offered permitted
+  tools), so no `tool.denied` exists, the refusal is not audited, and the run
+  reports `status: "error"` rather than a refusal.
+- **Lands in:** `app/web/`, `app/api/`, and (for the durable store) `app/common/`.
 - **Verified by:** reading PII as `priya`, approving as the manager, and seeing it
-  in a PII-specific view.
+  in a PII-specific view. **Confirmed on kind**; the two limits above were found
+  by verifying it rather than by reading the code.
 
 ---
 

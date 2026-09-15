@@ -107,6 +107,7 @@ class ToolEnforcer:
                 "tool.denied",
                 spiffe_id=delegation.workload,
                 sub=delegation.user,
+                tenant=delegation.tenant or "",
                 tool=tool_name,
                 decision=decision.decision.value,
                 reason=decision.reason,
@@ -149,6 +150,7 @@ class ToolEnforcer:
                 "tool.error",
                 spiffe_id=delegation.workload,
                 sub=delegation.user,
+                tenant=delegation.tenant or "",
                 tool=tool_name,
                 reason=str(exc)[:200],
             )
