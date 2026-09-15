@@ -7,6 +7,7 @@ import {
   enroll,
   getAllApprovals,
   getAudit,
+  getPrivacyAccess,
   getRoles,
   grantRole,
   listApprovals,
@@ -23,7 +24,7 @@ import {
   type Session,
 } from "./api";
 
-type Tab = "console" | "approvals" | "roles" | "audit" | "admin";
+type Tab = "console" | "approvals" | "privacy" | "roles" | "audit" | "admin";
 
 // The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
 const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
@@ -80,7 +81,14 @@ export default function App() {
   // Approving is a business decision: the manager role, not platform_admin
   // (which administers users and, deliberately, can call no tools).
   const canApprove = has("manager");
-  const tabs: Tab[] = ["console", "approvals", "roles", "audit", ...(isAdmin ? (["admin"] as Tab[]) : [])];
+  const tabs: Tab[] = [
+    "console",
+    "approvals",
+    ...(canApprove ? (["privacy"] as Tab[]) : []),
+    "roles",
+    "audit",
+    ...(isAdmin ? (["admin"] as Tab[]) : []),
+  ];
 
   const signOut = () => {
     setSession(null);
@@ -142,6 +150,7 @@ export default function App() {
             {tab === "approvals" && (
               <Approvals session={session} agentId={agentId} canApprove={canApprove} />
             )}
+            {tab === "privacy" && <Privacy session={session} />}
             {tab === "roles" && <Roles session={session} />}
             {tab === "audit" && <Audit />}
             {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} />}
@@ -814,6 +823,108 @@ function Audit() {
           </div>
         ))}
         {events.length === 0 && <p className="hint">No events yet.</p>}
+      </div>
+    </section>
+  );
+}
+
+// Personal-data access: the one place where a read is as sensitive as a change,
+// so it gets its own view rather than a row in the generic approval queue.
+function Privacy({ session }: { session: Session }) {
+  const [data, setData] = useState<any>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const load = () =>
+      getPrivacyAccess(session.token)
+        .then((d) => {
+          setData(d);
+          setError("");
+        })
+        .catch((e) => setError(String(e)));
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [session.token]);
+
+  const head = <h2>Personal-data access</h2>;
+  if (error)
+    return (
+      <section>
+        {head}
+        <div className="error">{error}</div>
+      </section>
+    );
+  if (!data)
+    return (
+      <section>
+        {head}
+        <p className="hint">Loading…</p>
+      </section>
+    );
+
+  const at = (ts: number) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
+  const outcome = (a: any) => STATUS_LABEL[a.decision] ?? a.decision ?? a.event;
+
+  return (
+    <section>
+      {head}
+      <p className="hint">
+        Reading personal data needs the <b>privacy</b> role <b>and</b> your approval.
+        Every attempt that reached the tool server is here — held, allowed, or
+        refused. A request from a role with no PII access at all is stopped by the
+        agent before the tool server sees it, so it does not appear below. Scoped to
+        tenant <b>{data.tenant}</b>.
+      </p>
+      <p className="hint">
+        <b>Known limit:</b> these events are held in memory by the API replica that
+        served this request, so with more than one replica the trail can be partial,
+        and it does not survive a restart. Durable storage is the fix.
+      </p>
+
+      <h3>Access attempts</h3>
+      <div className="timeline">
+        {data.access.map((a: any, i: number) => (
+          <div className="event" key={i}>
+            <code className="ev">{outcome(a)}</code>
+            <span className="meta">
+              user <b>{a.user}</b> · tool <code>{a.tool}</code>
+              {a.reason && <> · {a.reason}</>} · {at(a.at)}
+              {a.policy_version && <> · policy <b>{a.policy_version}</b></>}
+            </span>
+          </div>
+        ))}
+        {data.access.length === 0 && (
+          <p className="hint">No one has tried to read personal data yet.</p>
+        )}
+      </div>
+
+      <h3>Approvals</h3>
+      <div className="timeline">
+        {data.approvals.map((a: any) => (
+          <div className="event" key={a.id}>
+            <code className="ev">{a.status}</code>
+            <span className="meta">
+              {a.args?.customer_id && (
+                <>
+                  customer <b>{a.args.customer_id}</b> ·{" "}
+                </>
+              )}
+              asked by <b>{a.user}</b>
+              {a.reason && <> · {a.reason}</>} · {at(a.created_at)}
+              {a.approver && (
+                <>
+                  {" "}
+                  · decided by <b>{a.approver}</b> {at(a.decided_at)}
+                </>
+              )}
+              {a.note && <> — “{a.note}”</>}
+            </span>
+          </div>
+        ))}
+        {data.approvals.length === 0 && (
+          <p className="hint">No personal-data approvals yet.</p>
+        )}
       </div>
     </section>
   );

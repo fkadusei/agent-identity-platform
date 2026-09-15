@@ -19,7 +19,8 @@ Endpoints:
     POST /approvals/{id}/decision  approve/deny                 (manager role)
     POST /approvals/verify         used by tool servers (in trust domain)
     POST /audit/events             ingest an audit record (from the services)
-    GET  /audit                    the audit timeline (newest first)
+    GET  /audit                    the audit timeline (filter by event/tool/user)
+    GET  /privacy/access           the PII access + approval trail   (manager)
     GET  /                         the web UI (when a build is present)
 
 Callers are authenticated with a token (aud=mcp-tools). Authorization is by role
@@ -158,6 +159,7 @@ def create_approval(
         approval_id=approval.id,
         spiffe_id=delegation.workload,
         sub=delegation.user,
+        tenant=delegation.tenant or "",
         tool=tool,
     )
     return approval.as_dict()
@@ -230,8 +232,72 @@ def ingest_audit(record: dict) -> dict:
 
 
 @app.get("/audit")
-def get_audit(limit: int = 100) -> list[dict]:
-    return list(_audit)[: max(1, min(limit, 500))]
+def get_audit(
+    limit: int = 100,
+    event: str | None = None,
+    tool: str | None = None,
+    sub: str | None = None,
+) -> list[dict]:
+    """The audit timeline (newest first), narrowable by event, tool, or user."""
+    events = list(_audit)
+    if event:
+        events = [e for e in events if e.get("event") == event]
+    if tool:
+        events = [e for e in events if e.get("tool") == tool]
+    if sub:
+        events = [e for e in events if e.get("sub") == sub]
+    return events[: max(1, min(limit, 500))]
+
+
+# ---------------------------------------------------------------------------
+# Privacy: who looked at personal data, why, and who approved it
+# ---------------------------------------------------------------------------
+PII_TOOL = "privacy.pii.read"
+# Every event the tool server can emit about a tool call. A PII read leaves
+# exactly one of these, so the trail is complete rather than a sample.
+_TOOL_EVENTS = {"tool.allowed", "tool.denied", "tool.approval_required", "tool.error"}
+
+
+@app.get("/privacy/access")
+def privacy_access(
+    delegation: Delegation = Depends(require_roles("manager")),
+    store: ApprovalStore = Depends(get_store),
+) -> dict:
+    """The PII access trail and the approvals behind it, scoped to your tenant.
+
+    An oversight view rather than another queue: personal-data reads are rare and
+    always deliberate, so each one is shown next to the decision that permitted
+    it. Reading PII needs the `privacy` role *and* manager approval, so a request
+    and its approval are two records about the same act.
+
+    Two limits worth stating plainly, because this is an oversight view:
+
+    * the trail holds what *this* process received — audit is an in-memory deque,
+      so with more than one API replica the view is partial and a restart clears
+      it (see docs/privacy.md);
+    * a request from a role with no PII access never reaches the tool server (the
+      agent only offers permitted tools), so it leaves no `tool.denied` record
+      here. What is below is every attempt the *tool server* saw.
+    """
+    tenant = delegation.tenant or ""
+    access = [
+        {
+            "event": e.get("event", ""),
+            "user": e.get("sub", ""),
+            "tool": e.get("tool", ""),
+            "decision": e.get("decision")
+            or ("approval_required" if e.get("event") == "tool.approval_required" else ""),
+            "reason": e.get("reason", ""),
+            "policy_version": e.get("policy_version", ""),
+            "at": e.get("ts", 0),
+        }
+        for e in _audit
+        if e.get("tool") == PII_TOOL
+        and e.get("event") in _TOOL_EVENTS
+        and (e.get("tenant") or "") == tenant
+    ]
+    approvals = [a.as_dict() for a in store.all(tenant) if a.tool == PII_TOOL]
+    return {"tool": PII_TOOL, "tenant": tenant, "access": access, "approvals": approvals}
 
 
 # ---------------------------------------------------------------------------

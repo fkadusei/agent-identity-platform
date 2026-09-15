@@ -108,7 +108,7 @@ opa test policy/                        # policy (31)
 |---|---|
 | Everyone | [`docs/real-world-adoption.md`](docs/real-world-adoption.md) · [`docs/glossary.md`](docs/glossary.md) |
 | Developers | [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`docs/decisions/`](docs/decisions/) |
-| Security | [`SECURITY.md`](SECURITY.md) · [`docs/threat-model.md`](docs/threat-model.md) · [`docs/roles-and-tools.md`](docs/roles-and-tools.md) · [`docs/guardrails-and-evals.md`](docs/guardrails-and-evals.md) |
+| Security | [`SECURITY.md`](SECURITY.md) · [`docs/threat-model.md`](docs/threat-model.md) · [`docs/roles-and-tools.md`](docs/roles-and-tools.md) · [`docs/guardrails-and-evals.md`](docs/guardrails-and-evals.md) · [`docs/privacy.md`](docs/privacy.md) |
 | Data | [`docs/data-stores.md`](docs/data-stores.md) · [`docs/tenancy.md`](docs/tenancy.md) · [`docs/data-handling.md`](docs/data-handling.md) |
 | Operators | [`docs/operator-guide.md`](docs/operator-guide.md) · [`docs/ha.md`](docs/ha.md) · [`docs/autoscaling.md`](docs/autoscaling.md) · [`docs/secrets.md`](docs/secrets.md) |
 | Platform engineers | [`docs/ci-cd.md`](docs/ci-cd.md) · [`docs/llm-gateway.md`](docs/llm-gateway.md) · [`deploy/helm/agent-platform/`](deploy/helm/agent-platform/) |

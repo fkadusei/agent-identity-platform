@@ -147,7 +147,15 @@ export const decideApproval = (id: string, approved: boolean, token: string, not
     body: JSON.stringify({ approved, note }),
   });
 
-export const getAudit = () => request("/audit?limit=100");
+// The audit timeline, narrowable by event, tool, or user.
+export const getAudit = (filters: { event?: string; tool?: string; sub?: string } = {}) => {
+  const q = new URLSearchParams({ limit: "100", ...filters }).toString();
+  return request(`/audit?${q}`);
+};
+
+// Personal-data access and the approvals behind it (manager only).
+export const getPrivacyAccess = (token: string) =>
+  request("/privacy/access", { headers: auth(token) });
 
 // The role -> tool matrix, straight from the policy.
 export const getRoles = (token: string) => request("/roles", { headers: auth(token) });
