@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import threading
 from collections import deque
-from typing import Any
 
 from app.common.db import connect, database_configured, database_url
 
@@ -150,26 +149,22 @@ class PostgresAuditStore:
         sub: str | None = None,
         tenant: str | None = None,
     ) -> list[dict]:
-        clauses: list[str] = []
-        params: list[Any] = []
-        if event:
-            clauses.append("event = %s")
-            params.append(event)
-        if tool:
-            clauses.append("tool = %s")
-            params.append(tool)
-        if sub:
-            clauses.append('"sub" = %s')
-            params.append(sub)
-        if tenant is not None:
-            clauses.append("tenant = %s")
-            params.append(tenant)
-        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-        params.append(limit)
+        # One static statement rather than SQL assembled from interpolated
+        # fragments: `(%s IS NULL OR col = %s)` is the filter, and every value is
+        # a bound parameter. `tenant=None` means "no filter"; "" is a real tenant
+        # (an unscoped identity), which is why the check is IS NULL and not
+        # truthiness.
         with self._conn() as conn:
+            # The ::text casts are load-bearing: Postgres cannot infer the type
+            # of a bare NULL parameter, so `%s IS NULL` alone is a type error.
             rows = conn.execute(
-                f"SELECT record FROM audit_events {where} ORDER BY id DESC LIMIT %s",
-                tuple(params),
+                "SELECT record FROM audit_events "
+                "WHERE (%(event)s::text IS NULL OR event = %(event)s::text) "
+                '  AND (%(tool)s::text IS NULL OR tool = %(tool)s::text) '
+                '  AND (%(sub)s::text IS NULL OR "sub" = %(sub)s::text) '
+                "  AND (%(tenant)s::text IS NULL OR tenant = %(tenant)s::text) "
+                "ORDER BY id DESC LIMIT %(limit)s",
+                {"event": event, "tool": tool, "sub": sub, "tenant": tenant, "limit": limit},
             ).fetchall()
         return [row[0] for row in rows]
 
