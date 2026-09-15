@@ -162,7 +162,7 @@
   <div id="caption">
     <div id="capTitle">Customer-support &amp; refunds copilot</div>
     <div id="capBody">A support rep delegates to an AI agent carrying a SPIFFE identity — no API keys, every tool call authorized by policy, high-risk actions approved by a human, tokens never forwarded, everything audited.
-Press ▶ to walk the 8-hop trust flow, or ⚠ to see how attacks are blocked.</div>
+Press ▶ to walk the 9-hop trust flow, or ⚠ to see how attacks are blocked.</div>
   </div>
 </div>
 
@@ -674,7 +674,7 @@ autoBtn.addEventListener("click", () => {
 const capTitle = $("capTitle"), capBody = $("capBody");
 
 let playing = false, currentStep = -1, stepT = 0, defMode = false, is2D = false;
-let savedView = null, oneShot = null, selectedId = null;
+let savedView = null, selectedId = null;
 const TRAVEL = 1.7, HOLD = 0.9;
 
 const playPulse = new THREE.Sprite((() => {
@@ -698,12 +698,17 @@ function idleCaption() {
     "Press ▶ to walk the 8-hop trust flow, or ⚠ to see how attacks are blocked.");
 }
 function highlightStep(idx) {
+  // The selected hop is the subject: it stays bright and moving, everything else
+  // fades back so the diagram reads as one step rather than a wall of traffic.
+  // With no step selected (idx < 0) all hops rest at a readable middle ground.
   flowEdges.forEach((e, i) => {
     const active = i === idx;
-    e.tube.material.opacity = active ? 1.0 : 0.45;
-    e.halo.material.opacity = active ? 0.22 : 0.08;
-    e.tube.material.userData.baseOpacity = active ? 1.0 : 0.45;
-    e.halo.material.userData.baseOpacity = active ? 0.22 : 0.08;
+    const tube = idx < 0 ? 0.45 : active ? 1.0 : 0.18;
+    const halo = idx < 0 ? 0.08 : active ? 0.26 : 0.04;
+    e.tube.material.opacity = tube;
+    e.halo.material.opacity = halo;
+    e.tube.material.userData.baseOpacity = tube;
+    e.halo.material.userData.baseOpacity = halo;
   });
 }
 function showStep(i) {
@@ -714,7 +719,7 @@ function showStep(i) {
   highlightStep(i);
 }
 function stopPlayback() {
-  playing = false; playPulse.visible = false; oneShot = null;
+  playing = false; playPulse.visible = false;
   playBtn.textContent = "▶ Play flow";
   playBtn.classList.remove("playing");
 }
@@ -732,14 +737,12 @@ $("prevBtn").addEventListener("click", () => {
   const n = SCENE_DATA.flows.length;
   const i = ((currentStep < 0 ? 0 : currentStep) - 1 + n) % n;
   showStep(i);
-  if (!playing) oneShot = { edge: flowEdges[i], t: 0 };
 });
 $("nextBtn").addEventListener("click", () => {
   if (defMode) return;
   const n = SCENE_DATA.flows.length;
   const i = ((currentStep < 0 ? -1 : currentStep) + 1) % n;
   showStep(i);
-  if (!playing) oneShot = { edge: flowEdges[i], t: 0 };
 });
 
 /* 2D / 3D: tween the camera goal; damping animates the transition smoothly. */
@@ -811,8 +814,9 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   controls.tick(dt);
 
-  // Ambient pulses drift along every hop (hidden while a step plays or defences are on).
-  const ambientOn = !playing && !defMode;
+  // Ambient drift along every hop — only when nothing is selected. A selected
+  // step gets the stage to itself (see below), so the diagram shows one flow.
+  const ambientOn = !playing && !defMode && currentStep < 0;
   flowEdges.forEach((e) => e.pulses.forEach((p) => {
     p.visible = ambientOn;
     if (!ambientOn) return;
@@ -837,12 +841,14 @@ function animate() {
           "#4dffb8");
       }
     }
-  } else if (oneShot) {
-    oneShot.t += dt / TRAVEL;
-    playPulse.visible = oneShot.t < 1;
-    playPulse.material.color.setHex(oneShot.edge.data.color);
-    playPulse.position.copy(oneShot.edge.curve.getPointAt(clamp(oneShot.t, 0, 1)));
-    if (oneShot.t >= 1) oneShot = null;
+  } else if (currentStep >= 0 && !defMode) {
+    // A hop is selected but not playing (stepped through): keep *its* pulse
+    // travelling, and let nothing else on the diagram move.
+    stepT += dt;
+    const edge = flowEdges[currentStep];
+    playPulse.visible = true;
+    playPulse.material.color.setHex(edge.data.color);
+    playPulse.position.copy(edge.curve.getPointAt((stepT / TRAVEL) % 1));
   } else {
     playPulse.visible = false;
   }
