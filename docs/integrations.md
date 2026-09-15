@@ -1,8 +1,9 @@
 # Integrations
 
-The tools are a thin interface over a **backend**. Swapping the in-process
-simulator for a real system is a configuration change, not a code change — and the
-policy layer above never knows the difference.
+The tools are a thin interface over a **backend**: the simulated systems — the
+systems the tools act on (a stand-in for the real CRM, orders, payments and
+ticketing) — or a real one over HTTP. Swapping them is a configuration change,
+not a code change, and the policy layer above never knows the difference.
 
 ```
 agent ──▶ tools ──▶ Backend ──┬── SimulatorBackend   (in-process synthetic data)
@@ -44,9 +45,9 @@ silent success.
 
 ## The sandbox service
 
-`app/sandbox/` is the simulators exposed over that contract. It stands in for a
-real CRM/orders/payments/ticketing sandbox so the integration path is real
-without vendor credentials:
+`app/sandbox/` is the simulated systems exposed over that contract: the systems
+the tools act on, standing in for a real CRM/orders/payments/ticketing sandbox so
+the integration path is real without vendor credentials:
 
 ```bash
 kubectl -n agent-platform port-forward svc/sandbox 8090:8090
