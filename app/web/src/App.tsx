@@ -51,6 +51,7 @@ const STATUS_LABEL: Record<string, string> = {
   ok: "allowed",
   approval_required: "held for approval",
   denied: "denied",
+  refused: "refused",
   error: "error",
 };
 

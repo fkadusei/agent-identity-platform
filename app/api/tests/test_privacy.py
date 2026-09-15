@@ -136,3 +136,21 @@ def test_it_is_not_for_the_privacy_role_itself(store):
 
 def test_it_needs_a_token():
     assert TestClient(app).get("/privacy/access").status_code == 401
+
+
+def test_a_refusal_by_the_agent_is_on_the_trail(client, audit):
+    # The interesting row. alice asking for PII never reaches the tool server —
+    # the agent is only offered the tools her role may call — so there is no
+    # tool.denied to find. The agent records the refusal instead, naming the tool
+    # the model asked for.
+    audit.append(
+        _pii_event(
+            event="agent.refused",
+            decision=None,
+            sub="alice",
+            reason="your role may not call privacy.pii.read",
+        )
+    )
+    (row,) = _get(client)["access"]
+    assert (row["user"], row["decision"]) == ("alice", "refused")
+    assert row["reason"] == "your role may not call privacy.pii.read"

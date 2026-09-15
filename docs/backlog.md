@@ -112,10 +112,15 @@ Legend: **open** · *partly done* (say which half).
   an in-memory deque per API replica meant two pods held 8 and 7 *different*
   events and a restart cleared it. Both replicas now return the same trail, and
   it survives a restart (verified on kind).
-- **Open (smaller):** an agent-side refusal leaves no trace. `alice` asking for
-  PII is refused *before* the tool server (the agent is only offered permitted
-  tools), so no `tool.denied` exists, the refusal is not audited, and the run
-  reports `status: "error"` rather than a refusal.
+- **Refusals are now recorded.** A refusal before the tool server reports
+  `status: "refused"` (distinct from `error`), and the agent audits an
+  `agent.refused` event with the user, tenant and reason — not the task text, which
+  may itself contain personal data. When the model names a tool it may not call,
+  the event names it and the refusal appears on the privacy trail. **Limit:** a
+  small model often just declines rather than naming the tool, in which case the
+  refusal is recorded but cannot be attributed to `privacy.pii.read` — verified on
+  kind with `llama3.2:3b`, which declines. Attributing that case would need a
+  heuristic over the task text, which is deliberately not done.
 - **Lands in:** `app/web/`, `app/api/`, and (for the durable store) `app/common/`.
 - **Verified by:** reading PII as `priya`, approving as the manager, and seeing it
   in a PII-specific view. **Confirmed on kind**; the limits above were found by

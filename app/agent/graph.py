@@ -30,7 +30,8 @@ class AgentState(TypedDict, total=False):
     tool: str
     args: dict
     reason: str
-    status: str  # ok | denied | error | approval_required | approved
+    status: str  # ok | denied | refused | error | approval_required | approved
+    refused_tool: str  # what the model asked for, when we know
     result: dict
     approval_id: str
 
@@ -43,9 +44,15 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
         if not decision.get("tool"):
             # The model produced no usable decision. Do NOT quietly do something
             # else — a refund request must never turn into a customer lookup.
+            #
+            # "refused" and "error" are different things to whoever is on call:
+            # a refusal is the agent declining to act (the role may not call what
+            # was asked for), an error is something being broken (the tool server
+            # or the model was unreachable).
             return {
-                "status": "error",
+                "status": "refused" if decision.get("refused") else "error",
                 "reason": decision.get("reason", "no tool was selected"),
+                "refused_tool": decision.get("refused_tool", ""),
             }
         return {
             "tool": decision["tool"],
@@ -92,7 +99,7 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
         return "call_tool" if state.get("status") == "approved" else END
 
     def after_plan(state: AgentState) -> str:
-        return END if state.get("status") == "error" else "call_tool"
+        return END if state.get("status") in ("error", "refused") else "call_tool"
 
     graph = StateGraph(AgentState)
     graph.add_node("plan", plan)
@@ -139,4 +146,5 @@ def _shape(state: dict) -> dict:
         "tool": state.get("tool"),
         "result": state.get("result", {}),
         "reason": state.get("reason", ""),
+        "refused_tool": state.get("refused_tool", ""),
     }
