@@ -37,3 +37,10 @@ ARG GIT_SHA=unknown
 ENV GIT_SHA=${GIT_SHA}
 
 COPY --from=build /opt/keycloak/ /opt/keycloak/
+
+# Run as the image's non-root `keycloak` user by default. The base image declares
+# no USER, which Trivy flags (DS-0002), and an image that can run as root by
+# accident is one credential away from a container escape. The Kubernetes
+# manifests set runAsNonRoot and runAsUser: 1000 as well, so this is the floor,
+# not the only guard.
+USER 1000
