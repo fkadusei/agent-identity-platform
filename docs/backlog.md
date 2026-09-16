@@ -8,6 +8,36 @@ Legend: **open** · *partly done* (say which half).
 
 ---
 
+## Open right now (2026-09-16): the agent's model call is failing
+
+The live evals score **1/8 for every model** — `llama3.2:3b` and
+`qwen3-warden-ctx16k` alike — so the model is not the variable, whatever the error
+message implies. The gateway can reach Ollama (`GET /api/tags -> 200`), so the
+fault is on the agent-to-gateway hop or in the prompt/parse step.
+
+**Next step:** the `llm.fallback` audit reason, which names the real cause.
+**Beware:** there are two agent replicas, so `exec deploy/agent` runs the evals in
+one pod while `logs deploy/agent` reads the other — pick a named pod:
+
+```
+kubectl --context kind-agent-platform -n agent-platform get pods -l app=agent
+kubectl --context agent-platform ... exec <that-pod> -c agent -- python -m app.agent.evals --live
+kubectl --context kind-agent-platform -n agent-platform logs <that-pod> -c agent \
+  | grep -o 'llm\.[a-z_]*\|reason[^,}]\{0,150\}'
+```
+
+**What happened before this, for context.** A 45GB model (a 30B with a 262k
+context) was loaded beside an 8GB Docker VM, which starved the host. The SPIRE
+server could not reach the Kubernetes API server, crashed, and crash-looped for
+hours; SVID rotation stopped and certificates expired, which surfaced as
+`CERTIFICATE_VERIFY_FAILED` and then as "the model did not choose a usable tool".
+SPIRE is fixed and the workloads have fresh SVIDs. The model was swapped to
+`qwen3-warden-ctx16k` during the investigation and has been **reverted** to
+`llama3.2:3b` in both the manifest and the running deployment. Docker Desktop now
+has 33GB instead of 8GB.
+
+---
+
 ## S1 — HA: SPIRE server
 
 - **What:** run SPIRE with a shared datastore and a shared key manager, 2+ replicas.
@@ -159,6 +189,50 @@ Legend: **open** · *partly done* (say which half).
   verifying it rather than by reading the code.
 
 ---
+
+## S11 — SPIRE should survive an API-server blip
+
+- **What:** the SPIRE server exits when it cannot reach the Kubernetes API server
+  to update its bundle ConfigMap — `Fatal run error ... notifier(k8sbundle):
+  unable to get list ... TLS handshake timeout` — and because its datastore is
+  in-memory, every restart regenerates the CA, so *every* workload must be
+  restarted to pick up fresh SVIDs.
+- **Why:** this turned a transient resource spike into hours of outage whose only
+  symptoms were expired certificates and a message blaming the model. It is the
+  same ground as **S1**.
+- **Lands in:** `deploy/kind/manifests/spire/`, plus the operator guide; S1 covers
+  the HA half (shared datastore, no CA regeneration).
+- **Verified by:** making the API server briefly unreachable and watching SPIRE
+  recover on its own, with no manual restart of the workloads.
+
+## S12 — The agent must survive a Postgres restart
+
+- **What:** the agent's run checkpointer holds a single Postgres connection. When
+  Postgres restarted, that connection died and every run failed in 0.1s with
+  `psycopg.OperationalError: server closed the connection unexpectedly` — forever,
+  until the agent process was restarted.
+- **Why:** a database restart must not require restarting the application, and the
+  failure looks identical to a dozen other errors from the outside.
+- **Lands in:** `app/agent/service.py` (`get_checkpointer`) — a checked pool
+  (`psycopg_pool.ConnectionPool`) instead of a bare `connect(...)`.
+- **Verified by:** restart Postgres, then run the evals *without* restarting the
+  agent.
+
+## S13 — Stop blaming the model for infrastructure faults
+
+- **What:** "the model did not choose a usable tool — nothing was executed" is
+  emitted for at least four unrelated causes: the model answered unusably, the
+  model call raised (expired certificate, unreachable gateway), the response did
+  not parse, and the model was unreachable at all. The `llm.fallback` audit event
+  carries the real reason; the user-facing message does not.
+- **Why:** during the 2026-09-16 incident this message pointed at the model for
+  hours while the actual faults were an expired SVID and a dead database
+  connection. It cost most of a debugging session.
+- **Lands in:** `app/agent/llm.py` (separate the paths), `app/agent/graph.py`
+  (already splits `refused` from `error` for the *decision* — carry the reason
+  through too), and the timeout/connection handling in `app/agent/live.py`.
+- **Verified by:** a test that makes the model call fail and asserts the message
+  says the model could not be reached, rather than blaming its output.
 
 ## Not slices (documented limits)
 
