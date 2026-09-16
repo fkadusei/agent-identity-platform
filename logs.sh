@@ -10,6 +10,8 @@
 #   ./logs.sh --last   the last 200 lines, then exit
 # =============================================================================
 set -uo pipefail
+# shellcheck source=scripts/lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/lib.sh"
 cd "$(dirname "$0")"
 
 NS=agent-platform

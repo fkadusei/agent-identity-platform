@@ -8,6 +8,8 @@
 # Usage: ./scripts/tls-check.sh
 # =============================================================================
 set -euo pipefail
+# shellcheck source=lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 cd "$(dirname "$0")/.."
 
 NS=agent-platform
@@ -19,10 +21,10 @@ if ! command -v linkerd >/dev/null 2>&1; then
 fi
 
 beat "MESH CONTROL PLANE"
-linkerd check 2>&1 | tail -1
+linkerd --context "$KUBE_CONTEXT" check 2>&1 | tail -1
 
 beat "IN-CLUSTER EDGES (SECURED = mTLS)"
-edges=$(linkerd viz edges deploy -n "$NS" 2>/dev/null)
+edges=$(linkerd --context "$KUBE_CONTEXT" viz edges deploy -n "$NS" 2>/dev/null)
 printf '%s\n' "$edges" | awk 'NR==1 || $NF=="√"'
 
 unsecured=$(printf '%s\n' "$edges" | awk 'NR>1 && $NF!="√"' | wc -l | tr -d ' ')

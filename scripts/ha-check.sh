@@ -7,6 +7,8 @@
 # Usage: ./scripts/ha-check.sh
 # =============================================================================
 set -euo pipefail
+# shellcheck source=lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 cd "$(dirname "$0")/.."
 
 NS=agent-platform

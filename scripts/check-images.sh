@@ -11,6 +11,8 @@
 #
 #   ./scripts/check-images.sh        # exits non-zero if any pod is stale
 set -euo pipefail
+# shellcheck source=lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 NS="${NAMESPACE:-agent-platform}"
 SERVICES=(api tools agent gateway sandbox)
