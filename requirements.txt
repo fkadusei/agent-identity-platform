@@ -18,5 +18,7 @@ opentelemetry-instrumentation-httpx>=0.48b0
 prometheus-client>=0.21
 
 # Durable state (approvals + agent run checkpoints) when DATABASE_URL is set.
-psycopg[binary]>=3.2
+# `pool` is explicit because the agent's checkpointer builds a psycopg_pool
+# ConnectionPool itself (S12) — it only arrived transitively before.
+psycopg[binary,pool]>=3.2
 langgraph-checkpoint-postgres>=2.0

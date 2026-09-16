@@ -73,6 +73,20 @@ checkpointer=...)`). With `DATABASE_URL` set it uses LangGraph's
 `PostgresSaver`, so a run that pauses for approval is stored in Postgres and can
 be resumed after the agent pod restarts.
 
+The checkpointer holds a **connection pool** (`psycopg_pool`), not one connection,
+and re-ensures its schema on each request — the same defence the approvals and
+audit stores apply per operation. A Postgres restart drops the sockets, and on the
+demo's `emptyDir` it also empties the schema; either way a run after the restart
+succeeds without restarting the agent. Before S12 the single connection stayed
+broken forever:
+
+```
+psycopg.OperationalError: server closed the connection unexpectedly
+```
+
+The pool's backends identify themselves as `application_name=agent-checkpointer`
+in `pg_stat_activity`, which is also how the S12 test simulates a restart.
+
 The **token is deliberately not durable.** A resume that lands on a process which
 never saw the run carries the caller's token again
 (`/tasks/resume` → `/resume` forwards it), and the agent rebuilds itself from the
@@ -113,5 +127,10 @@ service, operator, or an external cluster).
 
 - The kind Postgres uses `emptyDir` — data is lost with the cluster. That is
   deliberate (disposable demo); production uses managed storage.
-- The agent holds a single Postgres connection for the process lifetime. That is
-  fine at demo scale; a busy deployment would use a connection pool.
+- `emptyDir` also means a **Postgres pod** restart empties the schema. Every store
+  recreates its tables on demand, so the platform keeps working — but approvals,
+  checkpoints and the audit trail from before the restart are gone (S3 in
+  [`backlog.md`](backlog.md)).
+- The agent's checkpointer pool is sized `min_size=1, max_size=5`. That is demo
+  scale; size it against the database's connection budget in production (and put a
+  pooler in front).
