@@ -14,6 +14,7 @@ deploy time.
 | Keycloak **admin** service-account secret (`platform-admin`) | **yes** | gitignored `.env` → Secret, read only by the API |
 | The demo **database** password (`postgres`) | **yes** | gitignored `.env` → the `postgres` Secret, read by the API/agent/gateway |
 | SPIRE's **datastore** password (the `spire` role) | **yes** | gitignored `.env` → rendered into `server.conf` → the `spire-server-config` Secret |
+| Keycloak's **database** password (the `keycloak` role) | **yes** | gitignored `.env` → the `keycloak-db` Secret, read by the server and the import Job |
 | LLM provider key | **yes** (optional) | gitignored `.env` → Kubernetes Secret, read **only** by the gateway |
 
 ## How it works locally (kind)
@@ -28,13 +29,14 @@ deploy time.
     ADMIN_CLIENT_SECRET=<random>    # the API's least-privilege admin client
     POSTGRES_PASSWORD=<random>      # the demo database
     SPIRE_DB_PASSWORD=<random>      # SPIRE's own role in that database (S1)
+    KEYCLOAK_DB_PASSWORD=<random>   # Keycloak's own role in that database (S2)
     # LLM_API_KEY=...               # optional, for a hosted model
     ```
 2. The Keycloak realm is **rendered** from `realm.json.tmpl` (`${VAR}`
-   placeholders) with those values, then applied as a ConfigMap. The template is
-   committed; the values are not. SPIRE's `server.conf` is rendered the same way —
-   from `server.conf.tmpl` into a **Secret**, because the datastore connection
-   string carries its password.
+   placeholders) with those values, then applied as a ConfigMap that the realm
+   import Job mounts. The template is committed; the values are not. SPIRE's
+   `server.conf` is rendered the same way — from `server.conf.tmpl` into a
+   **Secret**, because the datastore connection string carries its password.
 3. The API gets `DEMO_CLI_SECRET` / `MANAGER_CLI_SECRET` (scripted demo),
    `PORTAL_SECRET` (login), and `ADMIN_CLIENT_SECRET` (enrollment + role
    management) from the `platform-secrets` Secret, mounted as environment

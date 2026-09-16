@@ -74,8 +74,11 @@ login → token (roles) ─▶ agent ─▶ tool server ─▶ policy ─▶ all
    The bundle injects the catalogue, so the coverage test fails if you forget.
 2. **A role** — add it to the realm (`realm.json.tmpl`) and to `role_tools`.
    A role absent from the matrix can call nothing.
-3. Re-run `./scripts/setup.sh` (the realm is re-imported and the bundle rebuilt)
-   and `./scripts/role-tools.sh` to see the new row.
+3. Re-run `./scripts/setup.sh` (it rebuilds the policy bundle and re-renders the
+   realm template) and `./scripts/role-tools.sh` to see the new row. Note that the
+   realm import is non-destructive (S2): a change to `realm.json.tmpl` — a new
+   role, say — needs the realm deleted first, or the import skips it. See the
+   operator guide.
 
 ## Notes
 

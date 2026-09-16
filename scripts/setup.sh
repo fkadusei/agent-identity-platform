@@ -28,7 +28,7 @@ ENV_FILE=.env
 
 gen_secret() { python3 -c "import secrets; print(secrets.token_hex(16))"; }
 
-REQUIRED_SECRETS="DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET POSTGRES_PASSWORD SPIRE_DB_PASSWORD"
+REQUIRED_SECRETS="DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET POSTGRES_PASSWORD SPIRE_DB_PASSWORD KEYCLOAK_DB_PASSWORD"
 
 ensure_secrets() {
   if [ ! -f "$ENV_FILE" ]; then
@@ -48,6 +48,9 @@ POSTGRES_PASSWORD=$(gen_secret)
 # Postgres, so the identity root of trust no longer lives in a file beside the
 # server.
 SPIRE_DB_PASSWORD=$(gen_secret)
+# Keycloak's realms and users (S2) — its own least-privilege role in the same
+# Postgres, so accounts survive a restart and two replicas can share them.
+KEYCLOAK_DB_PASSWORD=$(gen_secret)
 # For a hosted LLM provider, uncomment and set (used only by the gateway):
 # LLM_API_KEY=sk-...
 EOF
@@ -96,7 +99,7 @@ ok "spire-server-jti, spire-agent-nocache"
 # A dirty tree is marked, because "the image matches HEAD" would be a lie.
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 git diff --quiet 2>/dev/null || GIT_SHA="$GIT_SHA-dirty"
-for svc in api tools agent gateway sandbox; do
+for svc in api tools agent gateway sandbox keycloak; do
   docker build -q --build-arg "GIT_SHA=$GIT_SHA" \
     -f "docker/$svc.Dockerfile" -t "agent-platform/$svc:demo" . >/dev/null
   kind load docker-image "agent-platform/$svc:demo" --name agent-platform >/dev/null
@@ -148,17 +151,22 @@ kubectl -n $NS create secret generic postgres \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl apply -f "$MANIFESTS/data/" >/dev/null
 kubectl -n $NS rollout status deploy/postgres --timeout=180s >/dev/null
-# A dedicated, least-privilege role and database for SPIRE, so it does not share
-# the application's. `CREATE DATABASE` cannot run inside a transaction block, so
-# it is guarded with a query rather than wrapped in a DO block. The role's
-# password is re-set every run so it always matches .env.
+# One least-privilege role and database per consumer, so nothing shares the
+# application's credentials. `CREATE DATABASE` cannot run inside a transaction
+# block, so it is guarded with a query rather than wrapped in a DO block. Each
+# role's password is re-set every run so it always matches .env.
 PSQL="kubectl -n $NS exec deploy/postgres -- psql -U agent -d"
-$PSQL postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='spire'" 2>/dev/null | grep -q 1 \
-  || $PSQL postgres -c "CREATE ROLE spire LOGIN PASSWORD '$SPIRE_DB_PASSWORD'" >/dev/null
-$PSQL postgres -c "ALTER ROLE spire LOGIN PASSWORD '$SPIRE_DB_PASSWORD'" >/dev/null
-$PSQL postgres -tAc "SELECT 1 FROM pg_database WHERE datname='spire'" 2>/dev/null | grep -q 1 \
-  || $PSQL postgres -c "CREATE DATABASE spire OWNER spire" >/dev/null
-ok "postgres ready; database 'spire' ready for the SPIRE registry"
+ensure_database() { # ensure_database <name> <password>
+  local name="$1" password="$2"
+  $PSQL postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='$name'" 2>/dev/null | grep -q 1 \
+    || $PSQL postgres -c "CREATE ROLE $name LOGIN PASSWORD '$password'" >/dev/null
+  $PSQL postgres -c "ALTER ROLE $name LOGIN PASSWORD '$password'" >/dev/null
+  $PSQL postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$name'" 2>/dev/null | grep -q 1 \
+    || $PSQL postgres -c "CREATE DATABASE $name OWNER $name" >/dev/null
+}
+ensure_database spire "$SPIRE_DB_PASSWORD"
+ensure_database keycloak "$KEYCLOAK_DB_PASSWORD"
+ok "postgres ready; databases 'spire' and 'keycloak' ready"
 
 say "5. SPIRE"
 # The server config carries the datastore password, so it is rendered from a
@@ -248,13 +256,21 @@ kubectl -n $NS create secret generic platform-secrets \
   --from-literal=PORTAL_SECRET="$PORTAL_SECRET" \
   --from-literal=ADMIN_CLIENT_SECRET="$ADMIN_CLIENT_SECRET" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-# Recreate Keycloak so the realm is imported fresh. Its H2 database is
-# ephemeral and the import strategy is IGNORE_EXISTING, so an existing realm
-# would otherwise keep the previous client secrets.
-kubectl -n $NS delete deploy keycloak --ignore-not-found --wait=true >/dev/null 2>&1
+kubectl -n $NS create secret generic keycloak-db \
+  --from-literal=password="$KEYCLOAK_DB_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl apply -f "$MANIFESTS/keycloak/keycloak-env.yaml" >/dev/null
+# Import the realm *before* the server starts, so the two never contend for the
+# database and the import is an explicit step rather than a side effect of
+# startup. `--override=false` makes it a no-op once the realm exists, which is
+# what keeps accounts enrolled at runtime across a re-run (S2) — the old flow had
+# to delete Keycloak every run because its database was ephemeral.
+kubectl -n $NS delete job keycloak-import --ignore-not-found --wait=true >/dev/null 2>&1
+kubectl apply -f "$MANIFESTS/keycloak/keycloak-import.yaml" >/dev/null
+kubectl -n $NS wait --for=condition=complete job/keycloak-import --timeout=300s >/dev/null
 kubectl apply -f "$MANIFESTS/keycloak/keycloak.yaml" >/dev/null
-kubectl -n $NS rollout status deploy/keycloak --timeout=300s >/dev/null
-ok "keycloak ready (realm agent-platform imported)"
+kubectl -n $NS rollout status deploy/keycloak --timeout=420s >/dev/null
+ok "keycloak ready (realm imported by job; 2 replicas; Postgres-backed)"
 
 say "7. OPA"
 # Build the versioned bundle (revision stamped into every decision) and mount it.

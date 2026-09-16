@@ -133,10 +133,13 @@ rm .env
 ./scripts/setup.sh
 ```
 
-> **Caveat.** `setup.sh` recreates Keycloak, whose realm is ephemeral and
-> re-imported from the template — so users/roles created at runtime (enrolled
-> accounts) are **lost**. In production you rotate in the secret manager and
-> restart consumers, without touching the realm.
+> **What survives, and what does not.** Keycloak's realm and users live in
+> Postgres now, and the realm is imported by a Job with `--override=false`, so
+> accounts enrolled at runtime **survive** a `setup.sh` re-run (S2). The flip side
+> is deliberate: a *new* client secret in `.env` does not reach an existing realm.
+> Delete the realm (or the `keycloak` database) and re-run to pick one up. In
+> production you rotate in the secret manager and restart consumers, without
+> touching the realm.
 
 ### Roll out a policy change
 
@@ -188,7 +191,9 @@ kubectl -n agent-platform delete pod -l app=<workload>
 
 **C. Leaked client secret or admin credential**
 
-Rotate (§4) — the old value stops working as soon as Keycloak re-imports.
+Rotate (§4). A client secret lives inside the realm, and the import never
+overwrites it — so delete the realm (or the `keycloak` database) and re-run for the
+new value to take effect.
 
 **D. Policy engine down**
 
@@ -271,7 +276,7 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Login returns `502 login failed` | realm not imported with the current secrets | `setup.sh` recreates Keycloak each run; re-run it |
+| Login returns `502 login failed` | the realm's client secret and `.env` have drifted — a rotated secret does not reach an existing realm | delete the realm or the `keycloak` database, then re-run `setup.sh` |
 | `invalid token: Not enough segments` | client sent a malformed/absent token | re-login; check the UI is current (rebuild the API image) |
 | `Failed to fetch` in the browser | API unreachable — dropped `port-forward`, or dev-server proxy | restart `kubectl port-forward svc/api 8080:8080`; in dev, restart `npm run dev` |
 | OPA pod `CrashLoopBackOff`, `manifest roots … do not permit` | the bundle ConfigMap's `..data` dir was scanned | bundle files are mounted individually — re-apply `deploy/kind/manifests/opa/` |
@@ -281,7 +286,9 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | SPIRE logs `Failed to publish bundle` | the bundle publisher cannot apply the ConfigMap — API server unreachable, or a field-ownership conflict left by the old Notifier | **not fatal**: it retries every 30s (S11). Check the RBAC on `configmaps` and who owns `spire-bundle`; recreate the ConfigMap to clear a legacy owner (`setup.sh` does) |
 | Agents `CrashLoopBackOff`, `certificate signed by unknown authority` | the CA changed under them — a wiped `spire-server-data` volume, or a replaced datastore | recreate the agent pods (they cache the bundle in their own `data_dir`). S1 made the CA survive a server restart, so this should no longer start on its own |
 | No new SVIDs; SPIRE logs datastore errors | SPIRE's registry is in Postgres (S1), so the database is now on identity's critical path | restore Postgres first; if the password was rotated, check the `spire` role against `SPIRE_DB_PASSWORD` in `.env` and re-run `setup.sh` |
-| Enrolled user vanished | Keycloak was recreated by `setup.sh` (ephemeral realm) | re-enroll, or use a persistent database in production |
+| Enrolled user vanished | the realm was deleted or re-imported with `--override=true` | they are durable now (S2) — restore from a database backup if this was not deliberate |
+| Keycloak `CrashLoopBackOff`, mentions re-augmentation or a build mismatch | a build-time option changed, and `--optimized` refuses to start against the baked image | rebuild `docker/keycloak.Dockerfile` and re-run `setup.sh`; the build-time options are in that file, the runtime ones in `keycloak-env.yaml` |
+| The realm import Job failed | the database is unreachable, or the realm ConfigMap is missing | `kubectl -n agent-platform logs job/keycloak-import`; re-run `setup.sh` |
 | Approvals/runs vanish on restart | `DATABASE_URL` not set (in-memory stores) | set `DATABASE_URL` (see [`data-stores.md`](data-stores.md)) |
 | Postgres pod `Pending` after a node is replaced, or its data is gone | the demo's PVC uses kind's `local-path`, which is node-local and cannot follow the pod | restore the node, or delete `pvc/postgres-data` to start fresh (losing the data). Production uses managed storage — S3 in [`backlog.md`](backlog.md) |
 | An edge is not `SECURED` in `tls-check.sh` | the pod is not mesh-injected | annotate the namespace (`linkerd.io/inject=enabled`) and restart the deployment |

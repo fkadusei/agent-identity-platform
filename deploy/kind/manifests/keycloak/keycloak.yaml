@@ -9,19 +9,33 @@
 #   3. Performs RFC 8693 Standard Token Exchange: user token in -> audience-
 #      scoped, 5-minute token out, carrying the delegation binding (sub + azp).
 #
-# start-dev is a DEMO setting (no TLS, ephemeral H2 database).
+# Production mode (S2/S4): `start`, not `start-dev`, against the Postgres in
+# `keycloak-env.yaml`. The realm is imported by the Job in `keycloak-import.yaml`
+# — the server does not mount it — and the environment (hostname, database,
+# cache) lives in the shared ConfigMap so the two cannot drift.
 #
-# NOTE: a read-only root filesystem cannot be used for Keycloak — its dev-mode
-# Quarkus augmentation writes transformed bytecode into /opt/keycloak/lib/quarkus.
-# That single control is excepted (scoped) in .trivyignore.yaml.
+# Replicas: 2, behind the Service. Their sessions are shared through the `ispn`
+# cache, discovering each other via the database (jdbc-ping), so either pod can
+# answer; PodDisruptionBudget keeps one serving through a drain.
 # =============================================================================
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: keycloak
+  namespace: agent-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: keycloak
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: keycloak
   namespace: agent-platform
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: keycloak
@@ -30,55 +44,97 @@ spec:
       labels:
         app: keycloak
     spec:
+      affinity:
+        # Spread replicas across nodes when there is more than one (soft, so a
+        # single-node cluster still schedules them).
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: keycloak
+                topologyKey: kubernetes.io/hostname
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:26.6.4
-          args:
-            - start-dev
-            - --import-realm                 # imports /opt/keycloak/data/import/*
+          # Built by docker/keycloak.Dockerfile, which bakes `kc.sh build` into
+          # the image so the running server never augments (see the header there).
+          image: agent-platform/keycloak:demo
+          imagePullPolicy: IfNotPresent
+          # `start` = production mode; `--optimized` says the build is already
+          # done, so nothing is written to /opt/keycloak. Everything else comes
+          # from the environment, shared with the import Job so the two cannot
+          # drift.
+          args: ["start", "--optimized"]
+          envFrom:
+            - configMapRef:
+                name: keycloak-env
           env:
-            # DEMO-ONLY admin credentials. Never a real password — this cluster
-            # is disposable. See docs/threat-model.md.
-            - name: KEYCLOAK_ADMIN
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db
+                  key: password
+            # DEMO-ONLY admin credentials — used once, to create the master realm
+            # on a fresh database. Never a real password; this cluster is
+            # disposable. See docs/threat-model.md.
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
               value: admin
-            - name: KEYCLOAK_ADMIN_PASSWORD
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
               value: admin
           ports:
-            - containerPort: 8080
-            - containerPort: 9000
+            - name: http
+              containerPort: 8080
+            - name: management
+              containerPort: 9000
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop: ["ALL"]
-          volumeMounts:
-            # Nested mounts: the import dir comes from the ConfigMap, while the
-            # rest of the data dir (H2 database) is writable and ephemeral.
-            - name: kc-data
-              mountPath: /opt/keycloak/data
-            - name: realm
-              mountPath: /opt/keycloak/data/import
-              readOnly: true
-            - name: tmp
-              mountPath: /tmp
+          # The first start augments the Quarkus app in-process, which is slow,
+          # so liveness only begins once the startup probe has succeeded.
+          startupProbe:
+            httpGet:
+              path: /health/ready
+              port: management
+            periodSeconds: 5
+            failureThreshold: 60
           readinessProbe:
             httpGet:
-              # start-dev serves health on 8080 (no curl in the image); the
-              # realm endpoint is a reliable signal.
-              path: /realms/agent-platform
-              port: 8080
-            initialDelaySeconds: 25
+              path: /health/ready
+              port: management
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: management
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          volumeMounts:
+            # A read-only root filesystem, which `start-dev` made impossible (its
+            # runtime bytecode augmentation wrote into lib/quarkus — the exception
+            # that used to live in .trivyignore.yaml). The image bakes the build,
+            # so only the data dir and /tmp need to be writable.
+            - name: data
+              mountPath: /opt/keycloak/data
+            - name: tmp
+              mountPath: /tmp
       volumes:
-        - name: kc-data
-          emptyDir: {}                  # ephemeral H2; demo only
-        - name: realm
-          configMap:
-            name: keycloak-realm        # created by scripts/setup.sh from realm.json
+        - name: data
+          emptyDir: {}
         - name: tmp
           emptyDir: {}
 ---

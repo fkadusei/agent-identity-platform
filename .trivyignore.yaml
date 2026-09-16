@@ -2,11 +2,11 @@
 #
 # Keep this list as small and as specific as possible: each entry is scoped to a
 # path and carries a statement explaining why the control cannot be applied.
-misconfigurations:
-  - id: AVD-KSV-0014
-    paths:
-      - "deploy/kind/manifests/keycloak/keycloak.yaml"
-    statement: >-
-      Keycloak's dev-mode Quarkus augmentation writes transformed bytecode into
-      /opt/keycloak/lib/quarkus, so readOnlyRootFilesystem cannot be enabled for
-      this container. Every other container in the repository sets it.
+#
+# There are currently NONE, and that is worth a line of history: Keycloak used to
+# be excepted here for AVD-KSV-0014 (readOnlyRootFilesystem), because its dev
+# mode augmented Quarkus bytecode into /opt/keycloak/lib/quarkus at startup. S4
+# moved to production mode and bakes the build into the image
+# (docker/keycloak.Dockerfile), so the container runs with `--optimized` and a
+# read-only root filesystem. Every container in the repository now sets it.
+misconfigurations: []
