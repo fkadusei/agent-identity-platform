@@ -234,6 +234,28 @@ has 33GB instead of 8GB.
 - **Verified by:** a test that makes the model call fail and asserts the message
   says the model could not be reached, rather than blaming its output.
 
+## S14 — setup.sh must not run against the wrong cluster
+
+- **What:** `setup.sh` verifies the kind cluster on line 78
+  (`kubectl cluster-info --context kind-agent-platform`) and then runs every
+  subsequent `kubectl` against whatever context happens to be *active*. When
+  Docker Desktop restarted (making `docker-desktop` the active context), a full run
+  applied everything to the wrong cluster and died with
+  `error: no objects passed to apply` — naming neither the file nor the cluster it
+  was aiming at.
+- **Why:** three failures in one. It targets the wrong cluster; it fails with a
+  message that cannot be diagnosed (most applies send stdout to `/dev/null`, so the
+  failing command is not even visible); and it *partially* succeeds, leaving
+  resources on a cluster it was never meant to touch. Found on 2026-09-16 while
+  recovering from the SPIRE outage.
+- **Lands in:** `scripts/setup.sh` — pin `--context kind-agent-platform` on every
+  call, or `kubectl config use-context kind-agent-platform` right after the check.
+  The same assumption lives in the other scripts (`stop.sh`, `teardown.sh`, the
+  verification suites), so check them while you are there.
+- **Verified by:** with the active context deliberately set to something else, a
+  full run either works (because it pins) or fails immediately, naming the cluster
+  it wanted.
+
 ## Not slices (documented limits)
 
 - The trust domain (`acme.com`) and the demo passwords are documentation, not
