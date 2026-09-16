@@ -53,8 +53,11 @@ threat in the threat model addressed. The repo is public.
       every other in-cluster hop (`docs/tls.md`, `scripts/tls-check.sh`)
 - [~] **HA** — the app tier is replicated (`docs/ha.md`); still single-replica:
       SPIRE (needs a shared datastore + cloud KMS), Keycloak (external DB +
-      clustering), Postgres (managed HA), the sandbox (in-memory)
-- [ ] Persistent storage for the stateful components; hardened Keycloak
+      clustering), Postgres (single replica, though its data is now on a
+      persistent volume — S3), the sandbox (in-memory)
+- [x] Persistent storage for Postgres (S3) — a PVC-backed volume, so its data
+      outlives the pod rather than the process (`docs/data-stores.md`)
+- [ ] Hardened Keycloak (S4); persistent storage still needed for SPIRE (S1)
 - [x] **Secrets out of git and manifests** — client secrets generated into a
       gitignored `.env`, the realm rendered from a template, values mounted as
       Kubernetes Secrets; the External Secrets Operator pattern is documented

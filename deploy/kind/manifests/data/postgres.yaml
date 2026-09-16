@@ -1,0 +1,114 @@
+# =============================================================================
+# Postgres — durable state (approvals, run checkpoints, gateway counters, audit).
+#
+# Without it, that state lives only in memory and is lost on restart. The
+# services pick it up via DATABASE_URL; when that is unset they fall back to their
+# in-memory stores.
+#
+# The data directory is a PersistentVolumeClaim, so it survives the pod — which
+# is what makes approvals auditable across a restart. Demo-scale: one replica, no
+# HA, and a node-local volume (kind's `local-path`), so the pod cannot be
+# rescheduled to another node. Production uses a managed database with backups
+# (see the Helm chart's database.url).
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-data
+  namespace: agent-platform
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+  # No storageClassName: the cluster default (kind's `local-path`, provisioned
+  # WaitForFirstConsumer, so the volume lands on the node the pod is scheduled to).
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: agent-platform
+spec:
+  replicas: 1
+  # One ReadWriteOnce volume, so never two pods at once: a rolling update would
+  # try to start the replacement before the old pod released the claim.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          env:
+            - name: POSTGRES_DB
+              value: agent_platform
+            - name: POSTGRES_USER
+              value: agent
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "agent", "-d", "agent_platform"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-data
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: agent-platform
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432

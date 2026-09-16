@@ -50,7 +50,10 @@ yarn-error.log*
 # ---------------------------------------------------------------------------
 # Local runtime state / data (synthetic fixtures only; keep out of git)
 # ---------------------------------------------------------------------------
-data/
+# Root-anchored on purpose. A bare `data/` also matched
+# deploy/kind/manifests/data/ and silently kept the Postgres manifest out of the
+# repository — setup.sh applies it, so a fresh clone could not come up.
+/data/
 *.sqlite
 *.sqlite3
 *.db

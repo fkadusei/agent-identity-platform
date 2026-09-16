@@ -77,15 +77,32 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Verified by:** scale to 2, log in against either pod, and keep enrolled users
   across a `setup.sh` re-run.
 
-## S3 — Persistent, managed Postgres
+## S3 — Persistent, managed Postgres — **done**
 
 - **What:** a durable database with backups (a managed service in production),
   instead of the demo's `emptyDir`.
-- **Why:** approvals, run checkpoints and gateway counters are all in Postgres;
-  today they survive a pod restart but not the volume.
-- **Lands in:** `deploy/kind/manifests/data/postgres.yaml`, the chart's
-  `database.url`.
-- **Verified by:** write an approval, delete the Postgres pod, read it back.
+- **Why:** approvals, run checkpoints, gateway counters and the audit trail are all
+  in Postgres; they survived a pod restart but not the *volume*.
+- **Built:** `deploy/kind/manifests/data/postgres.yaml` now backs `/var/lib/postgresql/data`
+  with a `PersistentVolumeClaim` (2Gi, the cluster default `local-path`
+  StorageClass) instead of an `emptyDir`, and the Deployment uses strategy
+  `Recreate` — one ReadWriteOnce volume, so a rolling update must not try to start
+  the replacement before the old pod has released the claim. The rest is
+  unchanged: still one replica, still a node-local volume, so the pod cannot be
+  rescheduled to another node. Production remains a managed database with backups
+  (the chart's `database.url`); this slice is what makes the demo honest about
+  durability.
+- **Found while doing it:** the manifest had never actually been committed. A bare
+  `data/` line in `.gitignore` matched `deploy/kind/manifests/data/`, so the file
+  was untracked and absent from every clone — while `setup.sh` applies it, which
+  meant a fresh clone could not come up at all. The rule is root-anchored now
+  (`/data/`) and the manifest is tracked.
+- **Verified by:** ran a full run → approval → resume, then deleted the Postgres
+  pod. It came back on the *same* claim and the counts were unchanged —
+  `1 approvals, 11 checkpoints, 10 audit events` before and after — with the
+  approval (`ap-15030b86dc51`) still `approved (refunds.issue, acme)`.
+- **Note:** a `setup.sh` re-run no longer wipes this data; it now survives one. The
+  volume is still deleted with the cluster (`./stop.sh --delete`).
 
 ## S4 — Hardened Keycloak
 
@@ -263,17 +280,18 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   connection is caught at checkout and replaced rather than handed out to fail
   once) and gives it to `PostgresSaver`, which checks a connection out per
   operation. It also re-runs the idempotent `saver.setup()` on each request — the
-  same defence the approvals and audit stores apply per operation — because the
-  demo's `emptyDir` Postgres comes back with no schema after a pod restart. The
+  same defence the approvals and audit stores apply per operation — because a
+  database can come back without the schema under a running agent (the demo's
+  `emptyDir` Postgres did exactly that; S3 has since given it a volume). The
   pool's backends carry `application_name=agent-checkpointer`, so they are visible
   in `pg_stat_activity` and addressable by the test.
 - **Verified by:** two tests in `app/agent/tests/test_checkpointer_postgres.py`,
   both of which fail against the old single-connection code (with
   `AdminShutdown` and `UndefinedTable` respectively). On kind, with the agent's
   restart count unchanged at 0 throughout: (1) terminating its four pooled
-  connections, then a full run → approval → resume → issued; and (2) deleting the
-  Postgres pod — new `emptyDir`, `\dt` showing *no* relations — then the same full
-  run, which recreated all eight tables on demand.
+  connections, then a full run → approval → resume → issued; and (2) dropping the
+  checkpoint tables — a database that came back empty — then the same full run,
+  which recreated all eight tables on demand.
 - **Note:** `psycopg[pool]` is now declared in `requirements.txt`; it previously
   arrived only transitively.
 

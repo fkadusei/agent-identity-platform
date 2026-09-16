@@ -93,8 +93,8 @@ def get_checkpointer() -> Any:
 
     if _checkpointer is not None:
         # Idempotent, and the same defence the approvals and audit stores apply
-        # per operation: the demo's Postgres is on ephemeral storage, so a pod
-        # restart brings it back with no schema under a running agent. Without
+        # per operation: a database can come back without the schema under a
+        # running agent (a restored or replaced volume, or a wiped demo). Without
         # this the pool would reconnect cleanly and the run would then fail with
         # "relation checkpoints does not exist".
         _checkpointer.setup()
