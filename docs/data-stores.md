@@ -9,6 +9,7 @@ that a *decision* depends on is durable, state that is a *fixture* is not.
 | **Agent run checkpoints** | Postgres (durable) | a paused run must be resumable after a restart, by any replica |
 | **Simulated systems** (the systems the tools act on) | in-memory | synthetic fixtures; a reset is harmless (and documented) |
 | **Audit timeline** | Postgres (durable) | "who looked at personal data, and who approved it" cannot be answered from a buffer that one replica holds and a restart clears |
+| **SPIRE's registration registry** | Postgres (durable) | an attested agent, and every registration entry, must outlive the identity server's pod — losing them means no SVIDs for anything (S1) |
 
 ## Selecting the backend
 
@@ -24,6 +25,11 @@ use their in-memory stores, so tests and a single-process demo need no database:
 
 The choice lives in `app/common/db.py` (`database_configured()`) and each store's
 `build_store()` / `get_checkpointer()`, so the service code does not branch on it.
+
+**SPIRE is separate.** The server has its own datastore setting, and in the kind
+manifests it is pointed at this same Postgres (a dedicated `spire` role and
+database, S1). So in the local setup identity — not just the app — depends on the
+database being up.
 
 ## Approvals
 
@@ -96,8 +102,8 @@ this platform removes.
 ## Local (kind)
 
 `scripts/setup.sh` deploys Postgres (`deploy/kind/manifests/data/postgres.yaml`)
-with a generated password and wires `DATABASE_URL` into the api and agent. To
-watch durability:
+with a generated password, wires `DATABASE_URL` into the api and agent, and creates
+the `spire` role and database that SPIRE's registry uses. To watch durability:
 
 ```bash
 # create an approval, then restart the API and look again
@@ -111,8 +117,10 @@ kubectl -n agent-platform rollout status deploy/postgres
 curl -s localhost:8080/approvals          # still there
 ```
 
-To run **without** Postgres (in-memory), remove the `PG*` env from the
-api/agent manifests and re-apply.
+To run the app's stores **without** Postgres (in-memory), remove the `PG*` env
+from the api/agent manifests and re-apply. The kind SPIRE server still needs the
+database — its registry lives there (S1) — so this takes only the *app* stores back
+to memory.
 
 ## Production (Helm)
 

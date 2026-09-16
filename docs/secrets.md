@@ -12,6 +12,8 @@ deploy time.
 | Human demo logins (`alice`/`manager`/`admin`) | documented demo values | realm template + guides |
 | Keycloak **client secrets** (`demo-cli`, `manager-cli`, `mcp-tools`, `portal`) | **yes** | generated into a gitignored `.env` |
 | Keycloak **admin** service-account secret (`platform-admin`) | **yes** | gitignored `.env` → Secret, read only by the API |
+| The demo **database** password (`postgres`) | **yes** | gitignored `.env` → the `postgres` Secret, read by the API/agent/gateway |
+| SPIRE's **datastore** password (the `spire` role) | **yes** | gitignored `.env` → rendered into `server.conf` → the `spire-server-config` Secret |
 | LLM provider key | **yes** (optional) | gitignored `.env` → Kubernetes Secret, read **only** by the gateway |
 
 ## How it works locally (kind)
@@ -22,13 +24,17 @@ deploy time.
    DEMO_CLI_SECRET=<random>
    MANAGER_CLI_SECRET=<random>
    MCP_TOOLS_SECRET=<random>
-   PORTAL_SECRET=<random>          # the web app's login client
-   ADMIN_CLIENT_SECRET=<random>    # the API's least-privilege admin client
-   # LLM_API_KEY=...               # optional, for a hosted model
-   ```
+    PORTAL_SECRET=<random>          # the web app's login client
+    ADMIN_CLIENT_SECRET=<random>    # the API's least-privilege admin client
+    POSTGRES_PASSWORD=<random>      # the demo database
+    SPIRE_DB_PASSWORD=<random>      # SPIRE's own role in that database (S1)
+    # LLM_API_KEY=...               # optional, for a hosted model
+    ```
 2. The Keycloak realm is **rendered** from `realm.json.tmpl` (`${VAR}`
    placeholders) with those values, then applied as a ConfigMap. The template is
-   committed; the values are not.
+   committed; the values are not. SPIRE's `server.conf` is rendered the same way —
+   from `server.conf.tmpl` into a **Secret**, because the datastore connection
+   string carries its password.
 3. The API gets `DEMO_CLI_SECRET` / `MANAGER_CLI_SECRET` (scripted demo),
    `PORTAL_SECRET` (login), and `ADMIN_CLIENT_SECRET` (enrollment + role
    management) from the `platform-secrets` Secret, mounted as environment

@@ -55,16 +55,34 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 
 ---
 
-## S1 — HA: SPIRE server
+## S1 — HA: SPIRE server — **done**, except the shared KeyManager
 
 - **What:** run SPIRE with a shared datastore and a shared key manager, 2+ replicas.
-- **Why:** identity is the critical path — without it nothing gets an SVID. Today
-  it is a single StatefulSet on `sqlite` + the disk key manager, so a restart
-  forgets its agents and entries, and two replicas would sign with different CAs.
-- **Lands in:** `deploy/kind/manifests/spire/spire-server.yaml` (datastore → SQL,
-  KeyManager → a cloud KMS), `deploy/helm/agent-platform/`.
-- **Verified by:** kill the SPIRE server pod; a workload still fetches an SVID,
-  and `spire-server entry show` is unchanged after the restart.
+- **Why:** identity is the critical path — without it nothing gets an SVID. It was
+  a single StatefulSet on `sqlite` + the disk key manager, so a restart forgot its
+  agents and entries, and two replicas would sign with different CAs.
+- **Built:** the **shared datastore** half.
+  - The registration registry now lives in Postgres — a dedicated, least-privilege
+    `spire` role and database in the S3 database — through the `sql` datastore
+    plugin. `deploy/kind/manifests/spire/server.conf.tmpl` holds the configuration;
+    `setup.sh` renders it into the `spire-server-config` **Secret** (the connection
+    string carries the password) and the StatefulSet mounts that read-only.
+  - The disk KeyManager's keys moved from the demo's `emptyDir` to a
+    `PersistentVolumeClaim` (`spire-server-data`), so a restarted server signs with
+    the **same CA** instead of regenerating one.
+  - `setup.sh` applies Postgres *before* SPIRE now, because identity depends on the
+    database. It creates the role and database idempotently, and re-sets the
+    password so it always matches `.env` (`SPIRE_DB_PASSWORD`).
+- **Verified by:** deleting the SPIRE server pod. `spire-server entry show` was
+  unchanged (4 entries before and after); the trust bundle's SHA-256 fingerprint was
+  **identical**, so no workload needed restarting to pick up a fresh SVID; a
+  workload still fetched a new SVID; and every app pod's restart count stayed **0**.
+- **Still open:** the **shared KeyManager**, and with it the 2+ replicas. That needs
+  a cloud KMS (AWS/GCP/Azure) and kind has none, so the demo keeps the disk
+  KeyManager and one replica. A second replica would also use the `sql` datastore's
+  `read_only` / `ro_connection_string` for reads. Note the new critical path: SPIRE
+  now needs Postgres reachable, which is precisely why production points
+  `database.url` at a managed, HA database.
 
 ## S2 — HA: Keycloak
 
@@ -261,11 +279,11 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   to end on 1.12.4: `demo.sh`, all six attacks blocked, and the tenancy,
   role→tool, TLS and HA suites — plus the SVID gate, which exercises the rebuilt
   `jti` plugin.
-- **Still open:** the demo's SPIRE datastore is `emptyDir`, so recreating the
-  server *pod* still regenerates the CA and forgets the registration entries;
-  agents re-attest and the app tier then needs a restart. That is **S1**'s half
-  (shared datastore, no CA regeneration) — S11 removes the crash-loop that kept
-  triggering it.
+- **Was still open at the time:** the demo's SPIRE datastore was an `emptyDir`, so
+  recreating the server *pod* regenerated the CA and forgot the registration
+  entries, and the app tier then needed a restart. **S1** has since fixed that — the
+  registry is in Postgres and the keys are on a PVC — while S11 removed the
+  crash-loop that kept triggering it.
 
 ## S12 — The agent must survive a Postgres restart — **done**
 

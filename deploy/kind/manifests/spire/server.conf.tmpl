@@ -1,0 +1,113 @@
+# =============================================================================
+# SPIRE server configuration — rendered at deploy time.
+#
+# scripts/setup.sh renders this with scripts/render.py (dollar-brace placeholders
+# from the environment) and applies the result as the `spire-server-config`
+# Secret, because the datastore connection string carries the database password.
+# Nothing secret is committed; see docs/secrets.md. NB: python's string.Template
+# substitutes every dollar-brace sequence, so this file must not contain a literal
+# dollar anywhere — not even in a comment.
+#
+# Kept beside the manifest it belongs to, like keycloak/realm.json.tmpl.
+# =============================================================================
+server {
+  bind_address  = "0.0.0.0"
+  bind_port     = "8081"
+  socket_path   = "/run/spire/server/private/api.sock"
+  trust_domain  = "acme.com"
+  data_dir      = "/run/spire/data"
+  log_level     = "INFO"
+
+  # Demo-tuned lifetimes: short SVIDs make rotation visible during the demo.
+  default_x509_svid_ttl = "1h"
+  default_jwt_svid_ttl  = "5m"
+  ca_ttl                = "24h"
+
+  ca_subject = {
+    country      = ["US"]
+    organization = ["ACME-DEMO"]
+    common_name  = "acme.com"
+  }
+
+  # DEMO SIMPLIFICATION — READ ME.
+  # Keycloak's client-JWT validator is happiest when the client assertion's
+  # iss == sub == client_id. Our single demo workload authenticates with its
+  # JWT-SVID, whose sub IS its SPIFFE ID, so we set the issuer to the same
+  # value. In production you would instead use an authorization server that
+  # natively understands SPIFFE issuers (see draft-ietf-oauth-spiffe-client-auth).
+  jwt_issuer = "spiffe://acme.com/ns/agent-platform/sa/agent"
+}
+
+plugins {
+  # The registry of attested agents and registration entries lives in Postgres
+  # (S1), not in a file beside the server. That is what makes the identity root
+  # of trust survive the server pod: a replacement replica reads the same
+  # entries, instead of coming back with an empty registry as the demo's sqlite
+  # datastore did. It also removes sqlite's single-writer limit, which was a
+  # blocker for ever running two replicas.
+  #
+  # The remaining half of S1 — a *shared* KeyManager, so 2+ replicas can sign
+  # with the same CA — needs a cloud KMS (AWS/GCP/Azure). kind has none, so the
+  # demo keeps the disk KeyManager and stays single-replica; its keys live on a
+  # PersistentVolumeClaim so a restart does not regenerate the CA either.
+  DataStore "sql" {
+    plugin_data {
+      database_type     = "postgres"
+      connection_string = "dbname=spire user=spire password=${SPIRE_DB_PASSWORD} host=postgres port=5432 sslmode=disable"
+    }
+  }
+
+  # Node attestation: the SPIRE agent proves it runs on THIS kind cluster by
+  # presenting its projected service account token, which the server checks
+  # via the TokenReview API.
+  NodeAttestor "k8s_psat" {
+    plugin_data {
+      clusters = {
+        "agent-platform-cluster" = {
+          service_account_allow_list = ["agent-platform:spire-agent"]
+        }
+      }
+    }
+  }
+
+  KeyManager "disk" {
+    plugin_data {
+      keys_path = "/run/spire/data/keys.json"
+    }
+  }
+
+  # Keeps the trust bundle current in the spire-bundle ConfigMap above, which
+  # is how SPIRE agents bootstrap.
+  #
+  # This replaced the deprecated `Notifier "k8sbundle"` (S11). A Notifier is
+  # called on bundle events and its error was fatal: when the Kubernetes API
+  # server was briefly unreachable, SPIRE exited with
+  #   Fatal run error ... notifier(k8sbundle): ... TLS handshake timeout
+  # and crash-looped, which turned a transient resource spike into hours of
+  # outage. A BundlePublisher runs on a background tick, logs a failed publish
+  # and tries again — so a blip is survivable with no manual restart of any
+  # workload. Requires SPIRE >= 1.12.4 (see docker/spire-server.Dockerfile).
+  BundlePublisher "k8s_configmap" {
+    plugin_data {
+      clusters = {
+        "agent-platform-cluster" = {
+          configmap_name = "spire-bundle"
+          # The agent reads /run/spire/bundle/bundle.crt from this ConfigMap.
+          configmap_key = "bundle.crt"
+          namespace     = "agent-platform"
+          # PEM (X.509 authorities only) is what the agent's trust bundle is.
+          format = "pem"
+        }
+      }
+    }
+  }
+
+  # External CredentialComposer plugin (built by docker/spire-server.Dockerfile,
+  # source in spire-plugin/). It adds a unique `jti` claim to every workload
+  # JWT-SVID, which Keycloak's private_key_jwt client authentication requires
+  # (RFC 7523) but SPIRE does not mint by default. Nothing else is changed.
+  CredentialComposer "jti" {
+    plugin_cmd = "/opt/spire/plugins/jti-plugin"
+    plugin_data {}
+  }
+}

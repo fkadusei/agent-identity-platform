@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# setup.sh — kind cluster -> SPIRE -> Keycloak -> OPA -> API/tools/agent,
+# setup.sh — kind cluster -> Postgres -> SPIRE -> Keycloak -> OPA -> API/tools/agent,
 # with a verification gate after each identity-critical step.
 # Usage: ./scripts/setup.sh        (teardown: ./scripts/teardown.sh)
 # =============================================================================
@@ -28,7 +28,7 @@ ENV_FILE=.env
 
 gen_secret() { python3 -c "import secrets; print(secrets.token_hex(16))"; }
 
-REQUIRED_SECRETS="DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET POSTGRES_PASSWORD"
+REQUIRED_SECRETS="DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET POSTGRES_PASSWORD SPIRE_DB_PASSWORD"
 
 ensure_secrets() {
   if [ ! -f "$ENV_FILE" ]; then
@@ -44,6 +44,10 @@ PORTAL_SECRET=$(gen_secret)
 ADMIN_CLIENT_SECRET=$(gen_secret)
 # Postgres (durable approvals + agent run checkpoints).
 POSTGRES_PASSWORD=$(gen_secret)
+# SPIRE's registration registry (S1) — its own least-privilege role, in the same
+# Postgres, so the identity root of trust no longer lives in a file beside the
+# server.
+SPIRE_DB_PASSWORD=$(gen_secret)
 # For a hosted LLM provider, uncomment and set (used only by the gateway):
 # LLM_API_KEY=sk-...
 EOF
@@ -101,7 +105,7 @@ done
 kind load docker-image agent-platform/spire-server-jti:demo --name agent-platform >/dev/null
 kind load docker-image agent-platform/spire-agent-nocache:demo --name agent-platform >/dev/null
 
-say "3. namespace + SPIRE"
+say "3. namespace + mesh + secrets"
 kubectl apply -f "$MANIFESTS/namespace.yaml" >/dev/null
 
 # Service mesh: Linkerd gives mTLS on *every* in-cluster hop. The app layer does
@@ -127,6 +131,45 @@ else
   info "linkerd CLI not found — skipping the mesh (brew install linkerd); in-cluster traffic stays plaintext"
 fi
 
+# Secrets are generated into a gitignored .env on first run and loaded here, so
+# both the Postgres password and SPIRE's datastore password exist before either
+# is applied. Keycloak's realm is rendered from the same file, in step 6.
+ensure_secrets
+ok "$ENV_FILE present; required secrets loaded"
+
+# ---------------------------------------------------------------------------
+# Postgres comes before SPIRE because SPIRE's registration registry now lives in
+# it (S1). That inverts the demo's critical path — identity needs the database —
+# which is exactly why production points this at a managed, HA database.
+# ---------------------------------------------------------------------------
+say "4. postgres (durable state; SPIRE's registry lives here too)"
+kubectl -n $NS create secret generic postgres \
+  --from-literal=password="$POSTGRES_PASSWORD" \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl apply -f "$MANIFESTS/data/" >/dev/null
+kubectl -n $NS rollout status deploy/postgres --timeout=180s >/dev/null
+# A dedicated, least-privilege role and database for SPIRE, so it does not share
+# the application's. `CREATE DATABASE` cannot run inside a transaction block, so
+# it is guarded with a query rather than wrapped in a DO block. The role's
+# password is re-set every run so it always matches .env.
+PSQL="kubectl -n $NS exec deploy/postgres -- psql -U agent -d"
+$PSQL postgres -tAc "SELECT 1 FROM pg_roles WHERE rolname='spire'" 2>/dev/null | grep -q 1 \
+  || $PSQL postgres -c "CREATE ROLE spire LOGIN PASSWORD '$SPIRE_DB_PASSWORD'" >/dev/null
+$PSQL postgres -c "ALTER ROLE spire LOGIN PASSWORD '$SPIRE_DB_PASSWORD'" >/dev/null
+$PSQL postgres -tAc "SELECT 1 FROM pg_database WHERE datname='spire'" 2>/dev/null | grep -q 1 \
+  || $PSQL postgres -c "CREATE DATABASE spire OWNER spire" >/dev/null
+ok "postgres ready; database 'spire' ready for the SPIRE registry"
+
+say "5. SPIRE"
+# The server config carries the datastore password, so it is rendered from a
+# template into a Secret — never committed. Same pattern as the Keycloak realm.
+SPIRE_CONF=$(mktemp)
+python3 scripts/render.py "$MANIFESTS/spire/server.conf.tmpl" > "$SPIRE_CONF"
+kubectl -n $NS create secret generic spire-server-config \
+  --from-file=server.conf="$SPIRE_CONF" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+rm -f "$SPIRE_CONF"
+ok "server.conf rendered from server.conf.tmpl (the datastore password is a Secret)"
+
 # The trust-bundle ConfigMap changed owner (Notifier -> BundlePublisher, S11).
 # A leftover field manager still owns .data.bundle.crt, and Server-Side Apply
 # refuses to take over a field another manager owns — the publish then fails
@@ -135,10 +178,10 @@ fi
 # republishes within ~30s. A no-op on a fresh cluster.
 kubectl -n $NS delete configmap spire-bundle --ignore-not-found >/dev/null 2>&1 || true
 kubectl apply -f "$MANIFESTS/spire/" >/dev/null
-# Restart the server too, not just the agents. Its config comes from a ConfigMap
+# Restart the server too, not just the agents. Its config comes from a Secret
 # and its image from a reused `:demo` tag, so a re-run would otherwise keep
 # running the previous SPIRE with the previous config — the same trap
-# check-images.sh warns about, and why OPA is restarted in step 6. Expect ~30s
+# check-images.sh warns about, and why OPA is restarted in step 7. Expect ~30s
 # before the fresh server republishes the trust bundle (the bundle publisher's
 # tick); the agents retry until it lands.
 kubectl -n $NS rollout restart statefulset/spire-server >/dev/null
@@ -189,8 +232,7 @@ ensure_entry() { # ensure_entry <service-account> <spiffe-id>
 ensure_entry agent "$SPIFFE_ID"
 ensure_entry gateway "spiffe://acme.com/ns/agent-platform/sa/gateway"
 
-say "4. secrets + Keycloak"
-ensure_secrets
+say "6. Keycloak"
 RENDERED=$(mktemp)
 python3 scripts/render.py "$MANIFESTS/keycloak/realm.json.tmpl" > "$RENDERED"
 kubectl -n $NS create configmap keycloak-realm \
@@ -214,15 +256,7 @@ kubectl apply -f "$MANIFESTS/keycloak/keycloak.yaml" >/dev/null
 kubectl -n $NS rollout status deploy/keycloak --timeout=300s >/dev/null
 ok "keycloak ready (realm agent-platform imported)"
 
-say "5. postgres (durable approvals + run state)"
-kubectl -n $NS create secret generic postgres \
-  --from-literal=password="$POSTGRES_PASSWORD" \
-  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-kubectl apply -f "$MANIFESTS/data/" >/dev/null
-kubectl -n $NS rollout status deploy/postgres --timeout=180s >/dev/null
-ok "postgres ready (services pick it up via DATABASE_URL)"
-
-say "6. OPA"
+say "7. OPA"
 # Build the versioned bundle (revision stamped into every decision) and mount it.
 POLICY_REVISION=$(./scripts/build-bundle.sh)
 kubectl -n $NS create configmap opa-bundle \
@@ -237,7 +271,7 @@ kubectl -n $NS rollout restart deploy/opa >/dev/null
 kubectl -n $NS rollout status deploy/opa --timeout=120s >/dev/null
 ok "opa serving policy bundle revision $POLICY_REVISION"
 
-say "7. observability"
+say "8. observability"
 kubectl apply -f "$MANIFESTS/observability/" >/dev/null
 kubectl -n $NS rollout status deploy/otel-collector --timeout=180s >/dev/null
 kubectl -n $NS rollout status deploy/jaeger --timeout=180s >/dev/null
@@ -245,7 +279,7 @@ kubectl -n $NS rollout status deploy/prometheus --timeout=180s >/dev/null
 kubectl -n $NS rollout status deploy/grafana --timeout=180s >/dev/null
 ok "otel-collector, jaeger, prometheus + grafana ready (traces, metrics, dashboard)"
 
-say "8. platform services"
+say "9. platform services"
 # The optional provider key: only the gateway consumes it.
 if [ -n "${LLM_API_KEY:-}" ]; then
   kubectl -n $NS create secret generic llm-api-key \
@@ -259,7 +293,7 @@ kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gatewa
   --timeout=240s >/dev/null
 ok "api, tools, agent, gateway, sandbox ready"
 
-say "9. autoscaling"
+say "10. autoscaling"
 # metrics-server serves the metrics API over TLS. Give it a serving cert the API
 # server can verify (rather than skipping verification), signed by a small CA we
 # generate here.
@@ -282,7 +316,7 @@ kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s >/dev
 kubectl apply -f "$MANIFESTS/autoscaling/hpa.yaml" >/dev/null
 ok "metrics-server + HPAs ready (api/tools/agent/gateway/opa scale on CPU)"
 
-say "10. GATE: the agent pod can fetch its SVID (no secrets involved)"
+say "11. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""
 for _ in $(seq 1 12); do
   OUT=$(kubectl -n $NS exec deploy/agent -- python -c "

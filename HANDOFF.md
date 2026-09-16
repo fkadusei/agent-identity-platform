@@ -129,6 +129,9 @@ End-to-end, on the cluster:
 - **Honest failure reporting** — an unreachable model, an unparseable reply and a
   bad choice are now distinct messages (S13), and the gateway no longer serves an
   expired SVID (S15).
+- **Durable identity and data** — SPIRE's registry lives in Postgres with its keys
+  on a PVC (S1), and the demo database is on a PVC (S3), so restarting either pod
+  no longer resets the platform ([`docs/data-stores.md`](docs/data-stores.md)).
 
 ## Immediate next task
 
@@ -136,10 +139,10 @@ Phases 1–3 are complete and every threat is addressed. Next, pick from the ope
 backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S15) — each slice has a stable
 ID with what it is, why, where it lands and how we would verify it:
 
-- **S1–S2** HA for the stateful components that still need it — SPIRE (a shared
-  datastore and key manager) and Keycloak (production mode, external DB). The app
-  tier is already replicated (`docs/ha.md`) and Postgres now has a persistent
-  volume (S3);
+- **S2** HA for Keycloak (production mode, an external DB, 2+ replicas behind the
+  Service). SPIRE and Postgres are as durable as a single-node demo can be (S1,
+  S3), and the app tier is already replicated (`docs/ha.md`), so Keycloak is the
+  last single-replica component that needs it;
 - **S4** hardened Keycloak (production mode, TLS, no `start-dev`);
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
 - **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser;
@@ -147,12 +150,13 @@ ID with what it is, why, where it lands and how we would verify it:
   listed; part 1 (`/audit` scoping) landed in PR #69;
 - **S9** durable sandbox/simulator state.
 
-Done, kept for the record: **S3** (a persistent Postgres volume), **S5**
-(guardrails + evals, `docs/guardrails-and-evals.md`), **S10** (the privacy view,
-`docs/privacy.md`), **S11** (SPIRE survives an API-server blip), **S12** (the agent
-survives a Postgres restart), **S13** (stop blaming the model for infrastructure
-faults), **S14** (the scripts pin their cluster context) and **S15** (the gateway
-must not serve an expired SVID).
+Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
+KeyManager half still needs a cloud KMS), **S3** (a persistent Postgres volume),
+**S5** (guardrails + evals, `docs/guardrails-and-evals.md`), **S10** (the privacy
+view, `docs/privacy.md`), **S11** (SPIRE survives an API-server blip), **S12** (the
+agent survives a Postgres restart), **S13** (stop blaming the model for
+infrastructure faults), **S14** (the scripts pin their cluster context) and **S15**
+(the gateway must not serve an expired SVID).
 
 ## The repository is public
 
@@ -209,10 +213,15 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   the source of truth.
 - **OPA bundle:** the files are mounted with `subPath`, which does not update in
   place — `setup.sh` restarts OPA after a new revision.
-- **SPIRE datastore** is an `emptyDir`: a SPIRE-server restart forgets its agents
-  and entries; a `setup.sh` re-run restarts the server and restores them.
-  Registration entries are created **per attested agent**, or workloads on other
-  nodes get no identity.
+- **SPIRE's state is durable now** (S1): the registration registry lives in
+  Postgres (a dedicated `spire` database and role) and the disk KeyManager's keys
+  are on a PVC, so killing the server pod keeps the **same CA and the same
+  entries** — no workload restart. Registration entries are still created **per
+  attested agent**, or workloads on other nodes get no identity. Two replicas
+  remain impossible without a shared KeyManager (a cloud KMS).
+- **Postgres is on SPIRE's critical path** now: identity needs the database, so a
+  Postgres outage stops new SVIDs. That is why production points `database.url` at
+  a managed, HA database.
 - **The trust bundle is *published*, not notified** (S11). SPIRE 1.12.4 writes
   the `spire-bundle` ConfigMap on a 30-second tick; a failure is logged and
   retried, never fatal. A cluster upgraded from the old Notifier still has its
