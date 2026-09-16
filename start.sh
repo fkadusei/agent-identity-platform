@@ -9,6 +9,8 @@
 # the background (./stop.sh stops it).
 # =============================================================================
 set -euo pipefail
+# shellcheck source=scripts/lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/lib.sh"
 cd "$(dirname "$0")"
 
 NS=agent-platform
@@ -21,15 +23,14 @@ if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
   ./scripts/setup.sh
 else
   # The cluster exists but may be stopped (e.g. after a Docker restart).
-  if ! kubectl --context "kind-$CLUSTER" get nodes >/dev/null 2>&1; then
+  if ! kubectl get nodes >/dev/null 2>&1; then
     echo "Starting the existing cluster…"
     docker start "$CLUSTER-control-plane" "$CLUSTER-worker" "$CLUSTER-worker2" >/dev/null 2>&1 || true
     for _ in $(seq 1 90); do
-      kubectl --context "kind-$CLUSTER" get nodes >/dev/null 2>&1 && break
+      kubectl get nodes >/dev/null 2>&1 && break
       sleep 2
     done
   fi
-  kubectl config use-context "kind-$CLUSTER" >/dev/null
 
   echo "Waiting for the services to be ready…"
   kubectl -n "$NS" wait --for=condition=available deploy --all --timeout=300s >/dev/null 2>&1 || true

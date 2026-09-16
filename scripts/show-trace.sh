@@ -5,6 +5,8 @@
 # and what did policy decide?" — the same question the audit log answers, but
 # visually and across services (agent → tools → policy).
 set -euo pipefail
+# shellcheck source=lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 NS=agent-platform
 

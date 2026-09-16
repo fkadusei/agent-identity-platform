@@ -3,6 +3,8 @@
 # status.sh — is it running, and what URL do I open?
 # =============================================================================
 set -uo pipefail
+# shellcheck source=scripts/lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/lib.sh"
 cd "$(dirname "$0")"
 
 NS=agent-platform
@@ -15,8 +17,6 @@ if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
   exit 1
 fi
 echo "cluster: up"
-
-kubectl config use-context "kind-$CLUSTER" >/dev/null 2>&1 || true
 
 # "2/2" and "Running" for every pod.
 read -r ready total <<<"$(kubectl -n "$NS" get pods --no-headers 2>/dev/null \

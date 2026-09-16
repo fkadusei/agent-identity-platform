@@ -5,6 +5,8 @@
 # Usage: ./scripts/setup.sh        (teardown: ./scripts/teardown.sh)
 # =============================================================================
 set -euo pipefail
+# shellcheck source=lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 cd "$(dirname "$0")/.."
 
 say()  { printf "\n\033[1;34m== %s\033[0m\n" "$*"; }
@@ -75,8 +77,10 @@ ok "kind, kubectl, docker present"
 say "1. kind cluster"
 kind get clusters 2>/dev/null | grep -qx agent-platform || \
   kind create cluster --config deploy/kind/cluster.yaml
-kubectl cluster-info --context kind-agent-platform >/dev/null
-ok "cluster agent-platform"
+# Pin, then say which cluster we are on. Set KUBE_CONTEXT to target another one.
+kubectl cluster-info >/dev/null 2>&1 \
+  || die "cannot reach context $KUBE_CONTEXT — is that cluster running?"
+ok "cluster $KUBE_CONTEXT"
 
 say "2. build + load images"
 # SPIRE server + agent are custom builds (jti plugin; no JWT-SVID cache) —

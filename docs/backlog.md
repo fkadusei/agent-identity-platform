@@ -258,7 +258,7 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   `app/agent/tests/test_decide_tool.py`, with two companions pinning the
   `unparseable` path and the `cause` on the audit event.
 
-## S14 — setup.sh must not run against the wrong cluster
+## S14 — setup.sh must not run against the wrong cluster — **done**
 
 - **What:** `setup.sh` verifies the kind cluster on line 78
   (`kubectl cluster-info --context kind-agent-platform`) and then runs every
@@ -272,13 +272,22 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   failing command is not even visible); and it *partially* succeeds, leaving
   resources on a cluster it was never meant to touch. Found on 2026-09-16 while
   recovering from the SPIRE outage.
-- **Lands in:** `scripts/setup.sh` — pin `--context kind-agent-platform` on every
-  call, or `kubectl config use-context kind-agent-platform` right after the check.
-  The same assumption lives in the other scripts (`stop.sh`, `teardown.sh`, the
-  verification suites), so check them while you are there.
-- **Verified by:** with the active context deliberately set to something else, a
-  full run either works (because it pins) or fails immediately, naming the cluster
-  it wanted.
+- **Built:** `scripts/lib.sh` pins the cluster for every script that touches it:
+  it sets `KUBE_CONTEXT` (default `kind-agent-platform`, overridable) and defines a
+  `kubectl` wrapper that always passes `--context`, so a call site *cannot* forget.
+  The eleven scripts that use kubectl source it — `setup.sh` first among them — and
+  `tls-check.sh` passes `linkerd --context`, because Linkerd reads the active
+  context itself and cannot be wrapped. `start.sh` and `status.sh` no longer call
+  `kubectl config use-context`, so nothing mutates your active context any more.
+  `setup.sh`'s cluster check now names the context it wanted instead of surfacing a
+  bare kubectl error. `stop.sh` and `teardown.sh` were already safe — they name the
+  cluster and the docker containers explicitly and never read the active context.
+- **Verified by:** with the active context deliberately set to `docker-desktop`,
+  the unpinned `kubectl -n agent-platform get pods -l app=api` silently returned
+  *"No resources found"* — the failure mode itself — while `./status.sh` reported
+  `20/20` from the right cluster and `./scripts/role-tools.sh` ran end to end.
+  `KUBE_CONTEXT=kind-does-not-exist ./scripts/setup.sh` exits 1 at step 1 with
+  *"cannot reach context kind-does-not-exist"*, before building anything.
 
 ## S15 — The gateway must not serve an expired SVID — **done**
 

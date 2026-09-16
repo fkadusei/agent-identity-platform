@@ -4,6 +4,8 @@
 # BLOCKED. Usage: ./scripts/attack-tests.sh
 # =============================================================================
 set -uo pipefail   # no -e: we EXPECT failures
+# shellcheck source=lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 cd "$(dirname "$0")/.."
 NS=agent-platform
 SPIFFE_ID="spiffe://acme.com/ns/agent-platform/sa/agent"

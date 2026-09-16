@@ -145,13 +145,13 @@ ID with what it is, why, where it lands and how we would verify it:
   listed; part 1 (`/audit` scoping) landed in PR #69;
 - **S9** durable sandbox/simulator state;
 - **S11** make SPIRE survive an API-server blip;
-- **S12** a checked Postgres connection pool for the agent's checkpointer;
-- **S14** pin the cluster context in `setup.sh` and the other scripts.
+- **S12** a checked Postgres connection pool for the agent's checkpointer.
 
 Done, kept for the record: **S5** (guardrails + evals,
 `docs/guardrails-and-evals.md`), **S10** (the privacy view, `docs/privacy.md`),
-**S13** (stop blaming the model for infrastructure faults) and **S15** (the
-gateway must not serve an expired SVID).
+**S13** (stop blaming the model for infrastructure faults), **S14** (the scripts
+pin their cluster context) and **S15** (the gateway must not serve an expired
+SVID).
 
 ## The repository is public
 
@@ -212,6 +212,10 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   and entries; a `setup.sh` re-run restores them. Registration entries are created
   **per attested agent**, or workloads on other nodes get no identity.
 - **Role changes lag** by up to one token lifetime (5 minutes).
+- **Every script pins its cluster.** `scripts/lib.sh` wraps `kubectl` with
+  `--context kind-agent-platform` (override with `KUBE_CONTEXT`), and no script
+  changes your active context any more. For bare `kubectl` against the demo
+  cluster, set the context yourself.
 - **Two replicas, two different pods.** `kubectl exec deploy/agent` and
   `kubectl logs deploy/agent` can land on different replicas, so an eval run and
   its logs appear to disagree. Name the pod
