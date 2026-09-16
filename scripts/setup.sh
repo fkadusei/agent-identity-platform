@@ -127,10 +127,24 @@ else
   info "linkerd CLI not found — skipping the mesh (brew install linkerd); in-cluster traffic stays plaintext"
 fi
 
+# The trust-bundle ConfigMap changed owner (Notifier -> BundlePublisher, S11).
+# A leftover field manager still owns .data.bundle.crt, and Server-Side Apply
+# refuses to take over a field another manager owns — the publish then fails
+# every tick with "Apply failed with 1 conflict" and the agents stay on a stale
+# CA. Recreate the (empty) placeholder so the publisher owns it outright; it
+# republishes within ~30s. A no-op on a fresh cluster.
+kubectl -n $NS delete configmap spire-bundle --ignore-not-found >/dev/null 2>&1 || true
 kubectl apply -f "$MANIFESTS/spire/" >/dev/null
+# Restart the server too, not just the agents. Its config comes from a ConfigMap
+# and its image from a reused `:demo` tag, so a re-run would otherwise keep
+# running the previous SPIRE with the previous config — the same trap
+# check-images.sh warns about, and why OPA is restarted in step 6. Expect ~30s
+# before the fresh server republishes the trust bundle (the bundle publisher's
+# tick); the agents retry until it lands.
+kubectl -n $NS rollout restart statefulset/spire-server >/dev/null
 kubectl -n $NS rollout status statefulset/spire-server --timeout=240s >/dev/null
 kubectl -n $NS rollout restart daemonset/spire-agent >/dev/null
-kubectl -n $NS rollout status daemonset/spire-agent --timeout=180s >/dev/null
+kubectl -n $NS rollout status daemonset/spire-agent --timeout=300s >/dev/null
 ok "spire-server + spire-agent ready"
 
 SOCKET=/run/spire/server/private/api.sock

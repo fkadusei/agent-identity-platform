@@ -8,7 +8,7 @@
 # go.mod/go.sum are committed, so the build is deterministic (no `go mod tidy`).
 # Build context = repo root:
 #   docker build -f docker/spire-server.Dockerfile -t agent-nhi/spire-server-jti:demo .
-ARG SPIRE_VERSION=1.11.2
+ARG SPIRE_VERSION=1.12.4
 
 FROM golang:1.25 AS build
 ARG TARGETARCH

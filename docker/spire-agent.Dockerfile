@@ -12,9 +12,9 @@
 #
 # Build context = repo root:
 #   docker build -f docker/spire-agent.Dockerfile -t agent-nhi/spire-agent-nocache:demo .
-ARG SPIRE_VERSION=1.11.2
+ARG SPIRE_VERSION=1.12.4
 
-FROM golang:1.23 AS build
+FROM golang:1.25 AS build
 ARG TARGETARCH
 ARG SPIRE_VERSION
 RUN git clone --depth 1 --branch v${SPIRE_VERSION} https://github.com/spiffe/spire.git /src

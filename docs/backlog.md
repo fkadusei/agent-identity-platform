@@ -207,7 +207,7 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 
 ---
 
-## S11 — SPIRE should survive an API-server blip
+## S11 — SPIRE should survive an API-server blip — **done**
 
 - **What:** the SPIRE server exits when it cannot reach the Kubernetes API server
   to update its bundle ConfigMap — `Fatal run error ... notifier(k8sbundle):
@@ -217,10 +217,38 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Why:** this turned a transient resource spike into hours of outage whose only
   symptoms were expired certificates and a message blaming the model. It is the
   same ground as **S1**.
-- **Lands in:** `deploy/kind/manifests/spire/`, plus the operator guide; S1 covers
-  the HA half (shared datastore, no CA regeneration).
-- **Verified by:** making the API server briefly unreachable and watching SPIRE
-  recover on its own, with no manual restart of the workloads.
+- **Built:** SPIRE 1.11.2 → **1.12.4** (both `docker/spire-*.Dockerfile`, and the
+  OIDC discovery provider image), because the fix is the `k8s_configmap`
+  **BundlePublisher** that replaced the deprecated `k8sbundle` **Notifier**. The
+  notifier was called on bundle events and its error was fatal; the publisher runs
+  on a 30-second tick, and a failed publish is only logged
+  (`Failed to publish bundle`) and retried. `spire-server.yaml` now configures
+  `BundlePublisher "k8s_configmap"` — ConfigMap `spire-bundle`, key `bundle.crt`
+  (what the agent reads), format `pem` — and the `jti` plugin's
+  `spire-plugin-sdk` pin moves with the server version. `setup.sh` also restarts
+  the SPIRE **server**, not just the agents: its config comes from a ConfigMap and
+  its image from a reused `:demo` tag, so a re-run previously kept the old SPIRE
+  (and the old config) running — the same trap `check-images.sh` warns about.
+- **Migration gotcha:** the publisher uses Server-Side Apply, which refuses to
+  take over a field another manager owns. A cluster upgrading from the notifier
+  has `.data.bundle.crt` owned by a manager named `spire-server`, so publishing
+  fails every tick with `Apply failed with 1 conflict`. `setup.sh` recreates the
+  (empty) `spire-bundle` ConfigMap before applying the manifests, clearing the
+  stale owner; a no-op on a fresh cluster.
+- **Verified by:** revoking the publisher's RBAC so its API call genuinely fails,
+  then restarting the server. It logged **4 consecutive** `Failed to publish
+  bundle` errors over ~2 minutes and stayed `Running`/`Ready`, restart count **0**,
+  with `spire-server healthcheck` healthy — where the notifier took the server
+  down. Restoring the permission republished within one tick, and the ConfigMap
+  then matched the server CA's SHA-256 fingerprint exactly. The platform runs end
+  to end on 1.12.4: `demo.sh`, all six attacks blocked, and the tenancy,
+  role→tool, TLS and HA suites — plus the SVID gate, which exercises the rebuilt
+  `jti` plugin.
+- **Still open:** the demo's SPIRE datastore is `emptyDir`, so recreating the
+  server *pod* still regenerates the CA and forgets the registration entries;
+  agents re-attest and the app tier then needs a restart. That is **S1**'s half
+  (shared datastore, no CA regeneration) — S11 removes the crash-loop that kept
+  triggering it.
 
 ## S12 — The agent must survive a Postgres restart — **done**
 
