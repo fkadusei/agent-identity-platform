@@ -122,10 +122,12 @@ End-to-end, on the cluster:
 - **HA for the app tier** — api/tools/agent/gateway/opa at 2 replicas with
   anti-affinity and PodDisruptionBudgets (`docs/ha.md`).
 - **Autoscaling** — those services scale 2→5 on CPU (`docs/autoscaling.md`).
-- **Role → tool matrix** — an explicit table in the policy; the agent offers only
-  the permitted tools and refuses deterministically otherwise; the tool server
-  enforces (`docs/roles-and-tools.md`).
-- **A Roles & tools page** in the UI, driven by the policy.
+- **Role → tool matrix, per tenant** (S8) — a default table in the policy plus
+  per-tenant overrides that replace it per role; the agent offers only the
+  permitted tools (asked for the caller's tenant) and refuses deterministically
+  otherwise; the tool server enforces (`docs/roles-and-tools.md`).
+- **A Roles & tools page** in the UI, driven by the policy, showing the caller's
+  own tenant's matrix.
 - **Honest failure reporting** — an unreachable model, an unparseable reply and a
   bad choice are now distinct messages (S13), and the gateway no longer serves an
   expired SVID (S15).
@@ -143,19 +145,17 @@ ID with what it is, why, where it lands and how we would verify it:
 - **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser —
   the last piece of the TLS story now that Keycloak runs in production mode behind
   the mesh (S4);
-- **S8** per-tenant role → tool maps — decisions settled and the atomic sequence
-  listed; part 1 (`/audit` scoping) landed in PR #69;
 - **S9** durable sandbox/simulator state.
 
 Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
 KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
 Postgres), **S3** (a persistent Postgres volume), **S4** (Keycloak hardened —
 no `start-dev`, no Trivy exception), **S5** (guardrails + evals,
-`docs/guardrails-and-evals.md`), **S10** (the privacy view, `docs/privacy.md`),
-**S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
-Postgres restart), **S13** (stop blaming the model for infrastructure faults),
-**S14** (the scripts pin their cluster context) and **S15** (the gateway must not
-serve an expired SVID).
+`docs/guardrails-and-evals.md`), **S8** (per-tenant role → tool maps),
+**S10** (the privacy view, `docs/privacy.md`), **S11** (SPIRE survives an
+API-server blip), **S12** (the agent survives a Postgres restart), **S13** (stop
+blaming the model for infrastructure faults), **S14** (the scripts pin their
+cluster context) and **S15** (the gateway must not serve an expired SVID).
 
 ## The repository is public
 

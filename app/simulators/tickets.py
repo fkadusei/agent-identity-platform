@@ -8,6 +8,7 @@ from __future__ import annotations
 import itertools
 
 from . import data
+from .errors import NotFound
 
 _drafts: dict[str, dict] = {}
 _seq = itertools.count(1)
@@ -27,7 +28,7 @@ def list_tickets(tenant: str, customer_id: str | None = None) -> list[dict]:
 def draft_reply(ticket_id: str, body: str, tenant: str) -> dict:
     """Record a draft reply (does not send)."""
     if data.scoped(data.TICKETS.get(ticket_id), tenant) is None:
-        raise ValueError(f"unknown ticket {ticket_id!r}")
+        raise NotFound(f"unknown ticket {ticket_id!r}")
     draft = {
         "id": f"d-{next(_seq):04d}",
         "ticket_id": ticket_id,

@@ -961,7 +961,9 @@ function Roles({ session }: { session: Session }) {
       <h2>Roles &amp; tools</h2>
       <p className="hint">
         Which role may call which tool — the policy itself, the same table the tool
-        server enforces. Your roles are highlighted.
+        server enforces. This is <b>tenant {data.you?.tenant ?? "—"}</b>: a tenant
+        can replace a role's tools, so the same role name may differ for another
+        customer. Your roles are highlighted.
       </p>
       <div className="matrixwrap">
         <table className="matrix">

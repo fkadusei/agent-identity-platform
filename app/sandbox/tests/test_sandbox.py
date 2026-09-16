@@ -62,3 +62,33 @@ def test_ticket_draft():
     resp = client.post("/tickets/t-5001/drafts", json={"body": "hello"}, headers=ACME)
     assert resp.status_code == 200
     assert client.get("/tickets/t-9001", headers=ACME).status_code == 404
+
+
+# --- a write to a record that is not there -----------------------------------
+#
+# These used to be 500s: the simulator raises for an unknown record, and the write
+# endpoints did not translate it, so a caller asking for another tenant's ticket
+# got an "Internal Server Error" — neither true nor the 404 the reads report.
+
+
+def test_drafting_on_another_tenants_ticket_is_404():
+    resp = client.post("/tickets/t-9001/drafts", json={"body": "hi"}, headers=ACME)
+    assert resp.status_code == 404
+    assert "unknown ticket" in resp.json()["detail"]
+
+
+def test_drafting_on_a_ticket_that_does_not_exist_is_404():
+    resp = client.post("/tickets/t-nope/drafts", json={"body": "hi"}, headers=ACME)
+    assert resp.status_code == 404
+
+
+def test_refunding_another_tenants_order_is_404():
+    resp = client.post("/orders/o-9001/refunds", json={"amount": 10}, headers=ACME)
+    assert resp.status_code == 404
+    assert "unknown order" in resp.json()["detail"]
+
+
+def test_a_non_positive_refund_is_bad_input_not_a_server_error():
+    resp = client.post("/orders/o-1001/refunds", json={"amount": 0}, headers=ACME)
+    assert resp.status_code == 400
+    assert "positive" in resp.json()["detail"]

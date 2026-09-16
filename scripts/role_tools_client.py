@@ -19,10 +19,12 @@ AGENT_ID = "spiffe://acme.com/ns/agent-platform/sa/agent"
 S = Settings.from_env()
 
 USERS = [
-    ("alice", "alice123", "support_rep"),
-    ("bella", "bella123", "billing"),
-    ("dana", "dana1234", "read_only"),
-    ("manager", "manager123", "manager"),
+    ("alice", "alice123", "acme", "support_rep"),
+    # The S8 demonstration: the same role name, a different tenant, less power.
+    ("grace", "grace123", "globex", "support_rep"),
+    ("bella", "bella123", "acme", "billing"),
+    ("dana", "dana1234", "acme", "read_only"),
+    ("manager", "manager123", "acme", "manager"),
 ]
 CALLS = [
     ("crm.customer.read", {"customer_id": "c-100"}),
@@ -68,6 +70,12 @@ def outcome(user_token: str, name: str, args: dict) -> str:
     body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
     status = body.get("status")
     if resp.status_code == 200 and not status:
+        # A 200 can still carry a refusal in the *result*: the tool ran, and what
+        # it found was nothing — usually because the record belongs to another
+        # tenant. Reporting that as "allowed" would hide tenant isolation.
+        result = body.get("result")
+        if isinstance(result, dict) and result.get("error"):
+            return str(result["error"])[:22]
         return "allowed"
     if status == "approval_required":
         return "needs approval"
@@ -76,12 +84,14 @@ def outcome(user_token: str, name: str, args: dict) -> str:
     return str(body.get("reason") or body.get("detail") or resp.status_code)[:22]
 
 
-header = "  " + f"{'user':<9}{'role':<15}" + "".join(f"{n.split('.')[-1]:<17}" for n, _ in CALLS)
+header = "  " + f"{'user':<9}{'tenant':<9}{'role':<15}" + "".join(f"{n.split('.')[-1]:<17}" for n, _ in CALLS)
 print(header)
 print("  " + "-" * (len(header) - 2))
-for user, password, role in USERS:
+for user, password, tenant, role in USERS:
     token = exchange(login(user, password))
     cells = [outcome(token, name, args) for name, args in CALLS]
-    print("  " + f"{user:<9}{role:<15}" + "".join(f"{c:<17}" for c in cells))
+    print("  " + f"{user:<9}{tenant:<9}{role:<15}" + "".join(f"{c:<17}" for c in cells))
 
-print("\nThe tool server decides; the role -> tool matrix is policy/authz.rego.")
+print("\nThe tool server decides, from policy/authz.rego. The matrix is per tenant:")
+print("alice and grace hold the SAME role in different tenants, and only alice may")
+print("issue a refund — the tenant's entry for `support_rep` replaces the default.")

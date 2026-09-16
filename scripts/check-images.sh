@@ -25,19 +25,24 @@ fi
 
 fail=0
 for svc in "${SERVICES[@]}"; do
-  # A pod that is terminating is still in the list but is on its way out — it is
-  # expected to hold the old image right after a rollout, so it is not a failure.
+  # An explicit `|` delimiter, not spaces: an absent field (no deletionTimestamp,
+  # no container status yet) prints as nothing, and space-separation would then
+  # shift the remaining columns into the wrong variables.
   pods="$(kubectl -n "$NS" get pods -l "app=$svc" \
-    -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.deletionTimestamp}{"\n"}{end}' 2>/dev/null || true)"
+    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.deletionTimestamp}{"|"}{.status.containerStatuses[0].ready}{"\n"}{end}' 2>/dev/null || true)"
   if [ -z "$pods" ]; then
     printf '  %-8s %s\n' "$svc" "no pods"
     fail=1
     continue
   fi
-  while read -r name deleting; do
+  while IFS='|' read -r name deleting ready; do
     [ -n "$name" ] || continue
     if [ -n "$deleting" ]; then
       printf '  %-8s %-32s %s\n' "$svc" "$name" "(terminating)"
+      continue
+    fi
+    if [ "$ready" != "true" ]; then
+      printf '  %-8s %-32s %s\n' "$svc" "$name" "(not ready yet)"
       continue
     fi
     got="$(kubectl -n "$NS" exec "pod/$name" -c "$svc" -- printenv GIT_SHA 2>/dev/null || echo "(not stamped)")"

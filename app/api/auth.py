@@ -84,11 +84,12 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
         raise HTTPException(status_code=502, detail=f"login produced an unusable token: {exc}")
 
     roles = platform_roles(delegation.roles)
-    # The tools this caller's roles permit — read from the policy, so the UI has
-    # no second copy of the role -> tool matrix.
+    # The tools this caller's roles permit, in their tenant — read from the
+    # policy, so the UI has no second copy of the role -> tool matrix and cannot
+    # show a tool the tenant's matrix does not grant (S8).
     from app.common.policy import tools_for_roles
 
-    allowed = sorted(tools_for_roles(Settings.from_env().opa_url, delegation.roles))
+    allowed = sorted(tools_for_roles(Settings.from_env().opa_url, delegation.roles, delegation.tenant))
     metrics.LOGINS.labels("ok").inc()
     audit("auth.login", user=username, roles=roles)
     return {

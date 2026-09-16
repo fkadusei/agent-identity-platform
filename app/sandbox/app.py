@@ -13,6 +13,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Header, HTTPException
 
 from app.simulators import crm, orders, payments, tickets
+from app.simulators.errors import NotFound
 
 app = FastAPI(title="sandbox")
 
@@ -21,6 +22,23 @@ def _tenant(x_tenant: str | None) -> str:
     if not x_tenant:
         raise HTTPException(status_code=400, detail="X-Tenant header is required")
     return x_tenant
+
+
+def _simulate(call):
+    """Run a simulator write, mapping its refusals onto HTTP status codes.
+
+    The simulators signal a record that is not there *for this tenant* with
+    `NotFound`, and any other refusal with `ValueError`. Left unhandled, the
+    former became a 500 — which is neither true (nothing is broken) nor what the
+    read endpoints report. A missing record is a 404 here too, exactly as if it
+    did not exist; anything else it rejects is bad input.
+    """
+    try:
+        return call()
+    except NotFound as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/healthz")
@@ -59,7 +77,7 @@ def get_ticket(ticket_id: str, x_tenant: str | None = Header(default=None)) -> d
 
 @app.post("/tickets/{ticket_id}/drafts")
 def draft_reply(ticket_id: str, body: dict, x_tenant: str | None = Header(default=None)) -> dict:
-    return tickets.draft_reply(ticket_id, body.get("body", ""), _tenant(x_tenant))
+    return _simulate(lambda: tickets.draft_reply(ticket_id, body.get("body", ""), _tenant(x_tenant)))
 
 
 @app.get("/orders/{order_id}/refund-quote")
@@ -72,4 +90,4 @@ def quote_refund(order_id: str, x_tenant: str | None = Header(default=None)) -> 
 
 @app.post("/orders/{order_id}/refunds")
 def issue_refund(order_id: str, body: dict, x_tenant: str | None = Header(default=None)) -> dict:
-    return payments.issue_refund(order_id, float(body.get("amount", 0)), _tenant(x_tenant))
+    return _simulate(lambda: payments.issue_refund(order_id, float(body.get("amount", 0)), _tenant(x_tenant)))

@@ -189,12 +189,12 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   `deploy/helm/agent-platform/` ingress.
 - **Verified by:** `tls-check.sh` plus a peer-identity assertion per hop.
 
-## S8 — Per-tenant role → tool maps
+## S8 — Per-tenant role → tool maps — **done**
 
 - **What:** let the role → tool matrix differ per tenant, instead of one global
   table.
-- **Why:** two customers may want different definitions of "billing". Today the
-  matrix is global and the tenant only scopes data.
+- **Why:** two customers may want different definitions of "billing". The matrix
+  was global and the tenant only scoped data.
 - **Part 1 — done (PR #69):** `/audit` is authenticated and scoped to the caller's
   tenant. It had taken no token at all, so anything that could reach the API could
   read every tenant's events — which was why the Audit tab passed no token. The
@@ -206,29 +206,44 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   - a tenant's entry for a role **replaces** the default for that role entirely; a
     role the tenant does not mention falls back to the default. One place to read,
     nothing to reconcile, and the failure mode is visible.
-- **Decision, proposed (not confirmed):** the tenant maps live **in the policy
-  file** rather than a separate data document, so changing a customer's powers is a
-  reviewed, signed policy release. The alternative — a data document loaded into
-  OPA — lets tenant configuration change without a policy release, at the cost of a
-  second artefact to version, sign and deploy, and a place where a mistake gets
-  less review.
-- **Must land atomically.** The agent asks the policy which tools a role may call
-  (`tools_for_roles`) so the model is only offered tools it could actually use, and
-  it does not currently pass a tenant. Keying the policy first would have the agent
-  offer tools the tool server then denies — exactly the substitution the agent
-  exists to prevent. So:
-  1. `policy/authz.rego` — split `role_tools` into `default_role_tools` +
-     `tenant_role_tools`, add `role_tools_for(tenant, role)`; `may_call` and
-     `tools_for_roles` read `input.tenant`.
-  2. `policy/tests/authz_test.rego` — `expected_role_tools` is a second copy of the
-     matrix and needs updating, plus per-tenant cases (31 tests today).
-  3. `app/common/policy.py` — `tools_for_roles(url, roles, tenant)`.
-  4. `app/agent/{live,service}.py` — `LiveDeps` needs `delegation.tenant`.
-  5. `app/api/roles.py` — the Roles page shows the caller's own tenant's matrix.
-  6. Nothing to change in the realm: the maps live in policy, and `globex` already
-     has a seeded `support_rep` (`grace`) to demonstrate it with.
-- **Verified by:** `./scripts/role-tools.sh` showing the same role getting
-  different tools in `acme` and `globex`, with the policy tests covering both.
+- **Decision taken:** the tenant maps live **in the policy file**, adopting the
+  proposed option above. Changing a customer's powers is therefore a reviewed,
+  signed policy release. A data document could change without a policy release, at
+  the cost of a second artefact to version, sign and deploy — and a place where a
+  mistake gets less review.
+- **Built** (it landed atomically, as it had to):
+  1. `policy/authz.rego` — `role_tools` split into `default_role_tools` and
+     `tenant_role_tools`, plus `role_tools_for(tenant, role)` and a `role_matrix`
+     rule for the page. `may_call`, `tools_for_roles` and `role_matrix` all read
+     `input.tenant`, so a role defined in neither resolves nothing and denies.
+  2. `policy/tests/authz_test.rego` — 45 tests (was 31), including the globex
+     demonstration, replacement-not-merge, fallback for an unmentioned role, an
+     unscoped caller, and two data-hygiene guards (overrides may only name real
+     roles and real tools).
+  3. `app/common/policy.py` — `tools_for_roles(url, roles, tenant)`; the tenant is
+     a required argument, so a caller cannot forget it. `role_matrix(url, tenant)`
+     is queried with input.
+  4. `app/agent/{live,service}.py` — `LiveDeps` takes `tenant` and passes it, so
+     the tools the model is *offered* match the tools policy will *allow*, per
+     tenant.
+  5. `app/api/{roles,auth}.py` — the Roles page and the login response both resolve
+     the caller's own tenant.
+  6. The realm needed nothing: the maps live in policy, and `globex` already had a
+     seeded `support_rep` (`grace`).
+- **Verified by:** `./scripts/role-tools.sh` — alice (acme) may issue a refund,
+  grace (globex) is refused the same call with the same role name; `refunds.quote`
+  and the rest of the role still work, so it is a replacement and not a blanket
+  removal. A direct policy query confirms the *offered* set differs per tenant and
+  is empty without one; the login response and the Roles page show the same
+  difference.
+- **Found on the way** (fixed rather than routed around, because the demonstration
+  exposed it): asking for a record outside your tenant returned a **500** from the
+  sandbox for the two *write* tools. The simulators signal a missing record with
+  `NotFound` (a `ValueError` subclass), the sandbox's write endpoints did not
+  translate it, and the two write handlers did not turn a `None` into a readable
+  result the way every read handler does. All three layers are fixed, so a record
+  that is not there is a clear "unknown ticket/order" — never a 500, never a silent
+  success. See `docs/integrations.md`.
 
 ## S9 — Durable sandbox / simulated-system state
 

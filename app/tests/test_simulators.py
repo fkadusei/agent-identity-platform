@@ -4,6 +4,7 @@ from __future__ import annotations
 import pytest
 
 from app.simulators import crm, orders, payments, reset, tickets
+from app.simulators.errors import NotFound
 
 ACME = "acme"
 GLOBEX = "globex"
@@ -56,6 +57,20 @@ def test_issue_refund_is_idempotent():
 def test_issue_refund_rejects_unknown_order():
     with pytest.raises(ValueError, match="unknown order"):
         payments.issue_refund("o-nope", 10.0, ACME)
+
+
+def test_a_missing_record_raises_the_typed_not_found():
+    """`NotFound` is what lets the backend seam tell "not there" from "bad input"
+    and map it to the `None` a read returns (and the HTTP contract's 404). It
+    subclasses ValueError, so callers that treat it as invalid input still work."""
+    with pytest.raises(NotFound):
+        payments.issue_refund("o-nope", 10.0, ACME)
+    with pytest.raises(NotFound):
+        tickets.draft_reply("t-nope", "hi", ACME)
+    # ...but a bad amount is *not* a missing record.
+    with pytest.raises(ValueError) as exc:
+        payments.issue_refund("o-1001", 0, ACME)
+    assert not isinstance(exc.value, NotFound)
 
 
 def test_issue_refund_rejects_non_positive_amount():

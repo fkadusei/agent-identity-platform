@@ -4,6 +4,10 @@ The role → tool matrix lives in `policy/authz.rego`. The agent reads it from
 there rather than keeping its own copy, so the tools it *offers* can never
 disagree with the tools policy will *allow*. This is a UX filter, not the
 control: the enforcement stays at the tool server.
+
+Every query that resolves *tools* names a tenant, because the matrix can differ
+per tenant (S8) — the same role can have different power in `acme` and `globex`.
+The tenant comes from the caller's verified identity, never from a request body.
 """
 from __future__ import annotations
 
@@ -12,22 +16,49 @@ from typing import Any
 import httpx
 
 
-def tools_for_roles(
-    opa_url: str, roles: object, *, client: Any | None = None, timeout: float = 3.0
-) -> set[str]:
-    """The tools the given roles may call. Fails closed (empty) on any error."""
-    payload = {"input": {"roles": list(roles or ())}}
-    url = f"{opa_url.rstrip('/')}/v1/data/agentnhi/authz/tools_for_roles"
+def _opa_post(
+    opa_url: str, path: str, input_doc: dict, *, client: Any | None = None, timeout: float = 3.0
+) -> Any:
+    """Query a policy rule with an input document. Returns None on any error."""
+    url = f"{opa_url.rstrip('/')}/v1/data/{path}"
     try:
         if client is not None:
-            resp = client.post(url, json=payload, timeout=timeout)
+            resp = client.post(url, json=input_doc, timeout=timeout)
         else:
             with httpx.Client() as http:
-                resp = http.post(url, json=payload, timeout=timeout)
+                resp = http.post(url, json=input_doc, timeout=timeout)
         resp.raise_for_status()
-        return set(resp.json().get("result") or [])
-    except Exception:  # noqa: BLE001 - fail closed: no tools rather than all tools
-        return set()
+        return resp.json().get("result")
+    except Exception:  # noqa: BLE001 - fail closed; the caller decides
+        return None
+
+
+def tools_for_roles(
+    opa_url: str,
+    roles: object,
+    tenant: str | None,
+    *,
+    client: Any | None = None,
+    timeout: float = 3.0,
+) -> set[str]:
+    """The tools the given roles may call **in this tenant**.
+
+    The tenant is required, not an optimisation: policy resolves a tenant's
+    override for a role, so an unscoped caller resolves no tools at all. Passing
+    it is what keeps the offered set equal to the allowed set — without it the
+    agent could offer a tool the tool server then denies, which is exactly the
+    substitution the agent exists to prevent.
+
+    Fails closed (empty set) on any error.
+    """
+    result = _opa_post(
+        opa_url,
+        "agentnhi/authz/tools_for_roles",
+        {"input": {"roles": list(roles or ()), "tenant": tenant}},
+        client=client,
+        timeout=timeout,
+    )
+    return set(result or [])
 
 
 def _opa_get(opa_url: str, path: str, *, client: Any | None = None, timeout: float = 3.0) -> Any:
@@ -45,9 +76,14 @@ def _opa_get(opa_url: str, path: str, *, client: Any | None = None, timeout: flo
         return None
 
 
-def role_matrix(opa_url: str, **kwargs) -> dict:
-    """The role -> tools table, straight from the policy."""
-    return _opa_get(opa_url, "agentnhi/authz/role_tools", **kwargs) or {}
+def role_matrix(opa_url: str, tenant: str | None, **kwargs) -> dict:
+    """The role → tools table **for one tenant**, straight from the policy.
+
+    Resolved by policy (a tenant's entry replaces the default for that role, and
+    an unmentioned role falls back), so the page shows what this tenant has rather
+    than the global default.
+    """
+    return _opa_post(opa_url, "agentnhi/authz/role_matrix", {"input": {"tenant": tenant}}, **kwargs) or {}
 
 
 def catalogue(opa_url: str, **kwargs) -> list:

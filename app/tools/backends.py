@@ -22,22 +22,34 @@ from typing import Any, Protocol
 import httpx
 
 from app.simulators import crm, orders, payments, tickets
+from app.simulators.errors import NotFound
 
 
 class Backend(Protocol):
-    """What a tool backend must provide. One method per external capability."""
+    """What a tool backend must provide. One method per external capability.
+
+    Every method returns `None` for a record that is not there for this tenant —
+    reads and writes alike — so a tool reports "not found" the same way whichever
+    backend is configured.
+    """
 
     def get_customer(self, customer_id: str, tenant: str) -> dict | None: ...
     def get_pii(self, customer_id: str, tenant: str) -> dict | None: ...
     def list_orders(self, customer_id: str, tenant: str) -> list[dict]: ...
     def get_ticket(self, ticket_id: str, tenant: str) -> dict | None: ...
-    def draft_reply(self, ticket_id: str, body: str, tenant: str) -> dict: ...
+    def draft_reply(self, ticket_id: str, body: str, tenant: str) -> dict | None: ...
     def quote_refund(self, order_id: str, tenant: str) -> dict | None: ...
-    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict: ...
+    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict | None: ...
 
 
 class SimulatorBackend:
-    """In-process synthetic data, scoped by tenant."""
+    """In-process synthetic data, scoped by tenant.
+
+    A record that is not there for this tenant returns `None` — the same as the
+    HTTP backend's 404 — so the tools cannot tell which backend they are on. The
+    simulators raise `NotFound` for that case (a write cannot proceed), and this
+    is where it becomes the `None` the seam promised.
+    """
 
     def get_customer(self, customer_id: str, tenant: str) -> dict | None:
         return crm.get_customer(customer_id, tenant)
@@ -51,14 +63,20 @@ class SimulatorBackend:
     def get_ticket(self, ticket_id: str, tenant: str) -> dict | None:
         return tickets.get_ticket(ticket_id, tenant)
 
-    def draft_reply(self, ticket_id: str, body: str, tenant: str) -> dict:
-        return tickets.draft_reply(ticket_id, body, tenant)
+    def draft_reply(self, ticket_id: str, body: str, tenant: str) -> dict | None:
+        try:
+            return tickets.draft_reply(ticket_id, body, tenant)
+        except NotFound:
+            return None
 
     def quote_refund(self, order_id: str, tenant: str) -> dict | None:
         return payments.quote_refund(order_id, tenant)
 
-    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict:
-        return payments.issue_refund(order_id, float(amount), tenant)
+    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict | None:
+        try:
+            return payments.issue_refund(order_id, float(amount), tenant)
+        except NotFound:
+            return None
 
 
 class HttpBackend:
@@ -106,13 +124,13 @@ class HttpBackend:
     def get_ticket(self, ticket_id: str, tenant: str) -> dict | None:
         return self._request("GET", f"/tickets/{ticket_id}", tenant)
 
-    def draft_reply(self, ticket_id: str, body: str, tenant: str) -> dict:
+    def draft_reply(self, ticket_id: str, body: str, tenant: str) -> dict | None:
         return self._request("POST", f"/tickets/{ticket_id}/drafts", tenant, json={"body": body})
 
     def quote_refund(self, order_id: str, tenant: str) -> dict | None:
         return self._request("GET", f"/orders/{order_id}/refund-quote", tenant)
 
-    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict:
+    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict | None:
         return self._request(
             "POST", f"/orders/{order_id}/refunds", tenant, json={"amount": float(amount)}
         )

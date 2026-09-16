@@ -29,6 +29,12 @@ deny if not input.tenant   # fail closed: an unscoped identity gets nothing
 So even if a tool were called with a tenant it should not have, an identity with
 no tenant cannot proceed at all.
 
+The tenant also selects **which role → tool matrix applies** (S8): a tenant can
+replace a role's tools, so the same role name grants different power in `acme` and
+`globex`. That is resolved in policy, from `input.tenant`, and the agent asks for
+the caller's tools *in their tenant* — so what the model is offered and what the
+tool server allows cannot disagree. See [`roles-and-tools.md`](roles-and-tools.md).
+
 ## 3. The tools
 
 Every data accessor takes the tenant — there is no way to read or write without

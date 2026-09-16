@@ -19,20 +19,35 @@ class _Verifier:
 
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setattr("app.api.roles.role_matrix", lambda *a, **k: {"read_only": ["crm.customer.read"]})
+    seen: dict = {}
+
+    def fake_matrix(opa, tenant, **kwargs):
+        seen["tenant"] = tenant
+        return {"read_only": ["crm.customer.read"]}
+
+    monkeypatch.setattr("app.api.roles.role_matrix", fake_matrix)
     monkeypatch.setattr("app.api.roles.catalogue", lambda *a, **k: ["crm.customer.read", "refunds.issue"])
     monkeypatch.setattr("app.api.roles.refund_limits", lambda *a, **k: {"auto": 50, "approval": 500})
     app.dependency_overrides[get_verifier] = lambda: _Verifier()
-    yield TestClient(app)
+    yield TestClient(app), seen
     app.dependency_overrides.clear()
 
 
 def test_the_matrix_comes_from_the_policy(client):
-    body = client.get("/roles", headers={"Authorization": "Bearer x"}).json()
+    http, seen = client
+    body = http.get("/roles", headers={"Authorization": "Bearer x"}).json()
     assert body["roles"] == {"read_only": ["crm.customer.read"]}
     assert body["tools"] == ["crm.customer.read", "refunds.issue"]
     assert body["limits"] == {"auto": 50, "approval": 500}
     assert body["you"] == {"roles": ["read_only"], "tenant": "acme"}
+
+
+def test_the_matrix_is_the_callers_own_tenant(client):
+    """The same role can differ between tenants (S8), so the page must ask about
+    the caller's — showing the global default would misdescribe their powers."""
+    http, seen = client
+    http.get("/roles", headers={"Authorization": "Bearer x"})
+    assert seen["tenant"] == "acme"
 
 
 def test_it_needs_a_token():

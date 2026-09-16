@@ -11,6 +11,7 @@ from __future__ import annotations
 import itertools
 
 from . import data, orders
+from .errors import NotFound
 
 _refunds: dict[str, dict] = {}
 _seq = itertools.count(1)
@@ -41,7 +42,7 @@ def issue_refund(
 
     order = orders.get_order(order_id, tenant)
     if order is None:
-        raise ValueError(f"unknown order {order_id!r}")
+        raise NotFound(f"unknown order {order_id!r}")
     if amount <= 0:
         raise ValueError("refund amount must be positive")
 

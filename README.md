@@ -15,7 +15,7 @@ action is identity- and policy-governed.
 > threat in the [threat model](docs/threat-model.md) is addressed. The platform
 > runs end to end on a 3-node Kubernetes cluster (kind): SPIFFE identity, OAuth
 > delegation, policy, approvals, a service mesh, durable state, HA, autoscaling
-> and a role → tool matrix. See [`HANDOFF.md`](HANDOFF.md) and
+> and a per-tenant role → tool matrix. See [`HANDOFF.md`](HANDOFF.md) and
 > [`docs/roadmap.md`](docs/roadmap.md).
 
 ## Why
@@ -50,7 +50,7 @@ it is held for approval. Approve it as the manager and it is issued. Ask for
 $1000 and it is refused; ask as dana and it is refused with a clear reason.
 `./status.sh` tells you if it is up; `./stop.sh` stops it.
 
-Other ways in: the **Roles** tab shows the role → tool matrix (read from the
+Other ways in: the **Roles** tab shows *your tenant's* role → tool matrix (read from the
 policy); [`docs/visualization/index.html`](docs/visualization/index.html) is an
 interactive 3D architecture (double-click it, no server needed).
 

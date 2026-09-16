@@ -128,7 +128,7 @@ def run(body: dict, authorization: str | None = Header(default=None)) -> dict:
 
     thread_id = body.get("thread_id") or f"t-{uuid.uuid4().hex[:8]}"
     agent = build_agent(
-        LiveDeps(user_token=token, roles=delegation.roles), checkpointer=get_checkpointer()
+        LiveDeps(user_token=token, tenant=delegation.tenant, roles=delegation.roles), checkpointer=get_checkpointer()
     )
     _runs[thread_id] = agent
     outcome = run_task(agent, task, thread_id, token)
@@ -164,7 +164,7 @@ def resume(body: dict, authorization: str | None = Header(default=None)) -> dict
         except TokenRejected as exc:
             raise HTTPException(status_code=403, detail=f"identity rejected: {exc}")
         agent = build_agent(
-            LiveDeps(user_token=token, roles=delegation.roles),
+            LiveDeps(user_token=token, tenant=delegation.tenant, roles=delegation.roles),
             checkpointer=get_checkpointer(),
         )
         _runs[thread_id] = agent
