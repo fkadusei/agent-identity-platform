@@ -278,6 +278,8 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | `Account is not fully set up` on login | Keycloak user profile requires first/last name | the API defaults names on create; for old users, set them in Admin |
 | Tools return `policy unavailable — denying` | OPA unreachable (fail-closed) | restore OPA (§5D) |
 | `no attested SPIRE agent found` | agent not attested yet | re-run `setup.sh`; check `spire-agent` logs |
+| SPIRE logs `Failed to publish bundle` | the bundle publisher cannot apply the ConfigMap — API server unreachable, or a field-ownership conflict left by the old Notifier | **not fatal**: it retries every 30s (S11). Check the RBAC on `configmaps` and who owns `spire-bundle`; recreate the ConfigMap to clear a legacy owner (`setup.sh` does) |
+| Agents `CrashLoopBackOff`, `certificate signed by unknown authority` | the server's `emptyDir` was reset, so its CA changed, and the agent cached the old bundle in its own `data_dir` | recreate the agent pods; the real fix is persistent storage / a stable upstream CA (S1) |
 | Enrolled user vanished | Keycloak was recreated by `setup.sh` (ephemeral realm) | re-enroll, or use a persistent database in production |
 | Approvals/runs vanish on restart | `DATABASE_URL` not set (in-memory stores) | set `DATABASE_URL` (see [`data-stores.md`](data-stores.md)) |
 | Approvals/audit vanish after a **Postgres pod** restart | the demo Postgres is `emptyDir` — a new pod means new (empty) storage | expected on kind; every store recreates its schema, so the platform keeps working. Use managed storage (S3 in [`backlog.md`](backlog.md)) |

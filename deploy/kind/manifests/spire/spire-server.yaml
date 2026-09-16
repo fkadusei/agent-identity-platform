@@ -7,11 +7,13 @@
 #   - OIDC Discovery Provider (sidecar): publishes the JWT-SVID signing keys as
 #     a JWKS over plain HTTP inside the cluster. This is how Keycloak learns to
 #     trust SVIDs WITHOUT any key being copied anywhere.
-#   - k8sbundle notifier: publishes the trust bundle into the "spire-bundle"
-#     ConfigMap so SPIRE agents can bootstrap.
+#   - k8s_configmap bundle publisher: keeps the trust bundle current in the
+#     "spire-bundle" ConfigMap so SPIRE agents can bootstrap. It replaced the
+#     k8sbundle Notifier — see the note on the plugin block below.
 #
 # Trust domain: acme.com (demo value).
-# Docs: docs/architecture.md#spire-server — docs/runbook.md#spire
+# Docs: docs/tls.md (the identity edges) — docs/operator-guide.md (§5B, SPIRE
+# recovery; §7 for `Failed to publish bundle`).
 # =============================================================================
 apiVersion: v1
 kind: ServiceAccount
@@ -46,7 +48,7 @@ subjects:
     name: spire-server
     namespace: agent-platform
 ---
-# Lets the k8sbundle notifier publish the trust bundle into this namespace.
+# Lets the bundle publisher apply the trust bundle ConfigMap in this namespace.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -71,7 +73,7 @@ subjects:
     name: spire-server
     namespace: agent-platform
 ---
-# Placeholder the k8sbundle notifier fills with the trust bundle.
+# Placeholder the bundle publisher fills with the trust bundle.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -140,10 +142,29 @@ data:
         }
       }
 
-      # Publishes the trust bundle to the spire-bundle ConfigMap above.
-      Notifier "k8sbundle" {
+      # Keeps the trust bundle current in the spire-bundle ConfigMap above, which
+      # is how SPIRE agents bootstrap.
+      #
+      # This replaced the deprecated `Notifier "k8sbundle"` (S11). A Notifier is
+      # called on bundle events and its error was fatal: when the Kubernetes API
+      # server was briefly unreachable, SPIRE exited with
+      #   Fatal run error ... notifier(k8sbundle): ... TLS handshake timeout
+      # and crash-looped, which turned a transient resource spike into hours of
+      # outage. A BundlePublisher runs on a background tick, logs a failed publish
+      # and tries again — so a blip is survivable with no manual restart of any
+      # workload. Requires SPIRE >= 1.12.4 (see docker/spire-server.Dockerfile).
+      BundlePublisher "k8s_configmap" {
         plugin_data {
-          namespace = "agent-platform"
+          clusters = {
+            "agent-platform-cluster" = {
+              configmap_name = "spire-bundle"
+              # The agent reads /run/spire/bundle/bundle.crt from this ConfigMap.
+              configmap_key = "bundle.crt"
+              namespace     = "agent-platform"
+              # PEM (X.509 authorities only) is what the agent's trust bundle is.
+              format = "pem"
+            }
+          }
         }
       }
 
@@ -250,7 +271,7 @@ spec:
             initialDelaySeconds: 15
             periodSeconds: 30
         - name: oidc-discovery-provider
-          image: ghcr.io/spiffe/oidc-discovery-provider:1.11.2
+          image: ghcr.io/spiffe/oidc-discovery-provider:1.12.4
           args: ["-config", "/run/spire/oidc/config/oidc-discovery-provider.conf"]
           ports:
             - containerPort: 11080

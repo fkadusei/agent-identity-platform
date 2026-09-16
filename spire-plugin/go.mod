@@ -2,9 +2,9 @@ module github.com/fkadusei/enterprise-agent-nhi/spire-plugin
 
 go 1.25.0
 
-// Pinned to the same plugin SDK revision SPIRE 1.11.2 itself builds against,
+// Pinned to the same plugin SDK revision SPIRE 1.12.4 itself builds against,
 // so the gRPC plugin protocol lines up exactly.
-require github.com/spiffe/spire-plugin-sdk v1.4.4-0.20240701180828-594312f4444d
+require github.com/spiffe/spire-plugin-sdk v1.4.4-0.20250606112051-68609d83ce7c
 
 require (
 	github.com/hashicorp/go-hclog v1.6.3

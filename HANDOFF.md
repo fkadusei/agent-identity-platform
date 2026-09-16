@@ -143,14 +143,14 @@ ID with what it is, why, where it lands and how we would verify it:
 - **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser;
 - **S8** per-tenant role → tool maps — decisions settled and the atomic sequence
   listed; part 1 (`/audit` scoping) landed in PR #69;
-- **S9** durable sandbox/simulator state;
-- **S11** make SPIRE survive an API-server blip.
+- **S9** durable sandbox/simulator state.
 
 Done, kept for the record: **S5** (guardrails + evals,
 `docs/guardrails-and-evals.md`), **S10** (the privacy view, `docs/privacy.md`),
-**S12** (the agent survives a Postgres restart), **S13** (stop blaming the model
-for infrastructure faults), **S14** (the scripts pin their cluster context) and
-**S15** (the gateway must not serve an expired SVID).
+**S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
+Postgres restart), **S13** (stop blaming the model for infrastructure faults),
+**S14** (the scripts pin their cluster context) and **S15** (the gateway must not
+serve an expired SVID).
 
 ## The repository is public
 
@@ -208,8 +208,14 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 - **OPA bundle:** the files are mounted with `subPath`, which does not update in
   place — `setup.sh` restarts OPA after a new revision.
 - **SPIRE datastore** is an `emptyDir`: a SPIRE-server restart forgets its agents
-  and entries; a `setup.sh` re-run restores them. Registration entries are created
-  **per attested agent**, or workloads on other nodes get no identity.
+  and entries; a `setup.sh` re-run restarts the server and restores them.
+  Registration entries are created **per attested agent**, or workloads on other
+  nodes get no identity.
+- **The trust bundle is *published*, not notified** (S11). SPIRE 1.12.4 writes
+  the `spire-bundle` ConfigMap on a 30-second tick; a failure is logged and
+  retried, never fatal. A cluster upgraded from the old Notifier still has its
+  field ownership, so publishing fails with `Apply failed with 1 conflict` until
+  the ConfigMap is recreated — `setup.sh` does that.
 - **Role changes lag** by up to one token lifetime (5 minutes).
 - **Every script pins its cluster.** `scripts/lib.sh` wraps `kubectl` with
   `--context kind-agent-platform` (override with `KUBE_CONTEXT`), and no script
