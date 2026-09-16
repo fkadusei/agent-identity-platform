@@ -1,40 +1,57 @@
 # Backlog
 
-Every slice we have **not** built yet, with a stable ID so it can be referenced
-("do S3"), what it is, why it matters, where it lands, and how we would know it
-works. The phase history lives in [`roadmap.md`](roadmap.md).
+Every slice, with a stable ID so it can be referenced ("do S3"), what it is, why
+it matters, where it lands, and how we would know it works. Done slices are kept
+and marked **done** for the record (S5, S10, S13, S15). The phase history lives in
+[`roadmap.md`](roadmap.md).
 
 Legend: **open** · *partly done* (say which half).
 
 ---
 
-## Open right now (2026-09-16): the agent's model call is failing
+## Resolved (2026-09-16): the gateway was serving an expired SVID
 
-The live evals score **1/8 for every model** — `llama3.2:3b` and
-`qwen3-warden-ctx16k` alike — so the model is not the variable, whatever the error
-message implies. The gateway can reach Ollama (`GET /api/tags -> 200`), so the
-fault is on the agent-to-gateway hop or in the prompt/parse step.
+The live evals scored **1/8 for every model** — `llama3.2:3b` and
+`qwen3-warden-ctx16k` alike — so the model was never the variable. The `1/8` was
+the tell: of the eight live cases, the single pass ("an injection attempt is
+refused before the model") is refused locally by the task guardrail **before any
+model call**. Everything that reached the gateway failed, identically.
 
-**Next step:** the `llm.fallback` audit reason, which names the real cause.
-**Beware:** there are two agent replicas, so `exec deploy/agent` runs the evals in
-one pod while `logs deploy/agent` reads the other — pick a named pod:
+The `llm.fallback` audit reason named the real cause, exactly as this section
+predicted:
+
+```
+[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: certificate has expired
+```
+
+The gateway was serving an expired certificate: its SVID had `notAfter 12:38:23`
+while the evals ran at `12:42:39`, and the process itself was healthy — an
+unverified handshake to it succeeded. The cause and the fix are **S15**; the
+message that hid it for hours is **S13**.
+
+**For context.** A 45GB model (a 30B with a 262k context) was loaded beside an
+8GB Docker VM, which starved the host. The SPIRE server could not reach the
+Kubernetes API server, crashed, and crash-looped; SVID rotation stopped and
+certificates expired. That is fixed, and it is **S11**'s ground — a transient
+resource spike must not become hours of outage. The model was swapped to
+`qwen3-warden-ctx16k` during the investigation and has been **reverted** to
+`llama3.2:3b`; Docker Desktop now has 33GB instead of 8GB.
+
+**Still worth knowing when diagnosing.** There are two agent replicas, so
+`exec deploy/agent` runs the evals in one pod while `logs deploy/agent` reads the
+other — pick a named pod:
 
 ```
 kubectl --context kind-agent-platform -n agent-platform get pods -l app=agent
-kubectl --context agent-platform ... exec <that-pod> -c agent -- python -m app.agent.evals --live
+kubectl --context kind-agent-platform -n agent-platform exec <that-pod> -c agent -- python -m app.agent.evals --live
 kubectl --context kind-agent-platform -n agent-platform logs <that-pod> -c agent \
   | grep -o 'llm\.[a-z_]*\|reason[^,}]\{0,150\}'
 ```
 
-**What happened before this, for context.** A 45GB model (a 30B with a 262k
-context) was loaded beside an 8GB Docker VM, which starved the host. The SPIRE
-server could not reach the Kubernetes API server, crashed, and crash-looped for
-hours; SVID rotation stopped and certificates expired, which surfaced as
-`CERTIFICATE_VERIFY_FAILED` and then as "the model did not choose a usable tool".
-SPIRE is fixed and the workloads have fresh SVIDs. The model was swapped to
-`qwen3-warden-ctx16k` during the investigation and has been **reverted** to
-`llama3.2:3b` in both the manifest and the running deployment. Docker Desktop now
-has 33GB instead of 8GB.
+The live evals now score **5/8**, and the agent's audit trail carries no
+`llm.fallback` events at all. The three remaining failures are `llama3.2:3b`'s
+own behaviour — a substituted tool, a bare decline, an unusable argument set —
+not infrastructure. The live eval stays deliberately out of CI (S5).
 
 ---
 
@@ -218,21 +235,28 @@ has 33GB instead of 8GB.
 - **Verified by:** restart Postgres, then run the evals *without* restarting the
   agent.
 
-## S13 — Stop blaming the model for infrastructure faults
+## S13 — Stop blaming the model for infrastructure faults — **done**
 
-- **What:** "the model did not choose a usable tool — nothing was executed" is
+- **What:** "the model did not choose a usable tool — nothing was executed" was
   emitted for at least four unrelated causes: the model answered unusably, the
   model call raised (expired certificate, unreachable gateway), the response did
   not parse, and the model was unreachable at all. The `llm.fallback` audit event
-  carries the real reason; the user-facing message does not.
+  carried the real reason; the user-facing message did not.
 - **Why:** during the 2026-09-16 incident this message pointed at the model for
   hours while the actual faults were an expired SVID and a dead database
   connection. It cost most of a debugging session.
-- **Lands in:** `app/agent/llm.py` (separate the paths), `app/agent/graph.py`
-  (already splits `refused` from `error` for the *decision* — carry the reason
-  through too), and the timeout/connection handling in `app/agent/live.py`.
-- **Verified by:** a test that makes the model call fail and asserts the message
-  says the model could not be reached, rather than blaming its output.
+- **Built:** `decide_tool` now splits the three ways a run ends without a tool —
+  `unreachable` ("the model could not be reached"), `unparseable`, and `unusable`
+  (the model's own bad answer, the old message) — and returns a machine-readable
+  `cause` next to the reason. `llm.fallback` is kept as the event name, so the
+  diagnostic grep above still works, and now carries that `cause`. `graph.py`
+  needed no change: it already maps a decision without `refused` to
+  `status: "error"`, so an unreachable model was already *classified* correctly —
+  only the words were wrong. `live.py` needed none either; the timeout surfaces as
+  an exception from `_chat`, which is the path that now names it.
+- **Verified by:** `test_a_model_call_failure_blames_the_infrastructure` in
+  `app/agent/tests/test_decide_tool.py`, with two companions pinning the
+  `unparseable` path and the `cause` on the audit event.
 
 ## S14 — setup.sh must not run against the wrong cluster
 
@@ -255,6 +279,28 @@ has 33GB instead of 8GB.
 - **Verified by:** with the active context deliberately set to something else, a
   full run either works (because it pins) or fails immediately, naming the cluster
   it wanted.
+
+## S15 — The gateway must not serve an expired SVID — **done**
+
+- **What:** the gateway restarted on a fixed 3300s timer that assumed a fresh 1h
+  SVID at startup. But the Workload API returns SPIRE's **cached** SVID, and SPIRE
+  rotates at roughly half the lifetime — so the gateway could fetch a certificate
+  with only 36 minutes left, sleep 55 minutes, and serve an **expired** one for
+  the difference. Every agent→gateway handshake then failed with
+  `CERTIFICATE_VERIFY_FAILED`, which is what "the model did not choose a usable
+  tool" was really reporting (2026-09-16).
+- **Why:** a TLS server holding an expired certificate looks exactly like an
+  application outage, and the symptom named the wrong component. Both replicas
+  restart on their own hourly, so the gap recurred — about 19 minutes per cycle —
+  and was found only by accident.
+- **Lands in:** `app/gateway/run.py` — the restart deadline is now derived from
+  the certificate's own `notAfter` (exit 120s early, re-checking at most each
+  minute), `GATEWAY_SVID_RESTART_MARGIN_SECONDS` sets the margin, and a
+  `gateway.svid_loaded` audit event reports `expires_in_seconds` at startup so the
+  condition is visible before it bites.
+- **Verified by:** `app/gateway/tests/test_run.py`, and on kind — both replicas
+  logged `expires_in_seconds` of ~2470 (reproducing the half-spent SVID), and the
+  live evals went from `1/8` with seven `llm.fallback` events to `5/8` with none.
 
 ## Not slices (documented limits)
 

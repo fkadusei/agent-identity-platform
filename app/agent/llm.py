@@ -171,6 +171,17 @@ def _chat(prompt: str) -> str:
     return resp.json()["choices"][0]["message"]["content"]
 
 
+def _no_tool(fallback: dict | None, reason: str, cause: str) -> dict:
+    """A no-tool decision whose reason names the real fault.
+
+    `cause` is machine-readable so the three ways a run ends without a tool stay
+    distinguishable; `fallback` is the caller's escape hatch and wins when set.
+    """
+    if fallback:
+        return fallback
+    return {"tool": None, "args": {}, "reason": reason, "cause": cause}
+
+
 def decide_tool(
     task: str, tools: dict, unavailable: dict | None = None, fallback: dict | None = None
 ) -> dict:
@@ -179,10 +190,37 @@ def decide_tool(
     If the model cannot produce a usable decision we return **no tool** — never a
     different one. Silently substituting another action is worse than failing: a
     "refund $1000" that quietly becomes a customer lookup looks like success.
+
+    The ways that happens are kept apart on purpose. "The model did not choose a
+    usable tool" used to cover all of them, and during the 2026-09-16 incident
+    that message pointed at the model for hours while the real faults were an
+    expired SVID and an unreachable gateway — the model was never reached.
     """
+    # 1. Did we reach the model at all? An expired certificate, an unreachable
+    #    gateway and a timeout land here. This is an infrastructure fault, and
+    #    nothing below it has been observed — least of all the model's answer.
     try:
         content = _chat(_prompt(task, tools, unavailable))
+    except Exception as exc:  # noqa: BLE001 - never block the run on the model
+        audit("llm.fallback", cause="unreachable", reason=str(exc)[:200])
+        return _no_tool(
+            fallback, "the model could not be reached — nothing was executed", "unreachable"
+        )
+
+    # 2. We reached it, but the reply was not JSON.
+    try:
         decision = json.loads(content)
+    except (ValueError, TypeError) as exc:
+        audit("llm.fallback", cause="unparseable", reason=str(exc)[:200])
+        return _no_tool(
+            fallback,
+            "the model's reply could not be understood — nothing was executed",
+            "unparseable",
+        )
+
+    # 3. It parsed; now it has to name a usable tool. Anything malformed from
+    #    here is about the model's answer, so the blame belongs on the model.
+    try:
         chosen = decision.get("tool")
         if chosen and chosen in (unavailable or {}):
             # Deterministic: the model asked for a tool this role may not use.
@@ -218,12 +256,10 @@ def decide_tool(
             return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])
     except Exception as exc:  # noqa: BLE001 - never block the run on the model
-        audit("llm.fallback", reason=str(exc)[:200])
+        audit("llm.fallback", cause="unusable", reason=str(exc)[:200])
 
-    if fallback:
-        return fallback
-    return {
-        "tool": None,
-        "args": {},
-        "reason": "the model did not choose a usable tool — nothing was executed",
-    }
+    return _no_tool(
+        fallback,
+        "the model did not choose a usable tool — nothing was executed",
+        "unusable",
+    )

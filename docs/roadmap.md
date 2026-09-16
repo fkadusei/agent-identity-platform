@@ -5,9 +5,9 @@ Living checklist. Updated at the end of every work session (see
 
 Legend: `[x]` done · `[~]` in progress · `[ ]` not started
 
-**Current totals:** 118 app tests · 34 SDK tests · 31 policy tests · 10 required
-CI checks · PRs #1–#50. Phases 1–3 complete; every threat in the threat model
-addressed. The repo is public.
+**Current totals:** 160 app tests (20 Postgres ones skip) · 34 SDK tests · 31
+policy tests · 10 required CI checks · PRs #1–#73. Phases 1–3 complete; every
+threat in the threat model addressed. The repo is public.
 
 ---
 
@@ -39,8 +39,8 @@ addressed. The repo is public.
 - [x] Tool servers (FastAPI + MCP) behind one enforcement core — 11 tests
 - [x] Approvals service (`app/api`): pending/decision/verify — 13 tests
 - [x] LangGraph agent: planner + tool loop + **approval interrupts** — 4 tests
-- [ ] FastAPI: sessions, tasks, audit query
-- [ ] React UI: task console, approval queue, audit timeline
+- [x] FastAPI: sessions, tasks, audit query
+- [x] React UI: task console, approval queue, audit timeline
 - [x] Extended attack suite (forwarding, out-of-policy, approval bypass, PII, rogue workload)
 - [x] Local deployment on kind (`scripts/setup.sh` + `deploy/kind/`)
 - [x] React UI (Vite): task console, approval queue, audit timeline
@@ -91,7 +91,7 @@ addressed. The repo is public.
 ## Backlog / known gaps
 
 The remaining work is tagged with stable IDs in
-[`backlog.md`](backlog.md) (S1–S10) so it can be referenced directly. The
+[`backlog.md`](backlog.md) (S1–S15) so it can be referenced directly. The
 completed items are kept below for the record.
 
 - [x] **Multi-tenant isolation (threat T9)** — the tenant is an identity
