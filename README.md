@@ -43,6 +43,7 @@ Then open **http://localhost:8080** and sign in:
 | `priya` | `priya123` | privacy | reads PII (with approval) + the basic reads |
 | `manager` | `manager123` | manager | reads + refund quotes; approves |
 | `admin` | `admin123` | platform_admin | administers users; no tools, no approvals |
+| `grace` | `grace123` | support_rep (tenant `globex`) | the second tenant |
 
 Ask the console for *"Issue a refund of 200 dollars for order o-1001"* as alice:
 it is held for approval. Approve it as the manager and it is issued. Ask for
@@ -89,7 +90,7 @@ and [`docs/data-handling.md`](docs/data-handling.md).
 ## Verify it
 
 ```sh
-.venv/bin/python -m pytest -q           # app tests (118; 14 Postgres ones skip)
+.venv/bin/python -m pytest -q           # app tests (160; 20 Postgres ones skip)
 sdk/.venv/bin/python -m pytest sdk -q   # SDK (34)
 opa test policy/                        # policy (31)
 

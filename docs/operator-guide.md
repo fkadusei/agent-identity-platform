@@ -282,6 +282,8 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | Approvals/runs vanish on restart | `DATABASE_URL` not set (in-memory stores) | set `DATABASE_URL` (see [`data-stores.md`](data-stores.md)) |
 | An edge is not `SECURED` in `tls-check.sh` | the pod is not mesh-injected | annotate the namespace (`linkerd.io/inject=enabled`) and restart the deployment |
 | An agent gets `429` from the gateway | it hit its rate or token budget | raise `LLM_RATE_LIMIT_PER_MINUTE` / `LLM_TOKEN_BUDGET_PER_DAY`, or check `llm.limited` in the audit ([`llm-gateway.md`](llm-gateway.md)) |
+| Agent tasks fail with `CERTIFICATE_VERIFY_FAILED: certificate has expired` | the **gateway** is serving an expired SVID — the client certs are fine, the server's is not | should not recur since S15; check `gateway.svid_loaded` (`expires_in_seconds`) and `gateway.svid_restart` in `kubectl -n agent-platform logs deploy/gateway`, then restart the gateway |
+| A run says "the model could not be reached" | the model call itself failed — gateway, SVID or timeout — not the model's answer | check `llm.fallback` and its `cause` on the agent's audit stream; since S13 the message names which fault it was |
 
 ## 8. Teardown
 
@@ -293,7 +295,7 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 
 Passed 2026-09-12:
 
-- [x] **Threat model addressed** — every T1–T10 has a control or a documented, scoped exception. T9 (multi-tenant isolation) is honestly marked *not implemented* (single-tenant reference) and tracked in the backlog.
+- [x] **Threat model addressed** — every T1–T10 has a control or a documented, scoped exception. T9 (multi-tenant isolation) is implemented: the tenant is an identity attribute, policy denies an unscoped caller, and every data accessor and approval is tenant-scoped ([`tenancy.md`](tenancy.md)).
 - [x] **Traces live** — Jaeger shows end-to-end traces across agent, api, gateway and tools, with identity attributes on the `policy.decision` span.
 - [x] **Dashboards live** — Prometheus scrapes all targets (`api`, `opa`, `otel-collector` all `up`); the Grafana dashboard is provisioned.
 - [x] **Secret audit clean** — `./scripts/scan-secrets.sh` reports no leaks (tree + history); `./scripts/test-hooks.sh` proves the hook blocks a staged secret.

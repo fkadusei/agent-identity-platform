@@ -66,3 +66,50 @@ def test_a_decline_is_a_refusal_with_nothing_to_name(monkeypatch):
     got = llm.decide_tool("issue a refund of 500", ALLOWED, FORBIDDEN)
     assert got["refused"] is True
     assert "refused_tool" not in got
+
+
+def test_a_model_call_failure_blames_the_infrastructure(monkeypatch):
+    """A model that was never reached must not be reported as choosing badly.
+
+    On 2026-09-16 an expired SVID made every model call raise, and the run said
+    "the model did not choose a usable tool" — so the search went to the prompt
+    and the model instead of the certificate. Same plea as the ticket: the
+    message has to name the real fault.
+    """
+    import ssl
+
+    def expired_certificate(_prompt: str) -> str:
+        raise ssl.SSLCertVerificationError("certificate has expired")
+
+    monkeypatch.setattr(llm, "_chat", expired_certificate)
+    got = llm.decide_tool("look up c-100", ALLOWED, FORBIDDEN)
+    assert got["tool"] is None
+    assert got["cause"] == "unreachable"
+    assert "could not be reached" in got["reason"]
+    assert "did not choose" not in got["reason"]
+    # Not a refusal: graph.mark maps this to "error", not "refused".
+    assert "refused" not in got
+
+
+def test_a_model_call_failure_is_audited_with_its_cause(monkeypatch):
+    from agentnhi import set_sink
+
+    def connection_refused(_prompt: str) -> str:
+        raise OSError("connection refused")
+
+    captured: list[dict] = []
+    monkeypatch.setattr(llm, "_chat", connection_refused)
+    set_sink(captured.append)
+    try:
+        llm.decide_tool("look up c-100", ALLOWED, FORBIDDEN)
+    finally:
+        set_sink(None)
+    events = [r for r in captured if r.get("event") == "llm.fallback"]
+    assert events and events[-1]["cause"] == "unreachable"
+
+
+def test_an_unparseable_reply_is_told_apart_from_a_bad_choice(monkeypatch):
+    monkeypatch.setattr(llm, "_chat", lambda _p: "sorry, I cannot help with that")
+    got = llm.decide_tool("look up c-100", ALLOWED, FORBIDDEN)
+    assert got["cause"] == "unparseable"
+    assert "could not be understood" in got["reason"]

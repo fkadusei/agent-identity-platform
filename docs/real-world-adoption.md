@@ -77,21 +77,26 @@ Each step is independently useful, and each shrinks the blast radius of the next
 
 ## Production checklist
 
-Before serving real traffic, close these — they are deliberate scope choices in
-the reference, not oversights:
+Before serving real traffic, close these — the unchecked ones are deliberate
+scope choices in the reference, not oversights:
 
-- [ ] **Multi-tenant isolation** — not implemented (threat T9). Add a tenant
-      claim and enforce it in policy *and* the tools before serving >1 tenant.
-- [ ] **TLS/mTLS everywhere** — only agent↔gateway is mTLS today; terminate and
-      originate TLS on every hop (cert-manager or a service mesh).
+- [x] **Multi-tenant isolation** — implemented (threat T9): the tenant is an
+      identity attribute, policy denies an unscoped caller, and every data
+      accessor and approval is tenant-scoped ([`tenancy.md`](tenancy.md)).
+- [x] **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway, plus a Linkerd mesh
+      on every other in-cluster hop ([`tls.md`](tls.md)); terminate the browser
+      edge at your ingress (`deploy/helm/agent-platform/`).
 - [ ] **HA** — the app tier is replicated (2 replicas + PDBs, see
       [`ha.md`](ha.md)); SPIRE, Keycloak and Postgres still need a shared
-      datastore / external DB / managed HA.
-- [ ] **Managed data** — point `database.url` at a managed Postgres (done); give
-      it backups and a migration story.
+      datastore / external DB / managed HA (S1–S4 in [`backlog.md`](backlog.md)).
+- [x] **Managed data** — approvals, run checkpoints and gateway counters are
+      durable in Postgres ([`data-stores.md`](data-stores.md)); still point
+      `database.url` at a managed instance and give it backups and a migration
+      story.
 - [ ] **Identity federation** — replace seeded users with your IdP (OIDC/SAML) and
       lifecycle (SCIM).
-- [ ] **Rate/cost limits** — per-agent quotas at the LLM gateway.
+- [x] **Rate/cost limits** — per-agent quotas at the LLM gateway, keyed on the
+      caller's SPIRE identity ([`llm-gateway.md`](llm-gateway.md)).
 - [ ] **Model data controls** — provider retention/no-training terms, or keep the
       local model.
 - [ ] **Alerting** — wire the rules in [`operator-guide.md`](operator-guide.md)

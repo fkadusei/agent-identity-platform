@@ -14,9 +14,10 @@
 - **Status:** **Phases 1–3 complete**, both gates closed, and **every threat in
   the threat model addressed**. The platform runs end to end on a 3-node
   Kubernetes cluster (kind) and has grown a set of production-hardening slices
-  beyond the original plan.
+  beyond the original plan. The 2026-09-16 gateway outage is fixed — see S13 and
+  S15 in [`docs/backlog.md`](docs/backlog.md).
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-09-14
+- **Last updated:** 2026-09-16
 
 ## Resume in 60 seconds
 
@@ -33,6 +34,7 @@ Then open **http://localhost:8080**. Demo users:
 | `alice` | `alice123` | support_rep | everything but PII |
 | `bella` | `bella123` | billing | orders + refunds only |
 | `dana` | `dana1234` | read_only | reads only |
+| `priya` | `priya123` | privacy | reads PII (with approval) + the basic reads |
 | `manager` | `manager123` | manager | reads + refund quotes; approves |
 | `admin` | `admin123` | platform_admin | administers users; no tools, no approvals |
 | `grace` | `grace123` | support_rep (tenant `globex`) | the second tenant |
@@ -40,7 +42,7 @@ Then open **http://localhost:8080**. Demo users:
 ## Test everything
 
 ```sh
-.venv/bin/python -m pytest -q          # app: 118 passed (14 Postgres tests skip)
+.venv/bin/python -m pytest -q          # app: 160 passed (20 Postgres tests skip)
 sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed
 opa test policy/                       # policy: 31 passed
 ```
@@ -124,26 +126,32 @@ End-to-end, on the cluster:
   the permitted tools and refuses deterministically otherwise; the tool server
   enforces (`docs/roles-and-tools.md`).
 - **A Roles & tools page** in the UI, driven by the policy.
+- **Honest failure reporting** — an unreachable model, an unparseable reply and a
+  bad choice are now distinct messages (S13), and the gateway no longer serves an
+  expired SVID (S15).
 
 ## Immediate next task
 
 Phases 1–3 are complete and every threat is addressed. Next, pick from the open
-backlog in [`docs/roadmap.md`](docs/roadmap.md#backlog--known-gaps):
-
-Each remaining slice has a stable ID — see
-[`docs/backlog.md`](docs/backlog.md) (S1–S10) for what it is, why, where it lands
-and how we would verify it:
+backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S15) — each slice has a stable
+ID with what it is, why, where it lands and how we would verify it:
 
 - **S1–S3** HA for the stateful components (SPIRE, Keycloak, Postgres) and
   persistent storage — the app tier is already replicated (`docs/ha.md`);
 - **S4** hardened Keycloak (production mode, TLS, no `start-dev`);
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
 - **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser;
-- **S8** per-tenant role → tool maps;
+- **S8** per-tenant role → tool maps — decisions settled and the atomic sequence
+  listed; part 1 (`/audit` scoping) landed in PR #69;
 - **S9** durable sandbox/simulator state;
-- **S10** a purpose-built privacy view (the privacy role and PII flow exist).
+- **S11** make SPIRE survive an API-server blip;
+- **S12** a checked Postgres connection pool for the agent's checkpointer;
+- **S14** pin the cluster context in `setup.sh` and the other scripts.
 
-S5 (guardrails + evals) is done — see `docs/guardrails-and-evals.md`.
+Done, kept for the record: **S5** (guardrails + evals,
+`docs/guardrails-and-evals.md`), **S10** (the privacy view, `docs/privacy.md`),
+**S13** (stop blaming the model for infrastructure faults) and **S15** (the
+gateway must not serve an expired SVID).
 
 ## The repository is public
 
@@ -204,8 +212,17 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   and entries; a `setup.sh` re-run restores them. Registration entries are created
   **per attested agent**, or workloads on other nodes get no identity.
 - **Role changes lag** by up to one token lifetime (5 minutes).
+- **Two replicas, two different pods.** `kubectl exec deploy/agent` and
+  `kubectl logs deploy/agent` can land on different replicas, so an eval run and
+  its logs appear to disagree. Name the pod
+  (`get pods -l app=<name>`) when diagnosing.
+- **The gateway restarts itself** to refresh its SVID, and the restart is derived
+  from the certificate's own expiry — `gateway.svid_loaded` reports
+  `expires_in_seconds` at startup. Invisible behind two replicas and a
+  PodDisruptionBudget, but do not read a gateway restart as a crash.
 - **A failed run says so.** The agent never substitutes a tool the role may not
-  call; it reports that nothing was executed.
+  call; it reports that nothing was executed — and now says *why*: an unreachable
+  model, an unparseable reply and a bad choice are different messages (S13).
 
 ## Key files map
 
@@ -216,6 +233,8 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 | `CONTRIBUTING.md` | how to contribute |
 | `docs/threat-model.md` | 10 threats, mitigations, and the test for each |
 | `docs/roles-and-tools.md` | the role → tool matrix |
+| `docs/guardrails-and-evals.md` | the agent's guardrails and the eval suite |
+| `docs/privacy.md` | the PII tool, its approval gate, the access trail |
 | `docs/tenancy.md` | tenant isolation, at every layer |
 | `docs/tls.md` | transport security (SPIFFE + mesh) |
 | `docs/ha.md`, `docs/autoscaling.md` | redundancy and scaling |
