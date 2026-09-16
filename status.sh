@@ -18,9 +18,11 @@ if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
 fi
 echo "cluster: up"
 
-# "2/2" and "Running" for every pod.
+# "2/2" and "Running" for every pod that is meant to be running. Pods that have
+# finished (a Job, like the realm import; a one-shot like the attack suite's
+# `rogue`) are not "not ready" — counting them made the total look wrong.
 read -r ready total <<<"$(kubectl -n "$NS" get pods --no-headers 2>/dev/null \
-  | awk -F'[ /]+' '{t++; if ($2==$3 && $4=="Running") r++} END {print r+0, t+0}')"
+  | awk -F'[ /]+' '$4 != "Completed" && $4 != "Succeeded" {t++; if ($2==$3 && $4=="Running") r++} END {print r+0, t+0}')"
 echo "pods:    ${ready:-0}/${total:-0} ready"
 
 if curl -sf "$URL/healthz" >/dev/null 2>&1; then
