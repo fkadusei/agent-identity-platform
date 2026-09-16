@@ -87,8 +87,40 @@ Legend: **open** · *partly done* (say which half).
   table.
 - **Why:** two customers may want different definitions of "billing". Today the
   matrix is global and the tenant only scopes data.
-- **Lands in:** `policy/authz.rego` (key on tenant), the realm.
-- **Verified by:** the same role in two tenants getting different tools.
+- **Part 1 — done (PR #69):** `/audit` is authenticated and scoped to the caller's
+  tenant. It had taken no token at all, so anything that could reach the API could
+  read every tenant's events — which was why the Audit tab passed no token. The
+  hole was load-bearing.
+- **Decisions, settled:**
+  - the demonstration is `globex`'s `support_rep` **losing** refunds while `acme`'s
+    keeps them: the same role name with different power, decided by which customer
+    you belong to;
+  - a tenant's entry for a role **replaces** the default for that role entirely; a
+    role the tenant does not mention falls back to the default. One place to read,
+    nothing to reconcile, and the failure mode is visible.
+- **Decision, proposed (not confirmed):** the tenant maps live **in the policy
+  file** rather than a separate data document, so changing a customer's powers is a
+  reviewed, signed policy release. The alternative — a data document loaded into
+  OPA — lets tenant configuration change without a policy release, at the cost of a
+  second artefact to version, sign and deploy, and a place where a mistake gets
+  less review.
+- **Must land atomically.** The agent asks the policy which tools a role may call
+  (`tools_for_roles`) so the model is only offered tools it could actually use, and
+  it does not currently pass a tenant. Keying the policy first would have the agent
+  offer tools the tool server then denies — exactly the substitution the agent
+  exists to prevent. So:
+  1. `policy/authz.rego` — split `role_tools` into `default_role_tools` +
+     `tenant_role_tools`, add `role_tools_for(tenant, role)`; `may_call` and
+     `tools_for_roles` read `input.tenant`.
+  2. `policy/tests/authz_test.rego` — `expected_role_tools` is a second copy of the
+     matrix and needs updating, plus per-tenant cases (31 tests today).
+  3. `app/common/policy.py` — `tools_for_roles(url, roles, tenant)`.
+  4. `app/agent/{live,service}.py` — `LiveDeps` needs `delegation.tenant`.
+  5. `app/api/roles.py` — the Roles page shows the caller's own tenant's matrix.
+  6. Nothing to change in the realm: the maps live in policy, and `globex` already
+     has a seeded `support_rep` (`grace`) to demonstrate it with.
+- **Verified by:** `./scripts/role-tools.sh` showing the same role getting
+  different tools in `acme` and `globex`, with the policy tests covering both.
 
 ## S9 — Durable sandbox / simulated-system state
 
