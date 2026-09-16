@@ -75,10 +75,10 @@ be resumed after the agent pod restarts.
 
 The checkpointer holds a **connection pool** (`psycopg_pool`), not one connection,
 and re-ensures its schema on each request — the same defence the approvals and
-audit stores apply per operation. A Postgres restart drops the sockets, and on the
-demo's `emptyDir` it also empties the schema; either way a run after the restart
-succeeds without restarting the agent. Before S12 the single connection stayed
-broken forever:
+audit stores apply per operation. A Postgres restart drops the sockets, and a
+restored or replaced database can come back without the schema; either way a run
+after the restart succeeds without restarting the agent. Before S12 the single
+connection stayed broken forever:
 
 ```
 psycopg.OperationalError: server closed the connection unexpectedly
@@ -104,6 +104,11 @@ watch durability:
 kubectl -n agent-platform rollout restart deploy/api
 kubectl -n agent-platform rollout status deploy/api
 curl -s localhost:8080/approvals          # the pending approval is still there
+
+# the state is on a PersistentVolumeClaim, so it also outlives the database:
+kubectl -n agent-platform delete pod -l app=postgres
+kubectl -n agent-platform rollout status deploy/postgres
+curl -s localhost:8080/approvals          # still there
 ```
 
 To run **without** Postgres (in-memory), remove the `PG*` env from the
@@ -125,12 +130,16 @@ service, operator, or an external cluster).
 
 ## Notes and limits
 
-- The kind Postgres uses `emptyDir` — data is lost with the cluster. That is
-  deliberate (disposable demo); production uses managed storage.
-- `emptyDir` also means a **Postgres pod** restart empties the schema. Every store
-  recreates its tables on demand, so the platform keeps working — but approvals,
-  checkpoints and the audit trail from before the restart are gone (S3 in
+- The kind Postgres keeps its data on a `PersistentVolumeClaim` (kind's
+  `local-path` StorageClass), so approvals, checkpoints, gateway counters and the
+  audit trail survive deleting the pod — and a `setup.sh` re-run. The volume is
+  node-local, so the pod cannot be rescheduled to another node, and it is deleted
+  with the cluster (`./stop.sh --delete`).
+- Production points `database.url` at a managed database **with backups**. The PVC
+  is a demo-scale substitute for durability, not a backup strategy (S3 in
   [`backlog.md`](backlog.md)).
+- Every store recreates its tables on demand (`CREATE TABLE IF NOT EXISTS`), so a
+  database that comes back empty still works — just without its history.
 - The agent's checkpointer pool is sized `min_size=1, max_size=5`. That is demo
   scale; size it against the database's connection budget in production (and put a
   pooler in front).

@@ -136,8 +136,10 @@ Phases 1–3 are complete and every threat is addressed. Next, pick from the ope
 backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S15) — each slice has a stable
 ID with what it is, why, where it lands and how we would verify it:
 
-- **S1–S3** HA for the stateful components (SPIRE, Keycloak, Postgres) and
-  persistent storage — the app tier is already replicated (`docs/ha.md`);
+- **S1–S2** HA for the stateful components that still need it — SPIRE (a shared
+  datastore and key manager) and Keycloak (production mode, external DB). The app
+  tier is already replicated (`docs/ha.md`) and Postgres now has a persistent
+  volume (S3);
 - **S4** hardened Keycloak (production mode, TLS, no `start-dev`);
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
 - **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser;
@@ -145,12 +147,12 @@ ID with what it is, why, where it lands and how we would verify it:
   listed; part 1 (`/audit` scoping) landed in PR #69;
 - **S9** durable sandbox/simulator state.
 
-Done, kept for the record: **S5** (guardrails + evals,
-`docs/guardrails-and-evals.md`), **S10** (the privacy view, `docs/privacy.md`),
-**S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
-Postgres restart), **S13** (stop blaming the model for infrastructure faults),
-**S14** (the scripts pin their cluster context) and **S15** (the gateway must not
-serve an expired SVID).
+Done, kept for the record: **S3** (a persistent Postgres volume), **S5**
+(guardrails + evals, `docs/guardrails-and-evals.md`), **S10** (the privacy view,
+`docs/privacy.md`), **S11** (SPIRE survives an API-server blip), **S12** (the agent
+survives a Postgres restart), **S13** (stop blaming the model for infrastructure
+faults), **S14** (the scripts pin their cluster context) and **S15** (the gateway
+must not serve an expired SVID).
 
 ## The repository is public
 
@@ -216,6 +218,11 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   retried, never fatal. A cluster upgraded from the old Notifier still has its
   field ownership, so publishing fails with `Apply failed with 1 conflict` until
   the ConfigMap is recreated — `setup.sh` does that.
+- **Postgres is durable now** (S3): its data is on a `PersistentVolumeClaim`, so
+  approvals, checkpoints, gateway counters and the audit trail survive deleting
+  the pod and a `setup.sh` re-run. The volume is node-local (kind's `local-path`),
+  so the pod cannot be rescheduled to another node, and `./stop.sh --delete`
+  removes it. Production points `database.url` at a managed database.
 - **Role changes lag** by up to one token lifetime (5 minutes).
 - **Every script pins its cluster.** `scripts/lib.sh` wraps `kubectl` with
   `--context kind-agent-platform` (override with `KUBE_CONTEXT`), and no script

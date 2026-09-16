@@ -99,7 +99,11 @@ def test_it_survives_the_database_closing_its_connections(checkpointer):
 
 
 def test_it_recreates_its_schema_if_the_database_came_back_empty(checkpointer):
-    """The demo's Postgres is on emptyDir, so a pod restart comes back empty."""
+    """A restored or replaced database can come back without the checkpoint tables.
+
+    On the demo's old `emptyDir` Postgres a pod restart did exactly that; S3 has
+    since given it a volume, so the schema is dropped here explicitly instead.
+    """
     import app.agent.service as service
 
     with connect(URL) as conn:
