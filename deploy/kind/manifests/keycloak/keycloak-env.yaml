@@ -1,0 +1,42 @@
+# =============================================================================
+# Keycloak environment, shared by the import Job and the server.
+#
+# Kept in one place because the two must agree: both must reach the same
+# database, and only one of them may decide the hostname — it fixes the `iss` in
+# every token, which the services pin in KC_ISSUER.
+#
+# The database *password* is deliberately not here; it is a Secret. See
+# docs/secrets.md.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-env
+  namespace: agent-platform
+data:
+  KC_DB: postgres
+  KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+  KC_DB_USERNAME: keycloak
+
+  # Production mode (S4): pin the issuer to the URL the services already expect,
+  # instead of resolving it from whatever Host header arrives. This is the same
+  # string as KC_ISSUER on the api/tools/agent, and the `iss` claim must match it
+  # byte for byte.
+  KC_HOSTNAME: http://keycloak:8080
+  KC_HOSTNAME_STRICT: "true"
+
+  # The listener is HTTP, and deliberately so: every in-cluster hop is already
+  # mTLS (the Linkerd mesh — scripts/tls-check.sh asserts it), and the browser
+  # edge terminates TLS at the ingress in production (S7). Keycloak documents
+  # this case for `--http-enabled`: "typically not enabled in production unless
+  # the server is fronted by a TLS termination".
+  KC_HTTP_ENABLED: "true"
+
+  # /health, /health/ready and /health/live on the management port (9000).
+  KC_HEALTH_ENABLED: "true"
+
+  # High availability: the embedded `ispn` cache discovers peers through the
+  # database (jdbc-ping is the default), so two replicas form a cluster with no
+  # headless service and no JGroups DNS setup. Sessions are shared, so a browser
+  # session started on one replica is valid on the other.
+  KC_CACHE_STACK: jdbc-ping

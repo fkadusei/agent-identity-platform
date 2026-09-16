@@ -139,24 +139,23 @@ Phases 1–3 are complete and every threat is addressed. Next, pick from the ope
 backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S15) — each slice has a stable
 ID with what it is, why, where it lands and how we would verify it:
 
-- **S2** HA for Keycloak (production mode, an external DB, 2+ replicas behind the
-  Service). SPIRE and Postgres are as durable as a single-node demo can be (S1,
-  S3), and the app tier is already replicated (`docs/ha.md`), so Keycloak is the
-  last single-replica component that needs it;
-- **S4** hardened Keycloak (production mode, TLS, no `start-dev`);
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
-- **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser;
+- **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser —
+  the last piece of the TLS story now that Keycloak runs in production mode behind
+  the mesh (S4);
 - **S8** per-tenant role → tool maps — decisions settled and the atomic sequence
   listed; part 1 (`/audit` scoping) landed in PR #69;
 - **S9** durable sandbox/simulator state.
 
 Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
-KeyManager half still needs a cloud KMS), **S3** (a persistent Postgres volume),
-**S5** (guardrails + evals, `docs/guardrails-and-evals.md`), **S10** (the privacy
-view, `docs/privacy.md`), **S11** (SPIRE survives an API-server blip), **S12** (the
-agent survives a Postgres restart), **S13** (stop blaming the model for
-infrastructure faults), **S14** (the scripts pin their cluster context) and **S15**
-(the gateway must not serve an expired SVID).
+KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
+Postgres), **S3** (a persistent Postgres volume), **S4** (Keycloak hardened —
+no `start-dev`, no Trivy exception), **S5** (guardrails + evals,
+`docs/guardrails-and-evals.md`), **S10** (the privacy view, `docs/privacy.md`),
+**S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
+Postgres restart), **S13** (stop blaming the model for infrastructure faults),
+**S14** (the scripts pin their cluster context) and **S15** (the gateway must not
+serve an expired SVID).
 
 ## The repository is public
 
@@ -208,9 +207,16 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 
 ## Known issues / gotchas
 
-- **Keycloak re-import:** `setup.sh` recreates Keycloak each run (ephemeral H2,
-  `IGNORE_EXISTING`), so accounts enrolled at runtime are lost. The realm file is
-  the source of truth.
+- **Keycloak is durable now** (S2): its realm and users live in Postgres, the
+  realm is imported by a Job with `--override=false`, and `setup.sh` no longer
+  recreates it — so accounts enrolled at runtime survive a re-run. Consequence,
+  named on purpose: rotating a client secret in `.env` does **not** reach an
+  existing realm. Delete the realm (or the `keycloak` database) and re-run to pick
+  a new secret up.
+- **Keycloak runs in production mode** (S4) from `docker/keycloak.Dockerfile`,
+  which bakes `kc.sh build` so the server starts with `--optimized` and a read-only
+  root filesystem. Its listener is HTTP on purpose: the mesh carries the mTLS
+  in-cluster and the ingress owns the browser edge (S7).
 - **OPA bundle:** the files are mounted with `subPath`, which does not update in
   place — `setup.sh` restarts OPA after a new revision.
 - **SPIRE's state is durable now** (S1): the registration registry lives in

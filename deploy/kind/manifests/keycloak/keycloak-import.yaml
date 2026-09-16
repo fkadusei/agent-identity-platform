@@ -1,0 +1,96 @@
+# =============================================================================
+# Keycloak realm import — a Job, not something the server does at startup (S4).
+#
+# Why a Job:
+#   - The server no longer mounts the realm at all, so the running Keycloak is
+#     just a server; the realm becomes an explicit, observable deploy step.
+#   - `--override=false` makes it idempotent AND non-destructive: the first run
+#     creates the realm, every later run is a no-op that leaves the database —
+#     including accounts enrolled at runtime — untouched. That is what lets
+#     `setup.sh` be re-run without wiping users.
+#
+# The trade-off, stated plainly: because the import never overwrites, rotating a
+# *client secret* in `.env` does not reach an existing realm. Delete the realm
+# (or the `keycloak` database) and re-run to pick a new secret up. See
+# docs/operator-guide.md.
+#
+# scripts/setup.sh applies this and waits for it before starting the server, so
+# the two never race for the database.
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-import
+  namespace: agent-platform
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: keycloak-import
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: import
+          # Same baked image as the server (docker/keycloak.Dockerfile), so the
+          # import runs against the same build with no augmentation.
+          image: agent-platform/keycloak:demo
+          imagePullPolicy: IfNotPresent
+          args:
+            - import
+            - --file
+            - /realm/realm.json
+            # Idempotent and non-destructive: skip a realm that already exists.
+            - --override=false
+            - --optimized
+          envFrom:
+            - configMapRef:
+                name: keycloak-env
+          env:
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-db
+                  key: password
+            # The bootstrap admin exists only to create the master realm; the
+            # import needs it to authenticate against a fresh database.
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: admin
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: realm
+              mountPath: /realm
+              readOnly: true
+            # The image bakes the build, so the root filesystem can be read-only;
+            # only the data dir and /tmp need to be writable.
+            - name: data
+              mountPath: /opt/keycloak/data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-realm
+        - name: data
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

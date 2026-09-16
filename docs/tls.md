@@ -23,6 +23,13 @@ mesh is the right tool here for three reasons:
 - it leaves the **browser edge alone**: the UI reaches the API over ordinary TLS
   and authenticates with bearer tokens, which is what the browser can actually do.
 
+Because the mesh terminates TLS for it, **Keycloak's own listener is HTTP even in
+production mode** (S4). That is its documented deployment shape — `--http-enabled`
+is for a server "fronted by a TLS termination" — and a second, in-mesh HTTPS
+listener would be redundant rather than more secure. What changed in S4 is that
+Keycloak no longer needs a *development* mode to be reachable: `start-dev`, its
+ephemeral database, and the read-only-rootfs exception are all gone.
+
 ## What is covered
 
 ```

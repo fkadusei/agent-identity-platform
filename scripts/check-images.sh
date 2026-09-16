@@ -15,7 +15,7 @@ set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 NS="${NAMESPACE:-agent-platform}"
-SERVICES=(api tools agent gateway sandbox)
+SERVICES=(api tools agent gateway sandbox keycloak)
 
 want="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 if ! git diff --quiet 2>/dev/null; then

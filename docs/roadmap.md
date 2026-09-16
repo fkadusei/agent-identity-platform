@@ -51,14 +51,15 @@ threat in the threat model addressed. The repo is public.
 
 - [x] **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway, a Linkerd mesh for
       every other in-cluster hop (`docs/tls.md`, `scripts/tls-check.sh`)
-- [~] **HA** — the app tier is replicated (`docs/ha.md`); still single-replica:
-      SPIRE (its registry is in Postgres and its keys are on a PVC now — S1 — but
-      2+ replicas also need a shared KeyManager, i.e. a cloud KMS), Keycloak
-      (external DB + clustering), Postgres (single replica, though its data is on a
-      persistent volume — S3), the sandbox (in-memory)
-- [x] Persistent storage for Postgres (S3) — a PVC-backed volume, so its data
-      outlives the pod rather than the process (`docs/data-stores.md`)
-- [ ] Hardened Keycloak (S4); persistent storage still needed for SPIRE (S1)
+- [~] **HA** — the app tier and Keycloak are replicated (`docs/ha.md`); still
+      single-replica: SPIRE (its registry is in Postgres and its keys are on a PVC
+      — S1 — but 2+ replicas also need a shared KeyManager, i.e. a cloud KMS),
+      Postgres (one replica, though its data is on a persistent volume — S3), the
+      sandbox (in-memory)
+- [x] Persistent storage for Postgres and SPIRE (S3, S1) — PVC-backed volumes, so
+      their data outlives the pod rather than the process (`docs/data-stores.md`)
+- [x] Hardened Keycloak (S4) — production mode, an explicit hostname, a read-only
+      root filesystem (no Trivy exception), and the realm imported by a Job
 - [x] **Secrets out of git and manifests** — client secrets generated into a
       gitignored `.env`, the realm rendered from a template, values mounted as
       Kubernetes Secrets; the External Secrets Operator pattern is documented

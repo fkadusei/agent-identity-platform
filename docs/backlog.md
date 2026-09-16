@@ -84,16 +84,29 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   now needs Postgres reachable, which is precisely why production points
   `database.url` at a managed, HA database.
 
-## S2 — HA: Keycloak
+## S2 — HA: Keycloak — **done**
 
 - **What:** Keycloak in production mode against an external database, 2+ replicas
   behind the Service.
-- **Why:** no Keycloak, no tokens. Today it is `start-dev` with ephemeral H2, and
-  `setup.sh` recreates it every run — which is also why runtime-enrolled accounts
-  are lost.
-- **Lands in:** `deploy/kind/manifests/keycloak/`, the realm template, the chart.
-- **Verified by:** scale to 2, log in against either pod, and keep enrolled users
-  across a `setup.sh` re-run.
+- **Why:** no Keycloak, no tokens. It was `start-dev` with ephemeral H2, and
+  `setup.sh` recreated it every run — which is also why runtime-enrolled accounts
+  were lost.
+- **Built:** two replicas behind the Service, against Postgres — a dedicated
+  least-privilege `keycloak` role and database, created by `setup.sh` alongside
+  SPIRE's. Sessions are shared through the embedded `ispn` cache, which discovers
+  peers through the database (`jdbc-ping` is the default), so no headless service
+  or JGroups DNS setup is needed. Added a PodDisruptionBudget and the same soft
+  anti-affinity the other replicated services use. The realm is imported by a
+  **Job** (`keycloak-import.yaml`) with `--override=false`: the first run creates
+  it, every later run is a no-op that leaves the database alone — which is what
+  keeps enrolled accounts. `setup.sh` no longer deletes Keycloak.
+- **Verified by:** 2/2 replicas spread across both workers; a direct grant against
+  *each pod individually* (port-forwarded) returned a valid token with
+  `iss=http://keycloak:8080/realms/agent-platform`; and a user created at runtime
+  was still present after a full `setup.sh` re-run, alongside the seeded users.
+- **Trade-off, named:** because the import never overwrites, rotating a *client
+  secret* in `.env` does not reach an existing realm — delete the realm (or the
+  `keycloak` database) and re-run. That is in the operator guide.
 
 ## S3 — Persistent, managed Postgres — **done**
 
@@ -122,14 +135,27 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Note:** a `setup.sh` re-run no longer wipes this data; it now survives one. The
   volume is still deleted with the cluster (`./stop.sh --delete`).
 
-## S4 — Hardened Keycloak
+## S4 — Hardened Keycloak — **done**
 
 - **What:** the production-mode half of S2 that stands alone: TLS, no `start-dev`,
   an explicit hostname, and a realm imported by a job rather than by the server.
 - **Why:** `start-dev` is documented as a demo setting; the read-only root
-  filesystem is a scoped exception in `.trivyignore.yaml`.
-- **Lands in:** `deploy/kind/manifests/keycloak/keycloak.yaml`.
-- **Verified by:** the Trivy exception can be deleted because the control holds.
+  filesystem was a scoped exception in `.trivyignore.yaml`.
+- **Built:** `args: ["start", "--optimized"]`; an explicit `KC_HOSTNAME`
+  (`http://keycloak:8080`, which pins the `iss` the services already expect);
+  `KC_HOSTNAME_STRICT=true`; and a shared `keycloak-env` ConfigMap so the Job and
+  the server cannot drift. A read-only root filesystem needed a custom image:
+  `start` re-augments Quarkus into `/opt/keycloak/lib/quarkus` at runtime, so
+  `docker/keycloak.Dockerfile` bakes `kc.sh build` in and the server runs with
+  `--optimized`, never writing to `/opt/keycloak` at all.
+- **Verified by:** the Trivy exception is **deleted** — `.trivyignore.yaml` now
+  carries no exceptions, and every container in the repository sets
+  `readOnlyRootFilesystem`.
+- **Interpretation, stated:** the listener is HTTP and TLS is terminated in front.
+  Every in-cluster hop is already mTLS (Linkerd, asserted by `tls-check.sh`) and
+  the browser edge is S7's ingress; Keycloak documents `--http-enabled` for exactly
+  this case ("fronted by a TLS termination"), so a Keycloak HTTPS listener would be
+  redundant *inside* the mesh rather than more secure.
 
 ## S5 — Agent guardrails + evals — **done**
 

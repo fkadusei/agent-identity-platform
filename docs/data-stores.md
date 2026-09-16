@@ -10,6 +10,7 @@ that a *decision* depends on is durable, state that is a *fixture* is not.
 | **Simulated systems** (the systems the tools act on) | in-memory | synthetic fixtures; a reset is harmless (and documented) |
 | **Audit timeline** | Postgres (durable) | "who looked at personal data, and who approved it" cannot be answered from a buffer that one replica holds and a restart clears |
 | **SPIRE's registration registry** | Postgres (durable) | an attested agent, and every registration entry, must outlive the identity server's pod — losing them means no SVIDs for anything (S1) |
+| **Keycloak's realm and users** | Postgres (durable) | accounts enrolled at runtime, and the realm the tokens are issued from, must outlive the pod — and two replicas must share them (S2) |
 
 ## Selecting the backend
 
@@ -26,10 +27,10 @@ use their in-memory stores, so tests and a single-process demo need no database:
 The choice lives in `app/common/db.py` (`database_configured()`) and each store's
 `build_store()` / `get_checkpointer()`, so the service code does not branch on it.
 
-**SPIRE is separate.** The server has its own datastore setting, and in the kind
-manifests it is pointed at this same Postgres (a dedicated `spire` role and
-database, S1). So in the local setup identity — not just the app — depends on the
-database being up.
+**Two other services have their own datastore setting**, and in the kind manifests
+both point at this same Postgres, each with a dedicated least-privilege role:
+SPIRE (`spire`, S1) and Keycloak (`keycloak`, S2). So in the local setup identity
+and tokens — not just the app — depend on the database being up.
 
 ## Approvals
 
@@ -103,7 +104,8 @@ this platform removes.
 
 `scripts/setup.sh` deploys Postgres (`deploy/kind/manifests/data/postgres.yaml`)
 with a generated password, wires `DATABASE_URL` into the api and agent, and creates
-the `spire` role and database that SPIRE's registry uses. To watch durability:
+the `spire` and `keycloak` roles and databases for SPIRE's registry and Keycloak's
+realm. To watch durability:
 
 ```bash
 # create an approval, then restart the API and look again
@@ -118,9 +120,9 @@ curl -s localhost:8080/approvals          # still there
 ```
 
 To run the app's stores **without** Postgres (in-memory), remove the `PG*` env
-from the api/agent manifests and re-apply. The kind SPIRE server still needs the
-database — its registry lives there (S1) — so this takes only the *app* stores back
-to memory.
+from the api/agent manifests and re-apply. SPIRE's registry and Keycloak's realm
+still need the database — they live there (S1, S2) — so this takes only the *app*
+stores back to memory.
 
 ## Production (Helm)
 
