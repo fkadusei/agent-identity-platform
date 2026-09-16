@@ -39,9 +39,16 @@ The HTTP backend speaks exactly this, and nothing else. Every request carries
 | `refunds.quote` | `GET /orders/{id}/refund-quote` |
 | `refunds.issue` | `POST /orders/{id}/refunds` `{"amount": 25}` |
 
-A `404` maps to "not found" (the same result the simulator gives); any other
-non-2xx raises, and the enforcement core turns that into a tool error — never a
-silent success.
+A `404` maps to "not found" — the same result the simulator gives — for every
+tool, reads and writes alike; any other non-2xx raises, and the enforcement core
+turns that into a tool error, never a silent success.
+
+That parity is worth stating because it was broken: the two *write* endpoints
+answered `500` for a record that was not there, because the simulator raises for
+that case and only the read handlers translated it. Now the simulator raises
+`NotFound`, the sandbox maps it to `404`, and every tool handler turns a missing
+result into a readable "unknown ticket/order" — the shape the read tools already
+returned.
 
 ## The sandbox service
 

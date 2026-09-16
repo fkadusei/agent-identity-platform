@@ -25,13 +25,23 @@ import rego.v1
 trusted_agent := "spiffe://acme.com/ns/agent-platform/sa/agent"
 
 # ---------------------------------------------------------------------------
-# WHO MAY CALL WHAT — the review surface.
+# WHO MAY CALL WHAT — the review surface, in two layers.
 #
-# A role can only call the tools listed here, and every tool in the catalogue
+# `default_role_tools` is the matrix for every tenant. `tenant_role_tools` lets a
+# tenant differ, and it works by **replacement**: a tenant's entry for a role
+# replaces the default for that role entirely, and a role the tenant does not
+# mention falls back to the default. One place to read, nothing to reconcile, and
+# a role nobody mentioned keeps the default rather than silently losing it.
+#
+# This lives in the *policy file* rather than a data document loaded into OPA on
+# purpose: changing a customer's powers is then a reviewed, signed policy
+# release, not a config edit that lands with less scrutiny.
+#
+# A role can only call the tools listed for it, and every tool in the catalogue
 # must appear somewhere (a test asserts it against data.tools). Adding a tool
 # without granting it to a role leaves it uncallable, by design.
 # ---------------------------------------------------------------------------
-role_tools := {
+default_role_tools := {
   "support_rep": {
     "crm.customer.read",
     "crm.orders.list",
@@ -53,6 +63,45 @@ role_tools := {
   "manager": {"crm.customer.read", "crm.orders.list", "tickets.read", "refunds.quote"},
   "platform_admin": set(),
 }
+
+# Per-tenant overrides. The demonstration: the *same* role name with different
+# power, decided by which customer you belong to. `globex`'s support reps may
+# quote a refund but not issue one.
+tenant_role_tools := {
+  "globex": {
+    "support_rep": {
+      "crm.customer.read",
+      "crm.orders.list",
+      "tickets.read",
+      "tickets.reply.draft",
+      "refunds.quote",
+    },
+  },
+}
+
+# The tools for one role in one tenant: the tenant's entry if there is one, and
+# the default otherwise. The two bodies are mutually exclusive, so this is a
+# function rather than a conflict — and a role defined in neither is undefined,
+# which denies.
+role_tools_for(tenant, role) := tools if {
+  tools := tenant_role_tools[tenant][role]
+}
+
+role_tools_for(tenant, role) := tools if {
+  tools := default_role_tools[role]
+  not tenant_role_tools[tenant][role]
+}
+
+# Every role mentioned anywhere: the default matrix, plus any tenant-only role.
+known_roles := {role | some role, _ in default_role_tools} | {role |
+  some _, per_role in tenant_role_tools
+  some role, _ in per_role
+}
+
+# The resolved matrix for the *caller's* tenant, for the Roles page. It reads
+# input.tenant like `tools_for_roles`, so the page shows what this caller's tenant
+# actually has rather than the global default.
+role_matrix := {role: role_tools_for(input.tenant, role) | some role in known_roles} if input.tenant
 
 refund_tool := "refunds.issue"
 pii_tools := {"privacy.pii.read"}
@@ -79,16 +128,18 @@ is_trusted if input.agent == trusted_agent
 
 has_role(role) if role in input.roles
 
-# The union of the caller's roles' tools.
+# The union of the caller's roles' tools, in the caller's tenant. `input.tenant`
+# is not optional: an unscoped identity resolves no tools at all, which is why
+# `tools_for_roles` and `may_call` can never disagree about what is offered.
 may_call(tool) if {
   some role in input.roles
-  tool in role_tools[role]
+  tool in role_tools_for(input.tenant, role)
 }
 
 # The tools a set of roles may call — the agent asks for this so the model is
 # offered only what it could actually use (the policy stays the enforcement).
 tools_for_roles := tools if {
-  tools := {tool | some role in input.roles; some tool in role_tools[role]}
+  tools := {tool | some role in input.roles; some tool in role_tools_for(input.tenant, role)}
 }
 
 # A refund must name a positive, numeric amount. Without this a missing or null

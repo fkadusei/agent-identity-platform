@@ -73,7 +73,8 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                     "properties": {"ticket_id": {"type": "string"}, "body": {"type": "string"}},
                     "required": ["ticket_id", "body"],
                 },
-                handler=lambda ticket_id, body, tenant: b.draft_reply(ticket_id, body, tenant),
+                handler=lambda ticket_id, body, tenant: b.draft_reply(ticket_id, body, tenant)
+                or _not_found("ticket"),
             ),
             Tool(
                 name="refunds.quote",
@@ -99,7 +100,8 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                     },
                     "required": ["order_id", "amount"],
                 },
-                handler=lambda order_id, amount, tenant: b.issue_refund(order_id, float(amount), tenant),
+                handler=lambda order_id, amount, tenant: b.issue_refund(order_id, float(amount), tenant)
+                or _not_found("order"),
             ),
             Tool(
                 name="privacy.pii.read",

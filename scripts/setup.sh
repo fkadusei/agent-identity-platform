@@ -269,6 +269,12 @@ kubectl -n $NS delete job keycloak-import --ignore-not-found --wait=true >/dev/n
 kubectl apply -f "$MANIFESTS/keycloak/keycloak-import.yaml" >/dev/null
 kubectl -n $NS wait --for=condition=complete job/keycloak-import --timeout=300s >/dev/null
 kubectl apply -f "$MANIFESTS/keycloak/keycloak.yaml" >/dev/null
+# Restart it as well, not just apply it. The image tag is reused and the config
+# arrives as a mounted ConfigMap, so `apply` alone leaves the previous build (and
+# the previous env) running — exactly the trap check-images.sh exists to catch,
+# and why OPA and the app deployments are restarted too. Cheap now: the realm is
+# in Postgres, so a restart imports nothing and logs nobody out permanently.
+kubectl -n $NS rollout restart deploy/keycloak >/dev/null
 kubectl -n $NS rollout status deploy/keycloak --timeout=420s >/dev/null
 ok "keycloak ready (realm imported by job; 2 replicas; Postgres-backed)"
 

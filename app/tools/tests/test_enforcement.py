@@ -112,8 +112,26 @@ def test_unknown_tool_is_denied():
     assert result.outcome is Outcome.DENIED
 
 
-def test_tool_error_is_reported_not_raised():
+def test_a_missing_record_is_a_result_not_an_error():
+    # Consistent with the read tools (and no longer a 500 over HTTP): asking for a
+    # record that is not there is an answer the caller can read, not a failure.
     result = enforcer().call("token", "refunds.issue", {"order_id": "o-nope", "amount": 10})
+    assert result.outcome is Outcome.OK
+    assert result.result == {"error": "unknown order"}
+
+
+def test_tool_error_is_reported_not_raised(monkeypatch):
+    # The invariant: a *failure* downstream (the vendor is down, a 500, a timeout)
+    # is reported as an error outcome, not raised out of the request. Induced
+    # explicitly, because "unknown order" is now a not-found result rather than a
+    # failure to reach the vendor.
+    from app.tools import backends
+
+    def the_vendor_is_down(self, order_id, amount, tenant):
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(backends.SimulatorBackend, "issue_refund", the_vendor_is_down)
+    result = enforcer().call("token", "refunds.issue", {"order_id": "o-1001", "amount": 10})
     assert result.outcome is Outcome.ERROR
 
 

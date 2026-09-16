@@ -125,6 +125,7 @@ all_tools := [
   "refunds.quote", "refunds.issue", "privacy.pii.read",
 ]
 
+# The *default* matrix (tenant_role_tools overrides it per tenant, below).
 expected_role_tools := {
   "support_rep": {"crm.customer.read", "crm.orders.list", "tickets.read", "tickets.reply.draft", "refunds.quote", "refunds.issue"},
   "billing": {"crm.orders.list", "refunds.quote", "refunds.issue"},
@@ -157,6 +158,99 @@ test_every_catalogue_tool_is_granted_to_some_role if {
 
 test_roles_are_the_union_when_a_user_has_several if {
   tools_for_roles == {"crm.orders.list", "refunds.quote", "refunds.issue", "crm.customer.read", "tickets.read"} with input as object.union(base, {"roles": ["read_only", "billing"]})
+}
+
+# =============================================================================
+# Per-tenant matrices (S8)
+#
+# The same role name, different power, decided by which customer you belong to.
+# =============================================================================
+for_tenant(tenant, role, tool) := object.union(base, {
+  "tenant": tenant,
+  "roles": [role],
+  "tool": tool,
+  "amount": 25,
+})
+
+# --- the demonstration: globex's support_rep loses refunds.issue -------------
+
+test_acme_support_rep_may_issue_a_refund if {
+  decision != "deny" with input as for_tenant("acme", "support_rep", "refunds.issue")
+}
+
+test_globex_support_rep_may_not_issue_a_refund if {
+  decision == "deny" with input as for_tenant("globex", "support_rep", "refunds.issue")
+}
+
+test_the_globex_refusal_names_the_tool if {
+  reason == "denied: your role may not call refunds.issue" with input as for_tenant("globex", "support_rep", "refunds.issue")
+}
+
+# It is a *replacement*, not a subtraction of one tool: the rest still works.
+test_globex_support_rep_keeps_the_rest_of_the_role if {
+  some tool in ["crm.customer.read", "crm.orders.list", "tickets.read", "tickets.reply.draft", "refunds.quote"]
+  decision != "deny" with input as for_tenant("globex", "support_rep", tool)
+}
+
+# An override replaces the default entirely — nothing is merged in.
+test_an_override_replaces_rather_than_extends if {
+  role_tools_for("globex", "support_rep") == {
+    "crm.customer.read", "crm.orders.list", "tickets.read", "tickets.reply.draft", "refunds.quote",
+  }
+}
+
+# --- a role the tenant does not mention falls back to the default ------------
+
+test_an_unmentioned_role_falls_back_to_the_default if {
+  role_tools_for("globex", "manager") == default_role_tools["manager"]
+}
+
+test_an_unknown_tenant_gets_the_default_matrix if {
+  role_tools_for("nowhere", "support_rep") == default_role_tools["support_rep"]
+}
+
+test_a_role_defined_nowhere_has_no_tools if {
+  not role_tools_for("acme", "no_such_role")
+}
+
+# --- what the agent asks for is tenant-scoped too ----------------------------
+
+test_the_offered_tools_are_tenant_scoped if {
+  tools_for_roles == {
+    "crm.customer.read", "crm.orders.list", "tickets.read", "tickets.reply.draft", "refunds.quote",
+  } with input as object.union(base, {"tenant": "globex"})
+}
+
+test_an_unscoped_caller_is_offered_nothing if {
+  tools_for_roles == set() with input as object.remove(base, ["tenant"])
+}
+
+# --- the matrix the Roles page reads -----------------------------------------
+
+test_the_matrix_shows_the_callers_tenant if {
+  role_matrix["support_rep"] == role_tools_for("globex", "support_rep") with input as {"tenant": "globex"}
+}
+
+test_the_matrix_is_undefined_without_a_tenant if {
+  not role_matrix with input as {}
+}
+
+# --- the data stays honest ----------------------------------------------------
+
+# A tenant override may only mention roles that exist, or the default matrix and
+# the override would disagree about what a role even is.
+test_tenant_overrides_only_name_known_roles if {
+  some _, per_role in tenant_role_tools
+  some role, _ in per_role
+  role in object.keys(default_role_tools)
+}
+
+# Every tenant override names real tools, so a typo cannot quietly remove access.
+test_tenant_overrides_only_name_catalogue_tools if {
+  some _, per_role in tenant_role_tools
+  some _, tools in per_role
+  some tool in tools
+  tool in all_tools
 }
 
 # --- unknown tools and the reason chain -------------------------------------

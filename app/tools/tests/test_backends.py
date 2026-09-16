@@ -67,6 +67,45 @@ def test_simulator_backend_scopes_by_tenant():
     assert backend.get_customer("c-900", GLOBEX) is not None
 
 
+def test_a_write_to_a_missing_record_is_none_in_both_backends():
+    """Reads and writes agree, and the two backends agree.
+
+    The simulator signals a missing record by raising; the sandbox answers 404.
+    Both must reach the tool layer as `None`, or a tool would report one thing on
+    the simulator and another in the deployment.
+    """
+    backend = SimulatorBackend()
+    assert backend.draft_reply("t-9001", "hi", ACME) is None
+    assert backend.issue_refund("o-9001", 10, ACME) is None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404)
+
+    http = _backend(handler)
+    assert http.draft_reply("t-9001", "hi", ACME) is None
+    assert http.issue_refund("o-9001", 10, ACME) is None
+
+
+def test_a_tool_reports_a_missing_record_rather_than_returning_null():
+    """The handlers turn `None` into a readable result, as the read tools do."""
+    from app.tools.catalog import build_tools
+
+    class Empty:
+        def draft_reply(self, ticket_id, body, tenant):
+            return None
+
+        def issue_refund(self, order_id, amount, tenant):
+            return None
+
+    tools = build_tools(Empty())
+    assert tools["tickets.reply.draft"].handler(
+        ticket_id="t-1", body="hi", tenant=ACME
+    ) == {"error": "unknown ticket"}
+    assert tools["refunds.issue"].handler(
+        order_id="o-1", amount=10, tenant=ACME
+    ) == {"error": "unknown order"}
+
+
 def test_tools_call_the_injected_backend():
     from app.tools.catalog import build_tools
 

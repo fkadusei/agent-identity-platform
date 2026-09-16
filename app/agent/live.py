@@ -21,6 +21,7 @@ class LiveDeps:
     def __init__(
         self,
         user_token: str,
+        tenant: str | None,
         settings: Settings | None = None,
         tool_server_url: str | None = None,
         approvals_url: str | None = None,
@@ -28,6 +29,10 @@ class LiveDeps:
     ):
         self._user_token = user_token
         self._roles = tuple(roles)
+        # The tenant is required rather than optional: it decides which role →
+        # tool matrix applies (S8), so a caller that forgets it would silently
+        # offer the wrong tools.
+        self._tenant = tenant
         self._settings = settings or Settings.from_env()
         self._tool_server_url = (tool_server_url or os.environ.get("TOOL_SERVER_URL", "http://tools:8000")).rstrip("/")
         self._approvals_url = (approvals_url or os.environ.get("APPROVALS_URL", "http://api:8080")).rstrip("/")
@@ -43,14 +48,16 @@ class LiveDeps:
         )
 
     def allowed_tools(self) -> dict:
-        """The catalogue filtered to what this caller's roles may call.
+        """The catalogue filtered to what this caller's roles may call, in their
+        tenant.
 
         Read from the policy, so the tools offered and the tools allowed cannot
-        drift. Fails closed: if the policy is unreachable, no tools are offered.
+        drift — including per tenant, where the same role name can differ. Fails
+        closed: if the policy is unreachable, no tools are offered.
         """
         from app.common.policy import tools_for_roles
 
-        allowed = tools_for_roles(self._settings.opa_url, self._roles)
+        allowed = tools_for_roles(self._settings.opa_url, self._roles, self._tenant)
         return {name: tool for name, tool in TOOLS.items() if name in allowed}
 
     def decide(self, task: str) -> dict:
