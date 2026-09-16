@@ -21,7 +21,7 @@ or an upgrade cannot take a whole service down.
 
 | Component | Why not | What production does |
 | --- | --- | --- |
-| `spire-server` | HA needs a **shared datastore** *and* a **shared KeyManager** (cloud KMS). The demo uses sqlite + the disk key manager, which are single-replica by nature. | Postgres datastore + AWS/GCP/Azure KMS, 2+ replicas |
+| `spire-server` | Its state survives the pod now (S1: the registry is in Postgres and the keys are on a PVC), so a restart keeps the same CA and entries. HA still needs a **shared KeyManager** as well as a shared datastore, and that means a cloud KMS; the demo keeps the disk KeyManager, which is single-replica by nature. | Shared datastore + AWS/GCP/Azure KMS, 2+ replicas |
 | `keycloak` | HA needs an external database **and** clustering (cache discovery). The demo uses `start-dev` with in-memory H2. | External DB + `start` + 2+ replicas behind the Service |
 | `postgres` | Its data is on a `PersistentVolumeClaim` now (S3), so it survives a pod restart and is not lost with the process — but it is still one replica, and running HA Postgres well (failover, backups) is its own discipline. | A managed HA database with backups; the chart takes the DSN (`database.url`) |
 | `sandbox` | It holds the synthetic data **in memory**, so replicas would disagree. | A real backend (the tools' HTTP backend already targets one) |

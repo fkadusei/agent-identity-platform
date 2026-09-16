@@ -64,8 +64,10 @@ flowchart TB
     PEP --> OPA["OPA<br/>role → tool · allow / deny / require-approval"]
     PEP -- "tenant-scoped" --> SIM["Sandbox (→ real systems)"]
     AG -- "SPIFFE mTLS" --> GW["LLM gateway<br/>holds the model key · rate/cost limits"]
-    AG & PEP & WEB & GW --> PG[("Postgres<br/>approvals · run checkpoints · limits")]
-    SA["SPIRE agent"] -- "SVID, no secrets" --> AG & GW
+    AG & PEP & WEB & GW --> PG[("Postgres<br/>approvals · run checkpoints · limits · SPIRE registry")]
+    SS["SPIRE server<br/>attests workloads · holds the registry"] -- "SVIDs" --> SA["SPIRE agent"]
+    SA -- "SVID, no secrets" --> AG & GW
+    SS --> PG
     MESH["Linkerd mesh<br/>mTLS on every hop"] -.-> WEB & PEP & OPA
     OBS["OpenTelemetry → Jaeger · Prometheus → Grafana"] -.-> AG & PEP
 ```

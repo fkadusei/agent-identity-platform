@@ -52,8 +52,9 @@ threat in the threat model addressed. The repo is public.
 - [x] **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway, a Linkerd mesh for
       every other in-cluster hop (`docs/tls.md`, `scripts/tls-check.sh`)
 - [~] **HA** — the app tier is replicated (`docs/ha.md`); still single-replica:
-      SPIRE (needs a shared datastore + cloud KMS), Keycloak (external DB +
-      clustering), Postgres (single replica, though its data is now on a
+      SPIRE (its registry is in Postgres and its keys are on a PVC now — S1 — but
+      2+ replicas also need a shared KeyManager, i.e. a cloud KMS), Keycloak
+      (external DB + clustering), Postgres (single replica, though its data is on a
       persistent volume — S3), the sandbox (in-memory)
 - [x] Persistent storage for Postgres (S3) — a PVC-backed volume, so its data
       outlives the pod rather than the process (`docs/data-stores.md`)
