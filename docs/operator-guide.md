@@ -280,6 +280,7 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | `no attested SPIRE agent found` | agent not attested yet | re-run `setup.sh`; check `spire-agent` logs |
 | Enrolled user vanished | Keycloak was recreated by `setup.sh` (ephemeral realm) | re-enroll, or use a persistent database in production |
 | Approvals/runs vanish on restart | `DATABASE_URL` not set (in-memory stores) | set `DATABASE_URL` (see [`data-stores.md`](data-stores.md)) |
+| Approvals/audit vanish after a **Postgres pod** restart | the demo Postgres is `emptyDir` — a new pod means new (empty) storage | expected on kind; every store recreates its schema, so the platform keeps working. Use managed storage (S3 in [`backlog.md`](backlog.md)) |
 | An edge is not `SECURED` in `tls-check.sh` | the pod is not mesh-injected | annotate the namespace (`linkerd.io/inject=enabled`) and restart the deployment |
 | An agent gets `429` from the gateway | it hit its rate or token budget | raise `LLM_RATE_LIMIT_PER_MINUTE` / `LLM_TOKEN_BUDGET_PER_DAY`, or check `llm.limited` in the audit ([`llm-gateway.md`](llm-gateway.md)) |
 | Agent tasks fail with `CERTIFICATE_VERIFY_FAILED: certificate has expired` | the **gateway** is serving an expired SVID — the client certs are fine, the server's is not | should not recur since S15; check `gateway.svid_loaded` (`expires_in_seconds`) and `gateway.svid_restart` in `kubectl -n agent-platform logs deploy/gateway`, then restart the gateway |

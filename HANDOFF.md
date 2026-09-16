@@ -144,14 +144,13 @@ ID with what it is, why, where it lands and how we would verify it:
 - **S8** per-tenant role → tool maps — decisions settled and the atomic sequence
   listed; part 1 (`/audit` scoping) landed in PR #69;
 - **S9** durable sandbox/simulator state;
-- **S11** make SPIRE survive an API-server blip;
-- **S12** a checked Postgres connection pool for the agent's checkpointer.
+- **S11** make SPIRE survive an API-server blip.
 
 Done, kept for the record: **S5** (guardrails + evals,
 `docs/guardrails-and-evals.md`), **S10** (the privacy view, `docs/privacy.md`),
-**S13** (stop blaming the model for infrastructure faults), **S14** (the scripts
-pin their cluster context) and **S15** (the gateway must not serve an expired
-SVID).
+**S12** (the agent survives a Postgres restart), **S13** (stop blaming the model
+for infrastructure faults), **S14** (the scripts pin their cluster context) and
+**S15** (the gateway must not serve an expired SVID).
 
 ## The repository is public
 

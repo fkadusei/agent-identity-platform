@@ -20,7 +20,7 @@ from app.agent.graph import build_agent, resume_task, run_task
 from app.agent.guardrails import GuardrailError, check_task
 from app.agent.live import LiveDeps
 from app.common.audit_forward import enable_forwarding
-from app.common.db import connect, database_configured, database_url
+from app.common.db import database_configured, database_url
 from app.common.telemetry import instrument_fastapi, setup_telemetry
 
 app = FastAPI(title="agent service")
@@ -30,6 +30,8 @@ instrument_fastapi(app)
 _runs: dict[str, Any] = {}
 _verifier: TokenVerifier | None = None
 _checkpointer: Any = None
+_checkpointer_ready = False
+_pool: Any = None
 
 
 def _delegation(token: str) -> Delegation:
@@ -50,20 +52,53 @@ def _delegation(token: str) -> Delegation:
             )
         )
     return _verifier.verify(token)
-_checkpointer_ready = False
 
 
 def get_checkpointer() -> Any:
-    """A durable checkpointer when DATABASE_URL is set, else None (in-memory)."""
-    global _checkpointer, _checkpointer_ready
+    """A durable, **pooled** checkpointer when a database is configured, else None.
+
+    A pool rather than a single connection, because the checkpointer checks a
+    connection out per operation and a pool replaces the dead ones. With one bare
+    connection, a Postgres restart killed that socket and every run then failed in
+    0.1s with `psycopg.OperationalError: server closed the connection
+    unexpectedly` — forever, until the agent process was restarted, and looking
+    like a dozen other errors from the outside (S12).
+
+    `check=ConnectionPool.check_connection` makes the recovery transparent to the
+    first request after the restart: a dead connection is detected at checkout and
+    swapped for a live one, instead of being handed out to fail once.
+    """
+    global _checkpointer, _checkpointer_ready, _pool
     if not _checkpointer_ready:
         _checkpointer_ready = True
         if database_configured():
             from langgraph.checkpoint.postgres import PostgresSaver
+            from psycopg_pool import ConnectionPool
 
-            saver = PostgresSaver(connect(database_url()))
-            saver.setup()
-            _checkpointer = saver
+            # An empty conninfo lets libpq build the DSN from the PG* variables,
+            # which is how the manifests pass the password (a Secret reference),
+            # so no credential is ever assembled into a URL.
+            _pool = ConnectionPool(
+                conninfo=database_url() or "",
+                # The application_name shows which backends are the checkpointer's
+                # in pg_stat_activity — the same handle the S12 test uses to
+                # simulate a restart by closing exactly those.
+                kwargs={"autocommit": True, "application_name": "agent-checkpointer"},
+                min_size=1,
+                max_size=5,
+                check=ConnectionPool.check_connection,
+                open=True,
+            )
+            _checkpointer = PostgresSaver(_pool)
+
+    if _checkpointer is not None:
+        # Idempotent, and the same defence the approvals and audit stores apply
+        # per operation: the demo's Postgres is on ephemeral storage, so a pod
+        # restart brings it back with no schema under a running agent. Without
+        # this the pool would reconnect cleanly and the run would then fail with
+        # "relation checkpoints does not exist".
+        _checkpointer.setup()
+
     return _checkpointer
 
 

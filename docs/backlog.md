@@ -222,18 +222,32 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Verified by:** making the API server briefly unreachable and watching SPIRE
   recover on its own, with no manual restart of the workloads.
 
-## S12 — The agent must survive a Postgres restart
+## S12 — The agent must survive a Postgres restart — **done**
 
-- **What:** the agent's run checkpointer holds a single Postgres connection. When
+- **What:** the agent's run checkpointer held a single Postgres connection. When
   Postgres restarted, that connection died and every run failed in 0.1s with
   `psycopg.OperationalError: server closed the connection unexpectedly` — forever,
   until the agent process was restarted.
 - **Why:** a database restart must not require restarting the application, and the
   failure looks identical to a dozen other errors from the outside.
-- **Lands in:** `app/agent/service.py` (`get_checkpointer`) — a checked pool
-  (`psycopg_pool.ConnectionPool`) instead of a bare `connect(...)`.
-- **Verified by:** restart Postgres, then run the evals *without* restarting the
-  agent.
+- **Built:** `app/agent/service.py` — `get_checkpointer()` builds a
+  `psycopg_pool.ConnectionPool` (`check=ConnectionPool.check_connection`, so a dead
+  connection is caught at checkout and replaced rather than handed out to fail
+  once) and gives it to `PostgresSaver`, which checks a connection out per
+  operation. It also re-runs the idempotent `saver.setup()` on each request — the
+  same defence the approvals and audit stores apply per operation — because the
+  demo's `emptyDir` Postgres comes back with no schema after a pod restart. The
+  pool's backends carry `application_name=agent-checkpointer`, so they are visible
+  in `pg_stat_activity` and addressable by the test.
+- **Verified by:** two tests in `app/agent/tests/test_checkpointer_postgres.py`,
+  both of which fail against the old single-connection code (with
+  `AdminShutdown` and `UndefinedTable` respectively). On kind, with the agent's
+  restart count unchanged at 0 throughout: (1) terminating its four pooled
+  connections, then a full run → approval → resume → issued; and (2) deleting the
+  Postgres pod — new `emptyDir`, `\dt` showing *no* relations — then the same full
+  run, which recreated all eight tables on demand.
+- **Note:** `psycopg[pool]` is now declared in `requirements.txt`; it previously
+  arrived only transitively.
 
 ## S13 — Stop blaming the model for infrastructure faults — **done**
 
