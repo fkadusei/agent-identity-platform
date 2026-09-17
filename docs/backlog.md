@@ -245,14 +245,34 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   that is not there is a clear "unknown ticket/order" — never a 500, never a silent
   success. See `docs/integrations.md`.
 
-## S9 — Durable sandbox / simulated-system state
+## S9 — Durable sandbox / simulated-system state — **done**
 
 - **What:** persist the synthetic data so it survives a restart, or make the
   sandbox stateless.
-- **Why:** the sandbox holds its data in memory, so a restart resets every refund
-  and draft — fine for a demo, confusing mid-demo.
-- **Lands in:** `app/sandbox/`, `app/simulators/`.
-- **Verified by:** issue a refund, restart the sandbox, list refunds.
+- **Why:** the sandbox held its data in memory, so a restart reset every refund and
+  draft — fine for a demo, confusing mid-demo.
+- **Built:** the sandbox keeps its own snapshot. The simulated systems gained
+  `snapshot()` / `restore()` (`app/simulators/`), and the sandbox writes them to
+  `SANDBOX_STATE_PATH` after each write and reloads them at startup — so a pod
+  restart continues the demo (`app/sandbox/persistence.py`). Three deliberate
+  properties: **off unless configured** (tests and a local run keep the in-memory
+  behaviour), **never fatal** (a snapshot that cannot be read is treated as empty
+  and a failed write is reported as `sandbox.state_error`, because a volume that is
+  not mounted should not fail the write it is recording), and **atomic** (written
+  to a temporary file and renamed, so a crash cannot leave a half-written snapshot
+  to be read at startup). The ids resume after the restored records, so a new
+  refund cannot collide with an old one and idempotency still holds across a
+  restart.
+- **Why the sandbox's own volume, not Postgres:** the sandbox stands in for a
+  vendor's systems, so it owns this storage — the platform's database is not the
+  vendor's. The tools do not know either way; the REST contract is unchanged.
+- **Verified by:** issued a refund and a draft, deleted the sandbox pod, and the
+  quote still reported it (`already_refunded 25.0`); the next refund came back as
+  `r-0002`, so the counter had resumed. Removing the snapshot and restarting
+  returns the demo to its clean baseline, which is also how the volume behaves in
+  `./stop.sh --delete`. Tests: a round-trip at the simulator level (ids, idempotency)
+  and an end-to-end restart through the app's lifespan — both fail if the restore
+  is removed.
 
 ## S10 — Privacy use case, end to end
 

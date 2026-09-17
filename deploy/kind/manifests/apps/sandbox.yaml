@@ -5,7 +5,22 @@
 #
 # Point SANDBOX_BASE_URL at a real sandbox to replace it; the tools only know
 # the REST contract (docs/integrations.md).
+#
+# It keeps its own data (S9): refunds and drafts are snapshotted to a volume, so
+# restarting this pod no longer resets them mid-demo. The volume is its storage —
+# a stand-in for the vendor's own database, not the platform's.
 # =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: sandbox-state
+  namespace: agent-platform
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,6 +39,7 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -35,6 +51,10 @@ spec:
               value: http://otel-collector:4318
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            # Where the simulated systems keep their state between restarts. Unset
+            # means in-memory (tests, a local run).
+            - name: SANDBOX_STATE_PATH
+              value: /data/sandbox-state.json
           ports:
             - containerPort: 8090
           securityContext:
@@ -45,6 +65,8 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: state
+              mountPath: /data
           readinessProbe:
             httpGet:
               path: /healthz
@@ -54,6 +76,9 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: state
+          persistentVolumeClaim:
+            claimName: sandbox-state
 ---
 apiVersion: v1
 kind: Service

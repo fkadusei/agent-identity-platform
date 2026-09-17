@@ -110,7 +110,8 @@ End-to-end, on the cluster:
 - **Managed data stores** — approvals and run checkpoints durable in Postgres
   (`docs/data-stores.md`).
 - **Real sandbox integrations** — a backend seam (simulator | HTTP) plus a
-  sandbox service (`docs/integrations.md`).
+  sandbox service that keeps its own state on a volume, so a restart continues the
+  demo (S9, `docs/integrations.md`).
 - **Adoption guide** (`docs/real-world-adoption.md`).
 
 **Since then (beyond the original plan).**
@@ -144,18 +145,18 @@ ID with what it is, why, where it lands and how we would verify it:
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
 - **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser —
   the last piece of the TLS story now that Keycloak runs in production mode behind
-  the mesh (S4);
-- **S9** durable sandbox/simulator state.
+  the mesh (S4).
 
 Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
 KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
 Postgres), **S3** (a persistent Postgres volume), **S4** (Keycloak hardened —
 no `start-dev`, no Trivy exception), **S5** (guardrails + evals,
-`docs/guardrails-and-evals.md`), **S8** (per-tenant role → tool maps),
-**S10** (the privacy view, `docs/privacy.md`), **S11** (SPIRE survives an
-API-server blip), **S12** (the agent survives a Postgres restart), **S13** (stop
-blaming the model for infrastructure faults), **S14** (the scripts pin their
-cluster context) and **S15** (the gateway must not serve an expired SVID).
+`docs/guardrails-and-evals.md`), **S8** (per-tenant role → tool maps), **S9** (the
+sandbox keeps its own data), **S10** (the privacy view, `docs/privacy.md`),
+**S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
+Postgres restart), **S13** (stop blaming the model for infrastructure faults),
+**S14** (the scripts pin their cluster context) and **S15** (the gateway must not
+serve an expired SVID).
 
 ## The repository is public
 

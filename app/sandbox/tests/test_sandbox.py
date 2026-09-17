@@ -92,3 +92,37 @@ def test_a_non_positive_refund_is_bad_input_not_a_server_error():
     resp = client.post("/orders/o-1001/refunds", json={"amount": 0}, headers=ACME)
     assert resp.status_code == 400
     assert "positive" in resp.json()["detail"]
+
+
+# --- the systems keep their data (S9) ----------------------------------------
+
+
+def test_a_restart_does_not_reset_refunds_and_drafts(tmp_path, monkeypatch):
+    """Issue a refund, restart the sandbox, and it is still there.
+
+    A restart is a fresh process over the same volume, so this clears the
+    in-memory state and lets the app's lifespan load it back — the same path a
+    real pod restart takes.
+    """
+    import app.sandbox.app as sandbox_app
+    from app.sandbox.persistence import SandboxState
+    from app.simulators import payments, reset, tickets
+
+    monkeypatch.setattr(sandbox_app, "STATE", SandboxState(str(tmp_path / "state.json")))
+
+    reset()  # a brand-new process
+    fresh = TestClient(app)
+    issued = fresh.post("/orders/o-1001/refunds", json={"amount": 25}, headers=ACME)
+    assert issued.status_code == 200
+    assert issued.json()["status"] == "issued"
+    fresh.post("/tickets/t-5001/drafts", json={"body": "hello"}, headers=ACME)
+
+    reset()  # the restart
+    assert payments.list_refunds("acme") == []
+
+    with TestClient(app) as restarted:  # `with` runs the lifespan, which restores
+        quote = restarted.get("/orders/o-1001/refund-quote", headers=ACME).json()
+        assert quote["already_refunded"] == 25.0
+        assert [d["ticket_id"] for d in tickets.list_drafts("acme")] == ["t-5001"]
+
+    reset()  # leave nothing behind for the other tests

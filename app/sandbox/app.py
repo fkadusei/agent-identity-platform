@@ -7,15 +7,41 @@ contract is all the tools know about.
 
 Every request **must** carry `X-Tenant`, and every lookup is scoped to it: a
 record from another tenant is a 404, exactly as if it did not exist.
+
+The systems it stands in for keep their data: refunds and drafts are written to
+the snapshot in `SANDBOX_STATE_PATH` (S9), so restarting this pod does not reset
+the demo. See `app/sandbox/persistence.py`.
 """
 from __future__ import annotations
 
+import contextlib
+import os
+from collections.abc import AsyncIterator
+
 from fastapi import FastAPI, Header, HTTPException
 
+from app.sandbox.persistence import SandboxState
 from app.simulators import crm, orders, payments, tickets
+from app.simulators import restore, snapshot
 from app.simulators.errors import NotFound
 
-app = FastAPI(title="sandbox")
+STATE = SandboxState(os.environ.get("SANDBOX_STATE_PATH"))
+
+
+@contextlib.asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # Pick up whatever the simulated systems had before this process started, so
+    # a restart continues the demo instead of resetting it (S9).
+    restore(**STATE.load())
+    yield
+
+
+app = FastAPI(title="sandbox", lifespan=_lifespan)
+
+
+def _persist() -> None:
+    """Snapshot the runtime state after a write. Never fatal."""
+    STATE.save(**snapshot())
 
 
 def _tenant(x_tenant: str | None) -> str:
@@ -77,7 +103,9 @@ def get_ticket(ticket_id: str, x_tenant: str | None = Header(default=None)) -> d
 
 @app.post("/tickets/{ticket_id}/drafts")
 def draft_reply(ticket_id: str, body: dict, x_tenant: str | None = Header(default=None)) -> dict:
-    return _simulate(lambda: tickets.draft_reply(ticket_id, body.get("body", ""), _tenant(x_tenant)))
+    draft = _simulate(lambda: tickets.draft_reply(ticket_id, body.get("body", ""), _tenant(x_tenant)))
+    _persist()
+    return draft
 
 
 @app.get("/orders/{order_id}/refund-quote")
@@ -90,4 +118,6 @@ def quote_refund(order_id: str, x_tenant: str | None = Header(default=None)) -> 
 
 @app.post("/orders/{order_id}/refunds")
 def issue_refund(order_id: str, body: dict, x_tenant: str | None = Header(default=None)) -> dict:
-    return _simulate(lambda: payments.issue_refund(order_id, float(body.get("amount", 0)), _tenant(x_tenant)))
+    refund = _simulate(lambda: payments.issue_refund(order_id, float(body.get("amount", 0)), _tenant(x_tenant)))
+    _persist()
+    return refund

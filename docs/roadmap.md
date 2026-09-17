@@ -55,7 +55,7 @@ threat in the threat model addressed. The repo is public.
       single-replica: SPIRE (its registry is in Postgres and its keys are on a PVC
       — S1 — but 2+ replicas also need a shared KeyManager, i.e. a cloud KMS),
       Postgres (one replica, though its data is on a persistent volume — S3), the
-      sandbox (in-memory)
+      sandbox (one replica, on its own volume — S9)
 - [x] Persistent storage for Postgres and SPIRE (S3, S1) — PVC-backed volumes, so
       their data outlives the pod rather than the process (`docs/data-stores.md`)
 - [x] Hardened Keycloak (S4) — production mode, an explicit hostname, a read-only
@@ -123,16 +123,17 @@ completed items are kept below for the record.
       tool server enforces, and `scripts/role-tools.sh` shows it end to end,
       including the same role holding different power in two tenants
       (`docs/roles-and-tools.md`)
-- The tools' in-memory simulator state resets on restart (fine for the demo).
+- The simulated systems keep their own data now (S9) — the sandbox snapshots
+  refunds and drafts to its own volume, so a restart no longer resets the demo.
 
 ## Phase 3 — Deploy and adoption
 
 - [x] Cloud-agnostic **Helm chart + values**; ingress/TLS via values
       (`deploy/helm/agent-platform`); SPIRE and Keycloak are documented
       prerequisites, the policy bundle a signed build artifact
-- [x] Managed data stores — approvals and agent run checkpoints are durable in
-      Postgres when `DATABASE_URL` is set; simulators stay in-memory
-      (`docs/data-stores.md`)
+- [x] Managed data stores — approvals, agent run checkpoints and (S9) the sandbox's
+      own state are durable; the platform's are in Postgres when `DATABASE_URL` is
+      set (`docs/data-stores.md`)
 - [x] **CI/CD with approval gates** — release builds + signs images/bundle/chart;
       deploy verifies signatures, applies the chart behind a GitHub Environment
       approval gate, smoke-tests (incl. the attack suite) and rolls back

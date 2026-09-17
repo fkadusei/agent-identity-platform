@@ -136,13 +136,18 @@ services:
         value: http
       - name: SANDBOX_BASE_URL
         value: http://sandbox:8090
-  # The sandbox holds in-memory simulator state, so it stays single-replica.
+  # The sandbox keeps its own state (S9): refunds and drafts are snapshotted to a
+  # volume, so a restart does not reset the demo. Set `stateSize` to "" to run it
+  # in-memory instead, where it forgets on restart. Either way it stays
+  # single-replica: it is one writer, and a real backend is one configuration away
+  # (SANDBOX_BASE_URL above).
   sandbox:
     enabled: true
     replicas: 1
     port: 8090
     spiffe: false
     env: []
+    stateSize: 1Gi
   agent:
     enabled: true
     replicas: 2

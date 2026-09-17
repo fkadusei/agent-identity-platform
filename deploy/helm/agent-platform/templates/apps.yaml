@@ -5,6 +5,24 @@ trust bundle.
 */ -}}
 {{- range $name, $svc := .Values.services }}
 {{- if $svc.enabled }}
+{{- if and (eq $name "sandbox") $svc.stateSize }}
+---
+# The sandbox's own storage (S9). It stands in for a vendor's systems, so this is
+# its volume, not the platform's — point SANDBOX_BASE_URL at a real backend and
+# neither this nor the sandbox exists.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $name }}-state
+  labels:
+    app: {{ $name }}
+    {{- include "agent-platform.labels" $ | nindent 4 }}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: {{ $svc.stateSize }}
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -62,6 +80,10 @@ spec:
             {{- with $svc.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- if and (eq $name "sandbox") $svc.stateSize }}
+            - name: SANDBOX_STATE_PATH
+              value: /data/sandbox-state.json
+            {{- end }}
             {{- if and $.Values.database.url (has $name (list "api" "agent" "gateway")) }}
             - name: DATABASE_URL
               value: {{ $.Values.database.url | quote }}
@@ -82,6 +104,10 @@ spec:
             {{- end }}
             - name: tmp
               mountPath: /tmp
+            {{- if and (eq $name "sandbox") $svc.stateSize }}
+            - name: state
+              mountPath: /data
+            {{- end }}
           readinessProbe:
             {{- if eq $name "gateway" }}
             # mTLS: an HTTP probe from the kubelet has no client certificate.
@@ -110,6 +136,11 @@ spec:
         {{- end }}
         - name: tmp
           emptyDir: {}
+        {{- if and (eq $name "sandbox") $svc.stateSize }}
+        - name: state
+          persistentVolumeClaim:
+            claimName: {{ $name }}-state
+        {{- end }}
 ---
 apiVersion: v1
 kind: Service

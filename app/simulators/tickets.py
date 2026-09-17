@@ -47,6 +47,20 @@ def list_drafts(tenant: str, ticket_id: str | None = None) -> list[dict]:
     return list(values)
 
 
+def snapshot() -> list[dict]:
+    """The recorded drafts, for a caller that keeps them across restarts (S9)."""
+    return list(_drafts.values())
+
+
+def restore(records: list[dict]) -> None:
+    """Replace the runtime state with a previous process's drafts (S9)."""
+    global _seq
+    _drafts.clear()
+    for record in records:
+        _drafts[record["id"]] = record
+    _seq = itertools.count(data.next_id_number(records))
+
+
 def reset() -> None:
     global _seq
     _drafts.clear()

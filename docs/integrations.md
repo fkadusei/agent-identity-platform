@@ -61,6 +61,12 @@ kubectl -n agent-platform port-forward svc/sandbox 8090:8090
 curl -s localhost:8090/customers/c-100
 ```
 
+It keeps its own data (S9): refunds and drafts are snapshotted to a volume
+(`SANDBOX_STATE_PATH`), so restarting it continues the demo instead of resetting
+it. That storage is the sandbox's, as a stand-in for the vendor's database — the
+tools never see it, and a real vendor's system would have its own. Unset the path
+and it is in-memory again, which is what tests and a local run use.
+
 ## Pointing at a real sandbox
 
 Set `SANDBOX_BASE_URL` (and `SANDBOX_TOKEN`) to your provider's sandbox and the
