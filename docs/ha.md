@@ -24,7 +24,7 @@ or an upgrade cannot take a whole service down.
 | `spire-server` | Its state survives the pod now (S1: the registry is in Postgres and the keys are on a PVC), so a restart keeps the same CA and entries. HA still needs a **shared KeyManager** as well as a shared datastore, and that means a cloud KMS; the demo keeps the disk KeyManager, which is single-replica by nature. | Shared datastore + AWS/GCP/Azure KMS, 2+ replicas |
 | `keycloak` | 2 replicas behind the Service against Postgres (S2), sessions shared through the `ispn` cache discovering peers via the database. HA is otherwise taken care of; a genuine multi-site setup would add an external Infinispan. | 2+ replicas + a managed database (what the demo now does, minus the database being managed) |
 | `postgres` | Its data is on a `PersistentVolumeClaim` now (S3), so it survives a pod restart and is not lost with the process — but it is still one replica, and running HA Postgres well (failover, backups) is its own discipline. | A managed HA database with backups; the chart takes the DSN (`database.url`) |
-| `sandbox` | It holds the synthetic data **in memory**, so replicas would disagree. | A real backend (the tools' HTTP backend already targets one) |
+| `sandbox` | It holds the synthetic data, which now survives a restart on its own volume (S9) — but it is still a single writer, so replicas would disagree. | A real backend (the tools' HTTP backend already targets one) |
 | observability | Jaeger/Prometheus/Grafana are demo-scale. | Managed backends |
 
 ## Multi-node: the SPIRE registration fix

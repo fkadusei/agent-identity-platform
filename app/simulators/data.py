@@ -145,3 +145,18 @@ def scoped(record: dict | None, tenant: str) -> dict | None:
     if record is None or not tenant:
         return None
     return record if record.get("tenant") == tenant else None
+
+
+def next_id_number(records) -> int:
+    """One past the highest numeric suffix in `records`' ids.
+
+    Runtime records are numbered (`r-0001`, `d-0001`). When a process restores
+    records a previous one wrote (S9), its counter has to resume above them, or
+    the next record would take an id that is already in use.
+    """
+    numbers = []
+    for record in records:
+        suffix = str(record.get("id", "")).rsplit("-", 1)[-1]
+        if suffix.isdigit():
+            numbers.append(int(suffix))
+    return max(numbers, default=0) + 1

@@ -1,13 +1,15 @@
 # Data stores
 
 Some state must survive a restart; some must not. The rule here is simple: state
-that a *decision* depends on is durable, state that is a *fixture* is not.
+that a *decision* depends on is durable, state that is a *fixture* is not — and a
+fixture that a restart makes confusing is kept by whoever owns it, which for the
+simulated systems is the sandbox itself (S9).
 
 | State | Backend | Why |
 | --- | --- | --- |
 | **Approvals** | Postgres (durable) | an approval outlives the request that created it; two replicas must agree |
 | **Agent run checkpoints** | Postgres (durable) | a paused run must be resumable after a restart, by any replica |
-| **Simulated systems** (the systems the tools act on) | in-memory | synthetic fixtures; a reset is harmless (and documented) |
+| **Simulated systems** (the systems the tools act on) | the sandbox's own volume (durable) | synthetic fixtures — but a restart resetting every refund and draft mid-demo was confusing, so the sandbox snapshots them (S9). It owns this storage, as a stand-in for the vendor's database: the platform's Postgres is not the vendor's |
 | **Audit timeline** | Postgres (durable) | "who looked at personal data, and who approved it" cannot be answered from a buffer that one replica holds and a restart clears |
 | **SPIRE's registration registry** | Postgres (durable) | an attested agent, and every registration entry, must outlive the identity server's pod — losing them means no SVIDs for anything (S1) |
 | **Keycloak's realm and users** | Postgres (durable) | accounts enrolled at runtime, and the realm the tokens are issued from, must outlive the pod — and two replicas must share them (S2) |

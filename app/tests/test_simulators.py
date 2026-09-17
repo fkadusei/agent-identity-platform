@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import pytest
 
+from app import simulators
 from app.simulators import crm, orders, payments, reset, tickets
 from app.simulators.errors import NotFound
 
@@ -71,6 +72,32 @@ def test_a_missing_record_raises_the_typed_not_found():
     with pytest.raises(ValueError) as exc:
         payments.issue_refund("o-1001", 0, ACME)
     assert not isinstance(exc.value, NotFound)
+
+
+def test_state_survives_a_snapshot_and_a_restore():
+    """The sandbox's durability (S9) rests on these two functions, so the details
+    that make a *restart* invisible are pinned here: the records come back, the
+    ids do not collide, and idempotency still holds."""
+    reset()
+    refund = payments.issue_refund("o-1001", 25.0, ACME, idempotency_key="key-1")
+    draft = tickets.draft_reply("t-5001", "hello", ACME)
+
+    payload = simulators.snapshot()
+    reset()  # a new process, same volume
+    assert payments.list_refunds(ACME) == []
+
+    simulators.restore(**payload)
+    assert [r["id"] for r in payments.list_refunds(ACME)] == [refund["id"]]
+    assert [d["id"] for d in tickets.list_drafts(ACME)] == [draft["id"]]
+
+    # The same idempotency key returns the restored refund, not a second one.
+    again = payments.issue_refund("o-1001", 25.0, ACME, idempotency_key="key-1")
+    assert again["id"] == refund["id"]
+
+    # And a genuinely new record resumes after the restored ones.
+    fresh = payments.issue_refund("o-1001", 5.0, ACME)
+    assert fresh["id"] == "r-0002"
+    assert tickets.draft_reply("t-5001", "more", ACME)["id"] == "d-0002"
 
 
 def test_issue_refund_rejects_non_positive_amount():

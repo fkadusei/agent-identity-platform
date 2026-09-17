@@ -66,6 +66,22 @@ def list_refunds(tenant: str, order_id: str | None = None) -> list[dict]:
     return list(values)
 
 
+def snapshot() -> list[dict]:
+    """The issued refunds, for a caller that keeps them across restarts (S9)."""
+    return list(_refunds.values())
+
+
+def restore(records: list[dict]) -> None:
+    """Replace the runtime state with a previous process's refunds (S9)."""
+    global _seq
+    _refunds.clear()
+    for record in records:
+        # Re-key the way `issue_refund` does, so idempotency still holds after a
+        # restart: the same key returns the same refund instead of a second one.
+        _refunds[record.get("idempotency_key") or record["id"]] = record
+    _seq = itertools.count(data.next_id_number(records))
+
+
 def reset() -> None:
     """Clear runtime state (tests)."""
     global _seq
