@@ -13,8 +13,13 @@ import httpx
 from agentnhi import Settings, TokenExchanger
 from agentnhi.identity import fetch_jwt_svid
 
+from app.common import hop, workload
+
 KC = "http://keycloak:8080/realms/agent-platform"
-TOOLS = "http://tools:8000"
+# The tools' SPIFFE listener. This script stands in for the agent's own calls —
+# it exchanges the user's token through the agent's identity — so it presents that
+# identity on the hop too (S7).
+TOOLS = "https://tools:8443"
 AGENT_ID = "spiffe://acme.com/ns/agent-platform/sa/agent"
 S = Settings.from_env()
 
@@ -61,12 +66,15 @@ def exchange(user_token: str) -> str:
 
 
 def outcome(user_token: str, name: str, args: dict) -> str:
-    resp = httpx.post(
-        f"{TOOLS}/tools/{name}",
-        json=args,
-        headers={"Authorization": f"Bearer {user_token}"},
-        timeout=20,
-    )
+    client, workload_headers = hop.open_hop(TOOLS, workload.TOOLS, timeout=20)
+    try:
+        resp = client.post(
+            f"{TOOLS}/tools/{name}",
+            json=args,
+            headers={"Authorization": f"Bearer {user_token}", **workload_headers},
+        )
+    finally:
+        client.close()
     body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
     status = body.get("status")
     if resp.status_code == 200 and not status:

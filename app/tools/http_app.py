@@ -52,9 +52,12 @@ def call_tool(
     tool_name: str,
     args: dict,
     authorization: str | None = Header(default=None),
+    x_workload_token: str | None = Header(default=None),
 ) -> dict:
     token = (authorization or "").removeprefix("Bearer ").strip() or None
-    result = enforcer().call(token, tool_name, args)
+    # The caller's own SVID, naming the workload — separate from the user-scoped
+    # token above, which is what policy acts on (S7).
+    result = enforcer().call(token, tool_name, args, workload_token=x_workload_token)
 
     if result.outcome is Outcome.OK:
         return {"tool": result.tool, "decision": result.decision, "result": result.result}
@@ -64,3 +67,21 @@ def call_tool(
         # 428 Precondition Required: the action is valid but needs a human.
         raise HTTPException(status_code=428, detail=result.reason)
     raise HTTPException(status_code=400, detail=result.reason)
+
+
+def main() -> None:
+    """Serve the tools: SPIFFE mTLS for the agent, plain for the suites (S7)."""
+    import os
+
+    from app.common.server import run
+
+    run(
+        "app.tools.http_app:app",
+        int(os.environ.get("SPIFFE_PORT", "8443")),
+        service="tools",
+        edge_port=int(os.environ.get("PORT", "8000")),
+    )
+
+
+if __name__ == "__main__":
+    main()

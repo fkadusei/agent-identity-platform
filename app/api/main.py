@@ -42,12 +42,12 @@ from agentnhi import audit
 from agentnhi.tokens import Delegation
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
-from app.api.authz import current_delegation, require_roles
+from app.api.authz import current_delegation, require_roles, require_workload
 from app.api.roles import router as roles_router
 from app.audit.store import build_audit_store
 from app.approvals import ApprovalStore
 from app.approvals.store import build_store
-from app.common import metrics
+from app.common import hop, metrics, workload
 from app.common.telemetry import instrument_fastapi, setup_telemetry
 
 app = FastAPI(title="agent-identity-platform API")
@@ -107,18 +107,31 @@ def _agent_url() -> str:
     return os.environ.get("AGENT_URL", "http://agent:8081").rstrip("/")
 
 
-@app.post("/tasks")
-def start_task(body: dict, authorization: str | None = Header(default=None)) -> dict:
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    resp = httpx.post(
-        f"{_agent_url()}/run",
-        json=body,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=180,
-    )
+def _to_agent(path: str, body: dict, token: str, timeout: float) -> dict:
+    """Call the agent on a hop we own (S7): our SVID, and our name in a header.
+
+    The browser's token rides along unchanged — it is what the agent acts for —
+    but the hop itself is proved, so the agent knows the api is calling.
+    """
+    url = f"{_agent_url()}{path}"
+    client, workload_headers = hop.open_hop(url, workload.AGENT, timeout=timeout)
+    try:
+        resp = client.post(
+            url,
+            json=body,
+            headers={"Authorization": f"Bearer {token}", **workload_headers},
+        )
+    finally:
+        client.close()
     if resp.status_code != 200:
         raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
     return resp.json()
+
+
+@app.post("/tasks")
+def start_task(body: dict, authorization: str | None = Header(default=None)) -> dict:
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    return _to_agent("/run", body, token, 180)
 
 
 @app.post("/tasks/resume")
@@ -126,15 +139,7 @@ def resume_task(body: dict, authorization: str | None = Header(default=None)) ->
     # Forward the caller's token: if the agent restarted, the graph state is
     # durable but the token is not, so the resume needs it again.
     token = (authorization or "").removeprefix("Bearer ").strip()
-    resp = httpx.post(
-        f"{_agent_url()}/resume",
-        json=body,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=120,
-    )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
-    return resp.json()
+    return _to_agent("/resume", body, token, 120)
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +150,10 @@ def create_approval(
     body: dict,
     delegation: Delegation = Depends(current_delegation),
     store: ApprovalStore = Depends(get_store),
+    # Only the agent creates approvals, and it proves it (S7) — a bare token is
+    # not enough, because creating an approval is the step that makes a
+    # high-risk action possible.
+    caller: str = Depends(require_workload(workload.AGENT)),
 ) -> dict:
     tool = body.get("tool")
     if not tool:
@@ -182,7 +191,13 @@ def list_approvals(
 
 
 @app.post("/approvals/verify")
-def verify_approval(body: dict, store: ApprovalStore = Depends(get_store)) -> dict:
+def verify_approval(
+    body: dict,
+    store: ApprovalStore = Depends(get_store),
+    # Called by the tool server, and only by it: this is the authority that lets
+    # a high-risk action through (S7).
+    caller: str = Depends(require_workload(workload.TOOLS)),
+) -> dict:
     """Called by the tool server. The approvals service is the authority here."""
     valid = store.verify(
         body.get("approval_id", ""),
@@ -229,7 +244,14 @@ def decide_approval(
 # Audit timeline
 # ---------------------------------------------------------------------------
 @app.post("/audit/events")
-def ingest_audit(record: dict) -> dict:
+def ingest_audit(
+    record: dict,
+    # The agent and the tool server forward their audit events here, and each
+    # names itself (S7). This route took no credential at all before — the mesh
+    # was the only thing standing in front of it, which meant any meshed pod
+    # could forge an audit event.
+    caller: str = Depends(require_workload(workload.AGENT, workload.TOOLS)),
+) -> dict:
     _audit.append(record)
     metrics.AUDIT_EVENTS.labels(str(record.get("event", "unknown"))).inc()
     return {"ok": True}
@@ -330,3 +352,19 @@ if _WEB_DIR.is_dir():
     @app.get("/")
     def index() -> FileResponse:
         return FileResponse(_WEB_DIR / "index.html")
+
+
+def main() -> None:
+    """Serve the api: SPIFFE mTLS for machine callers, plain for the browser (S7)."""
+    from app.common.server import run
+
+    run(
+        "app.api.main:app",
+        int(os.environ.get("SPIFFE_PORT", "8443")),
+        service="api",
+        edge_port=int(os.environ.get("PORT", "8080")),
+    )
+
+
+if __name__ == "__main__":
+    main()

@@ -47,6 +47,12 @@ spec:
         # requests too, or CPU utilization cannot be computed.
         config.linkerd.io/proxy-cpu-request: 25m
         config.linkerd.io/proxy-memory-request: 64Mi
+        {{- if $svc.spiffe }}
+        # The SPIFFE listener must NOT be mesh-terminated, or the proxy proves its
+        # own identity and hides the peer's SVID from the server (ADR-0012).
+        config.linkerd.io/skip-inbound-ports: "8443"
+        config.linkerd.io/skip-outbound-ports: "8443"
+        {{- end }}
       {{- end }}
     spec:
       {{- if $svc.spiffe }}
@@ -91,6 +97,10 @@ spec:
           ports:
             - name: http
               containerPort: {{ $svc.port }}
+            {{- if $svc.spiffePort }}
+            - name: spiffe
+              containerPort: {{ $svc.spiffePort }}
+            {{- end }}
           securityContext:
             {{- include "agent-platform.containerSecurityContext" $ | nindent 12 }}
           volumeMounts:
@@ -156,5 +166,11 @@ spec:
     - name: http
       port: {{ $svc.port }}
       targetPort: {{ $svc.port }}
+    {{- if $svc.spiffePort }}
+    # The SPIFFE listener (S7): machine callers present an SVID here.
+    - name: spiffe
+      port: {{ $svc.spiffePort }}
+      targetPort: {{ $svc.spiffePort }}
+    {{- end }}
 {{- end }}
 {{- end }}

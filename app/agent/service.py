@@ -171,3 +171,19 @@ def resume(body: dict, authorization: str | None = Header(default=None)) -> dict
 
     outcome = resume_task(agent, thread_id, bool(body.get("approved")))
     return {"thread_id": thread_id, **outcome}
+
+
+def main() -> None:
+    """Serve the agent: SPIFFE mTLS for the api, plain for the user path (S7)."""
+    from app.common.server import run
+
+    run(
+        "app.agent.service:app",
+        int(os.environ.get("SPIFFE_PORT", "8443")),
+        service="agent",
+        edge_port=int(os.environ.get("PORT", "8081")),
+    )
+
+
+if __name__ == "__main__":
+    main()

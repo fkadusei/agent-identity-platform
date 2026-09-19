@@ -22,6 +22,7 @@ from agentnhi import Decision, PolicyClient, Settings, TokenRejected, TokenVerif
 
 from app.common.schema import coerce_args
 from app.common.telemetry import span
+from app.common import workload
 from app.tools.approvals import ApprovalsClient
 from app.tools.catalog import TOOLS, Tool
 
@@ -62,7 +63,21 @@ class ToolEnforcer:
         self._approvals = approvals
         self._tools = tools if tools is not None else TOOLS
 
-    def call(self, token: str | None, tool_name: str, args: dict) -> ToolResult:
+    def call(
+        self, token: str | None, tool_name: str, args: dict, *, workload_token: str | None = None
+    ) -> ToolResult:
+        # Which workload is calling, proved at the application layer (S7). The
+        # transport already required a chain-verified SVID; this says *who*, so a
+        # pod that merely holds some identity cannot reach the tool server. The
+        # check is here rather than in a transport handler because both the HTTP
+        # and the MCP interfaces call this one method.
+        if workload.enabled():
+            try:
+                caller = workload.check(workload_token)
+            except workload.WorkloadRejected as exc:
+                audit("tool.workload_rejected", tool=tool_name, reason=str(exc)[:200])
+                return ToolResult(Outcome.DENIED, tool_name, f"workload identity rejected: {exc}")
+
         if not token:
             return ToolResult(Outcome.DENIED, tool_name, "no token presented")
 

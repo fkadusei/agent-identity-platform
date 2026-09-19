@@ -10,14 +10,24 @@ Two things are environment-specific and **not** templated here. Provide them
 wherever they live and point the values at them:
 
 1. **SPIRE** — a SPIRE agent on each node exposing the Workload API socket and
-   the trust bundle. The agent and gateway mount:
+   the trust bundle. Every service with `spiffe: true` (`api`, `tools`, `agent`,
+   `gateway`) mounts:
    - the socket from `spire.agentSocketHostPath` (a `hostPath` on kind; use a
      CSI driver or a per-node agent in production);
    - the bundle from the `spire.bundleConfigMap` ConfigMap.
 
-   SPIRE registration entries are keyed on **namespace + service account**, so
-   the chart creates ServiceAccounts named `agent` and `gateway`. Register those
-   (see `scripts/setup.sh` for the exact `spire-server entry create` calls).
+   SPIRE registration entries are keyed on **namespace + service account**, so the
+   chart creates a ServiceAccount per SPIFFE service. Register **all four** —
+   `api` and `tools` hold SVIDs since S7, and a missing entry means the pod cannot
+   start (it fetches its identity at boot). `scripts/setup.sh` has the exact
+   `spire-server entry create` calls.
+
+   A service with a `spiffePort` serves two listeners: that port speaks SPIFFE (an
+   SVID on both sides, and a named caller on its machine routes), while `port`
+   stays for the browser and tooling, which cannot hold an SVID. The pods also
+   carry `config.linkerd.io/skip-inbound/outbound-ports: "8443"` when `mesh.inject`
+   is on — without it the mesh terminates the connection and the peer's SVID never
+   reaches the server (ADR-0012).
 
 2. **Keycloak** — the OIDC realm (issuer, clients, token exchange). Point
    `auth.issuer` at it. The realm template lives in

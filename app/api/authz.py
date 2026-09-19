@@ -11,6 +11,7 @@ from fastapi import Depends, Header, HTTPException
 
 from agentnhi import Settings, TokenRejected, TokenVerifier
 from agentnhi.tokens import Delegation
+from app.common import workload
 
 _verifier: TokenVerifier | None = None
 
@@ -45,5 +46,32 @@ def require_roles(*roles: str):
                 detail=f"requires one of these roles: {', '.join(roles)}",
             )
         return delegation
+
+    return dependency
+
+
+def require_workload(*allowed: str):
+    """Dependency factory: a **machine** caller must be one of these workloads.
+
+    For the routes a workload calls rather than a browser (creating an approval,
+    verifying one, ingesting audit). The name is the caller's JWT-SVID, verified
+    against SPIRE's JWKS — the same check the gateway makes, shared via
+    `app/common/workload.py`.
+
+    Skipped when this service has no `WORKLOAD_AUDIENCE` (a local run, the test
+    suite), where the transport still requires a chain-verified SVID. In the
+    manifests it is always set, so the hop is always named.
+    """
+
+    def dependency(x_workload_token: str | None = Header(default=None)) -> str:
+        if not workload.enabled():
+            return ""
+        try:
+            caller = workload.verify(x_workload_token)
+        except workload.WorkloadRejected as exc:
+            raise HTTPException(status_code=403, detail=f"workload identity rejected: {exc}")
+        if caller not in allowed:
+            raise HTTPException(status_code=403, detail=f"{caller} may not call this route")
+        return caller
 
     return dependency

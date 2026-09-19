@@ -15,7 +15,8 @@ WORKDIR /workspace
 COPY requirements.txt /workspace/requirements.txt
 RUN pip install --no-cache-dir -r /workspace/requirements.txt
 COPY sdk /workspace/sdk
-RUN pip install --no-cache-dir /workspace/sdk
+# `spiffe` for the Workload API client: the api holds an SVID (S7).
+RUN pip install --no-cache-dir "/workspace/sdk[spiffe]"
 COPY app /workspace/app
 COPY --from=web /web/dist /workspace/app/web/dist
 ENV PYTHONPATH=/workspace
@@ -27,4 +28,4 @@ USER app
 ARG GIT_SHA=unknown
 ENV GIT_SHA=$GIT_SHA
 
-CMD ["uvicorn", "app.api.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["python", "-m", "app.api.main"]

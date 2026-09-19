@@ -83,9 +83,11 @@ scope choices in the reference, not oversights:
 - [x] **Multi-tenant isolation** — implemented (threat T9): the tenant is an
       identity attribute, policy denies an unscoped caller, and every data
       accessor and approval is tenant-scoped ([`tenancy.md`](tenancy.md)).
-- [x] **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway, plus a Linkerd mesh
-      on every other in-cluster hop ([`tls.md`](tls.md)); terminate the browser
-      edge at your ingress (`deploy/helm/agent-platform/`).
+- [x] **TLS/mTLS everywhere** — SPIFFE mTLS with a named caller on every hop we
+      own, a Linkerd mesh for the third-party and simulated hops (the boundary is
+      [ADR-0012](decisions/ADR-0012-transport-identity.md)), and the checks in
+      [`tls.md`](tls.md); terminate the browser edge at your ingress
+      (`deploy/helm/agent-platform/`).
 - [ ] **HA** — the app tier is replicated (2 replicas + PDBs, see
       [`ha.md`](ha.md)); SPIRE, Keycloak and Postgres still need a shared
       datastore / external DB / managed HA (S1–S4 in [`backlog.md`](backlog.md)).

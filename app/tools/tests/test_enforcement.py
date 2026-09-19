@@ -222,3 +222,35 @@ def test_every_tool_audit_record_carries_the_tenant():
     }, sorted(r["event"] for r in tool_events)
     for record in tool_events:
         assert record.get("tenant") == "acme", record
+
+
+def test_the_tool_server_requires_the_agents_identity(monkeypatch):
+    """A hop we own names its caller (S7).
+
+    The transport requires a chain-verified SVID; this requires the caller to say
+    *which* workload it is, so a pod that merely holds some identity cannot reach
+    the tool server. Checked in the enforcement core because both the HTTP and the
+    MCP transports call it.
+    """
+    from app.common import workload
+
+    monkeypatch.setenv("WORKLOAD_AUDIENCE", workload.TOOLS)
+
+    def check(token):
+        if token != "the-agents-svid":
+            raise workload.WorkloadRejected("missing workload token")
+        return workload.AGENT
+
+    monkeypatch.setattr(workload, "check", check)
+
+    # A user token alone is no longer enough.
+    denied = enforcer().call("token", "crm.customer.read", {"customer_id": "c-100"})
+    assert denied.outcome is Outcome.DENIED
+    assert "workload identity rejected" in denied.reason
+
+    # With the caller named, the call proceeds as before.
+    allowed = enforcer().call(
+        "token", "crm.customer.read", {"customer_id": "c-100"},
+        workload_token="the-agents-svid",
+    )
+    assert allowed.outcome is Outcome.OK
