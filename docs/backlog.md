@@ -548,25 +548,53 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   logged `expires_in_seconds` of ~2470 (reproducing the half-spent SVID), and the
   live evals went from `1/8` with seven `llm.fallback` events to `5/8` with none.
 
-## S16 — Liveness probes (a hung process must heal itself)
+## S16 — Liveness probes (a hung process must heal itself) — **done**
 
-- **What:** every component in the demo has a readiness probe and **no** liveness
-  probe, so a process that hangs is never restarted: the kubelet has nothing to act
-  on, the container stays `Running`, and readiness only reports the failure forever.
+- **What:** every component in the demo had a readiness probe and **no** liveness
+  probe, so a process that hangs was never restarted: the kubelet had nothing to act
+  on, the container stayed `Running`, and readiness only reported the failure forever.
 - **Why:** observed, not theorised. Jaeger hung for **31 hours** — no logs, no HTTP,
   UI dead — and because a readiness probe is a signal rather than a restart, nothing
   recovered it. The cost was a first-run path (`./start.sh` → `scripts/setup.sh`)
   that could not complete without a human, plus a trace UI nobody could reach.
-- **Lands in:** `deploy/kind/manifests/**` — jaeger is done (S7b); the app tier
-  (api/tools/agent/gateway/sandbox) and the other third-party components
-  (postgres, opa, prometheus, grafana, otel-collector, metrics-server) are not.
-- **Care needed:** this is not a copy-paste. A liveness probe that is too eager
-  converts a slow start — or a database under load — into a restart loop, which is
-  worse than the hang. Postgres and Prometheus want an endpoint that reflects
-  availability without being expensive; the app tier can use `/healthz` with a
-  generous `failureThreshold`.
-- **Verified by (when done):** killing the process inside a container (e.g.
-  `SIGSTOP`) and watching the pod restart itself, per component.
+- **Built:**
+  - Liveness probes on **every** container that has a readiness probe: the app tier
+    (`api`/`tools`/`agent`/`sandbox` on `/healthz`), the gateway, `postgres`
+    (`pg_isready`), `opa`, `prometheus` (`/-/healthy`), `grafana`,
+    `otel-collector`, `metrics-server`, `jaeger`, and SPIRE's
+    `oidc-discovery-provider` (`/keys` — the endpoint the gateway verifies
+    JWT-SVIDs against, so its hangs stop naming machine callers). Thresholds are
+    per component and deliberately unhurried: ~60s of silence for a stateless
+    service, ~2 minutes for Postgres, where a restart is the most expensive thing
+    Kubernetes can do.
+  - The **gateway needed code, not just a probe.** Its only listener is mTLS, so the
+    kubelet cannot check it — it has no SVID to present — and the existing probe
+    only asked whether the socket was open, which a hung process still answers
+    because the kernel completes the handshake. A TCP liveness probe would have
+    added nothing on top of the restart policy, which already restarts a process
+    that *exits*. So `app/common/server.py` gained `health_port`: `/healthz` and
+    nothing else, plaintext, started **after** the SVID is loaded. It is
+    deliberately not the service's own app on a second port — that would expose the
+    model endpoint to anything that can reach the pod.
+  - The chart carries the same probes, and `services.<name>.healthPort` for the
+    gateway. (Found while editing: a duplicated `resources:` block in
+    `templates/apps.yaml` from an old merge, rendered twice and silently
+    last-wins — removed.)
+- **Verified by:** hanging each container's main process and watching the kubelet
+  restart it — **fifteen containers**, all recovered: `api` 96s, `tools` 92s,
+  `agent` 92s, `sandbox` 92s, `gateway` 87s, `otel-collector` 92s, `opa` 97s,
+  `grafana` 122s, `prometheus` 122s, `postgres` 147s, `jaeger` 86s, `keycloak` 76s,
+  `metrics-server` 86s, `spire-server` 96s, `oidc-discovery-provider` 147s.
+  The suite and the metrics API were re-checked afterwards: 22/22 pods ready,
+  demo, attacks, tenancy, TLS and HA all green.
+- **Two things learned worth keeping:**
+  - `kubectl exec <pod> -- kill -STOP 1` is a **no-op**: signals sent to a
+    PID-namespace init process from inside the namespace are discarded (the same
+    protection that stops a container killing itself), and PID 1 stays in state `S`.
+    The test has to signal from outside — from the node, matching the process by
+    cgroup. The first run of this verification "passed" nothing at all.
+  - Mesh probes still fail correctly through Linkerd's proxy, which is what makes
+    these probes meaningful for the injected app tier.
 
 ## Not slices (documented limits)
 

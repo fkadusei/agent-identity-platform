@@ -112,6 +112,9 @@ spec:
                   optional: true
           ports:
             - containerPort: 8443
+            # Liveness only, and only /healthz — see the probes below and S16.
+            - name: healthz
+              containerPort: 8081
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -126,11 +129,28 @@ spec:
               readOnly: true
             - name: tmp
               mountPath: /tmp
+          # The serving listener is mTLS, so the kubelet cannot check it: it has no
+          # SVID to present. Probing the socket instead only proves *something*
+          # accepted the connection — a hung process still does, because the kernel
+          # completes the handshake — and a restart policy only restarts a process
+          # that *exits*. So the gateway serves liveness (and nothing else) in the
+          # clear, on its own port, started after the SVID is loaded (S16).
           readinessProbe:
-            tcpSocket:
-              port: 8443
+            httpGet:
+              path: /healthz
+              port: healthz
             initialDelaySeconds: 10
             periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: healthz
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m

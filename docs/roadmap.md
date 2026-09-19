@@ -116,6 +116,10 @@ completed items are kept below for the record.
 - [x] **Autoscaling** — api/tools/agent/gateway/opa scale 2→5; the api also on the
       **approval backlog** and per-pod request rate, via prometheus-adapter
       (`docs/autoscaling.md`)
+- [x] **Self-healing** — every container carries a liveness probe, so a *hung*
+      process is restarted rather than reported forever; the gateway's health
+      listener exists because an mTLS-only service cannot be probed by a kubelet
+      (S16)
 - [x] **Tenancy depth** — approvals are scoped by tenant (create, list,
       decide, verify), keyed on the caller's identity; a manager sees only their
       own tenant's queue (`docs/tenancy.md`)

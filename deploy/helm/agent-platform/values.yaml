@@ -194,6 +194,10 @@ services:
     replicas: 2
     autoscale: true
     port: 8443
+    # Its only listener is mTLS, and a kubelet probe has no SVID to present, so
+    # liveness is served in the clear on its own port — `/healthz` and nothing
+    # else (S16). Without it a hung gateway still answers a socket check.
+    healthPort: 8081
     spiffe: true
     env:
       - name: PORT

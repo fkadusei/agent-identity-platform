@@ -101,6 +101,10 @@ spec:
             - name: spiffe
               containerPort: {{ $svc.spiffePort }}
             {{- end }}
+          {{- if $svc.healthPort }}
+            - name: healthz
+              containerPort: {{ $svc.healthPort }}
+          {{- end }}
           securityContext:
             {{- include "agent-platform.containerSecurityContext" $ | nindent 12 }}
           volumeMounts:
@@ -118,20 +122,29 @@ spec:
             - name: state
               mountPath: /data
             {{- end }}
+          {{- /*
+          A mTLS-only listener cannot be probed by the kubelet, which has no SVID to
+          present: asking whether the socket is open is answered even by a hung
+          process. Such a service sets `healthPort` and the app serves liveness there,
+          and nothing else (S16).
+          */}}
+          {{- $probePort := $svc.healthPort | default $svc.port }}
           readinessProbe:
-            {{- if eq $name "gateway" }}
-            # mTLS: an HTTP probe from the kubelet has no client certificate.
-            tcpSocket:
-              port: {{ $svc.port }}
-            {{- else }}
             httpGet:
               path: /healthz
-              port: {{ $svc.port }}
-            {{- end }}
-            initialDelaySeconds: 5
+              port: {{ $probePort }}
+            initialDelaySeconds: {{ if $svc.healthPort }}10{{ else }}5{{ end }}
             periodSeconds: 10
-          resources:
-            {{- toYaml $.Values.resources | nindent 12 }}
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: {{ $probePort }}
+            initialDelaySeconds: {{ if $svc.healthPort }}15{{ else }}10{{ end }}
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
           resources:
             {{- toYaml $.Values.resources | nindent 12 }}
       volumes:
