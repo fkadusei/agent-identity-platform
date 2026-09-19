@@ -139,6 +139,27 @@ def test_restart_delay_never_outlives_the_certificate():
     assert restart_delay(120, 120) == 0.0
 
 
+def test_health_listener_answers_liveness_and_nothing_else():
+    """The kubelet's listener must not be a second way into the service.
+
+    It exists because a probe cannot present an SVID, so a mTLS-only service would
+    otherwise be checked by "is the socket open?" — which a hung process answers.
+    The price of a plaintext listener is that it must expose *only* liveness: on the
+    gateway, serving the app's routes there would hand the model endpoint to
+    anything that can reach the pod (S16).
+    """
+    from fastapi.testclient import TestClient
+
+    from app.common.server import health_app
+
+    client = TestClient(health_app())
+    assert client.get("/healthz").json() == {"ok": True}
+    # Not the gateway's route, not the api's, not a catch-all.
+    assert client.post("/v1/chat/completions", json={}).status_code == 404
+    assert client.get("/tasks").status_code == 404
+    assert client.get("/metrics").status_code == 404
+
+
 # --- who may connect ---------------------------------------------------------
 
 

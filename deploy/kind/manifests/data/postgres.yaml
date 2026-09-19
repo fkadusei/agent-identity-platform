@@ -84,6 +84,17 @@ spec:
               command: ["pg_isready", "-U", "agent", "-d", "agent_platform"]
             initialDelaySeconds: 5
             periodSeconds: 5
+          # A long threshold on purpose: this is the database, and a restart is
+          # the most expensive thing Kubernetes can do to it. `pg_isready` answers
+          # whether the postmaster responds at all, so ~2 minutes of silence is the
+          # bar for a hang (S16).
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "agent", "-d", "agent_platform"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 12
           resources:
             requests:
               cpu: 50m

@@ -75,6 +75,7 @@ helm lint deploy/helm/agent-platform
 | `services.<name>.replicas` | per-service replica count |
 | `services.<name>.env` | per-service environment (secrets referenced by `secretKeyRef`) |
 | `services.<name>.spiffe` | mount the Workload API socket + trust bundle |
+| `services.<name>.healthPort` | serve `/healthz` — and nothing else — on a plaintext port, for the kubelet; needed by a service whose only listener is mTLS (the gateway) |
 | `spire.*` | socket/bundle paths and the node socket `hostPath` |
 | `auth.*` | issuer, audience, SPIFFE IDs, secret name, signup toggle |
 | `llm.*` | gateway URL and provider settings |

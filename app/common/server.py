@@ -32,6 +32,7 @@ from datetime import timezone
 from pathlib import Path
 
 import uvicorn
+from fastapi import FastAPI
 
 from agentnhi import audit
 from agentnhi.identity import write_mtls_files
@@ -104,12 +105,35 @@ def server_ssl_context(cert_file: str, key_file: str, bundle: str) -> ssl.SSLCon
     return context
 
 
+def health_app() -> FastAPI:
+    """The smallest possible app: liveness, and nothing else.
+
+    A service whose only listener is mTLS cannot be checked by a kubelet probe,
+    which has no SVID to present — so its probe can only ask "is the socket open?",
+    and a **hung** process still answers that, because the kernel accepts the
+    connection. A restart policy does not help either: it restarts a process that
+    *exits*, and a hang never exits.
+
+    Hence one plaintext route. It is deliberately not the service's own app on a
+    second port: for the gateway that would expose the model endpoint to anything
+    that can reach the pod (S16).
+    """
+    app = FastAPI(title="liveness")
+
+    @app.get("/healthz")
+    def healthz() -> dict:
+        return {"ok": True}
+
+    return app
+
+
 def run(
     module: str,
     port: int,
     *,
     service: str,
     edge_port: int | None = None,
+    health_port: int | None = None,
     host: str = "0.0.0.0",
 ) -> None:
     """Run an ASGI app with SPIFFE mTLS on `port`.
@@ -123,6 +147,10 @@ def run(
     a different trust domain from the workloads, and they keep their own listener
     rather than being admitted through this one (S7). In production that listener
     is fronted by an ingress that terminates TLS; `docs/tls.md` names the boundary.
+
+    `health_port` serves `/healthz` and nothing else, for the kubelet. It is
+    started only once the SVID is loaded, so answering it means the TLS listener is
+    about to be — a process that cannot fetch its identity never becomes healthy.
     """
     socket = os.environ.get("SPIFFE_SOCKET", "unix:///run/spire/sockets/agent.sock")
     bundle = os.environ.get("SPIFFE_BUNDLE", "/run/spire/bundle/bundle.crt")
@@ -146,6 +174,13 @@ def run(
         args=(cert_file, margin, service),
         daemon=True,
     ).start()
+
+    if health_port:
+        health = uvicorn.Server(
+            uvicorn.Config(health_app(), host=host, port=health_port, log_level="warning")
+        )
+        threading.Thread(target=health.run, daemon=True).start()
+        audit(f"{service}.health_listener", port=health_port)
 
     uvicorn.run(
         module,
