@@ -1,12 +1,23 @@
 # =============================================================================
 # HorizontalPodAutoscalers for the stateless services.
 #
-# Scale on CPU: the services are I/O-bound in the demo, so the target is modest
-# and the floor is 2 (matching the HA replicas) — the point is that the app tier
-# grows under load without a redeploy.
+# CPU everywhere, because it is always available — plus, for the **api**, the two
+# signals that describe its actual load (S6), served by prometheus-adapter from
+# the metrics the api already exports:
 #
-# The API and tools also export the metrics a *custom*-metric HPA would use
-# (approval backlog, request rate) — see docs/autoscaling.md for that next step.
+#   approvals_pending         the queue depth (External — it is a property of the
+#                             platform, not of one pod). Work waiting for a human
+#                             is what makes approvers poll and decide.
+#   http_requests_per_second  throughput per pod (Pods — the adapter turns the
+#                             request counter into a rate)
+#
+# An HPA takes the largest of its metrics, so CPU remains the fallback. Note the
+# converse: if a metric cannot be read (the adapter is down) the HPA records the
+# failure and does not scale on *any* metric until it can — the trade-off of
+# scaling on something more meaningful than CPU.
+#
+# The floor is 2 (matching the HA replicas); scale-down is slowed so a burst does
+# not immediately drop capacity.
 # =============================================================================
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -27,6 +38,20 @@ spec:
         target:
           type: Utilization
           averageUtilization: 70
+    - type: External
+      external:
+        metric:
+          name: approvals_pending
+        target:
+          type: Value
+          value: "5"
+    - type: Pods
+      pods:
+        metric:
+          name: http_requests_per_second
+        target:
+          type: AverageValue
+          averageValue: "20"
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 120

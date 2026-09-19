@@ -299,6 +299,10 @@ ok "opa serving policy bundle revision $POLICY_REVISION"
 
 say "8. observability"
 kubectl apply -f "$MANIFESTS/observability/" >/dev/null
+# Restart Prometheus as well: its scrape config is a ConfigMap and it reads it at
+# startup, so on a re-run new jobs (and the per-pod relabelling) would otherwise
+# never take effect — the same trap as OPA's mounted bundle and the app images.
+kubectl -n $NS rollout restart deploy/prometheus >/dev/null
 kubectl -n $NS rollout status deploy/otel-collector --timeout=180s >/dev/null
 kubectl -n $NS rollout status deploy/jaeger --timeout=180s >/dev/null
 kubectl -n $NS rollout status deploy/prometheus --timeout=180s >/dev/null
@@ -405,7 +409,7 @@ kill $EDGE_PF 2>/dev/null || true; trap - EXIT
   || die "the edge did not answer over TLS with our CA (got '${EDGE_CODE:-nothing}')"
 ok "https://localhost:8443/healthz answered 200 with a certificate that verifies"
 
-say "11. autoscaling"
+say "11. autoscaling (CPU + custom metrics)"
 # metrics-server serves the metrics API over TLS. Give it a serving cert the API
 # server can verify (rather than skipping verification), signed by a small CA we
 # generate here.
@@ -425,8 +429,47 @@ kubectl patch apiservice v1beta1.metrics.k8s.io --type=merge \
   -p "{\"spec\":{\"insecureSkipTLSVerify\":false,\"caBundle\":\"$(openssl base64 -A -in "$TLS/ca.crt")\"}}" >/dev/null
 rm -rf "$TLS"
 kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s >/dev/null
+
+# CPU is a proxy; the platform already exports the real signals (the approval
+# backlog, request rate). prometheus-adapter turns them into Kubernetes metrics,
+# so the api's HPA can scale on the queue instead of on the CPU behind it.
+# Same cert story as metrics-server: generated here, pinned into the APIService.
+ADAPTER_TLS=$(mktemp -d)
+openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=prometheus-adapter-ca" \
+  -keyout "$ADAPTER_TLS/ca.key" -out "$ADAPTER_TLS/ca.crt" 2>/dev/null
+openssl req -newkey rsa:2048 -nodes -subj "/CN=prometheus-adapter.agent-platform.svc" \
+  -keyout "$ADAPTER_TLS/tls.key" -out "$ADAPTER_TLS/tls.csr" 2>/dev/null
+openssl x509 -req -in "$ADAPTER_TLS/tls.csr" -CA "$ADAPTER_TLS/ca.crt" \
+  -CAkey "$ADAPTER_TLS/ca.key" -CAcreateserial -days 3650 -out "$ADAPTER_TLS/tls.crt" \
+  -extfile <(printf "subjectAltName=DNS:prometheus-adapter.agent-platform.svc,DNS:prometheus-adapter.agent-platform.svc.cluster.local") 2>/dev/null
+kubectl -n $NS create secret tls prometheus-adapter-certs \
+  --cert="$ADAPTER_TLS/tls.crt" --key="$ADAPTER_TLS/tls.key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+ADAPTER_CA=$(openssl base64 -A -in "$ADAPTER_TLS/ca.crt")
+rm -rf "$ADAPTER_TLS"
+kubectl apply -f "$MANIFESTS/autoscaling/prometheus-adapter.yaml" >/dev/null
+for api in v1beta1.custom.metrics.k8s.io v1beta1.external.metrics.k8s.io; do
+  kubectl patch apiservice "$api" --type=merge \
+    -p "{\"spec\":{\"insecureSkipTLSVerify\":false,\"caBundle\":\"$ADAPTER_CA\"}}" >/dev/null
+done
+# Restart it too: the metric rules are a ConfigMap, read at startup. An HPA whose
+# metric cannot be read refuses to scale on *any* of its metrics, so a stale rule
+# set is not a cosmetic problem.
+kubectl -n $NS rollout restart deploy/prometheus-adapter >/dev/null
+kubectl -n $NS rollout status deploy/prometheus-adapter --timeout=180s >/dev/null
 kubectl apply -f "$MANIFESTS/autoscaling/hpa.yaml" >/dev/null
-ok "metrics-server + HPAs ready (api/tools/agent/gateway/opa scale on CPU)"
+
+# GATE: the aggregated APIs answer with our metrics. The backlog gauge exists even
+# at zero, so its presence proves the whole path: adapter -> Prometheus -> scrape.
+CUSTOM_METRICS=""
+for _ in $(seq 1 24); do
+  CUSTOM_METRICS=$(kubectl get --raw \
+    "/apis/external.metrics.k8s.io/v1beta1/namespaces/$NS/approvals_pending" 2>/dev/null || true)
+  [ -n "$CUSTOM_METRICS" ] && break
+  sleep 5
+done
+printf '%s' "$CUSTOM_METRICS" | grep -q approvals_pending \
+  || die "the custom metrics API did not report approvals_pending (is the adapter reading Prometheus?)"
+ok "metrics-server + prometheus-adapter + HPAs ready (api scales on the backlog; all on CPU)"
 
 say "12. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""

@@ -47,7 +47,7 @@ Then open **https://localhost:8443**. Demo users:
 ## Test everything
 
 ```sh
-.venv/bin/python -m pytest -q          # app: 198 passed (23 Postgres tests skip)
+.venv/bin/python -m pytest -q          # app: 199 passed (23 Postgres tests skip)
 sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed
 docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/   # policy: 45 passed
 ```
@@ -130,7 +130,9 @@ End-to-end, on the cluster:
   (`docs/tls.md`).
 - **HA for the app tier** — api/tools/agent/gateway/opa at 2 replicas with
   anti-affinity and PodDisruptionBudgets (`docs/ha.md`).
-- **Autoscaling** — those services scale 2→5 on CPU (`docs/autoscaling.md`).
+- **Autoscaling** — those services scale 2→5, and the api also on the **approval
+  backlog** and per-pod request rate through a Prometheus adapter (S6,
+  `docs/autoscaling.md`).
 - **Role → tool matrix, per tenant** (S8) — a default table in the policy plus
   per-tenant overrides that replace it per role; the agent offers only the
   permitted tools (asked for the caller's tenant) and refuses deterministically
@@ -150,7 +152,6 @@ Phases 1–3 are complete and every threat is addressed. Next, pick from the ope
 backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S16) — each slice has a stable
 ID with what it is, why, where it lands and how we would verify it:
 
-- **S6** custom-metric autoscaling (CPU autoscaling is done);
 - **S16** liveness probes — a hung process must be restarted, not just reported
   (jaeger hung for 31h and parked `setup.sh`; only jaeger has one so far).
 
@@ -158,9 +159,10 @@ Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
 KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
 Postgres), **S3** (a persistent Postgres volume), **S4** (Keycloak hardened —
 no `start-dev`, no Trivy exception), **S5** (guardrails + evals,
-`docs/guardrails-and-evals.md`), **S7** (SPIFFE on every hop we own), **S7b** (TLS
-for the browser edge), **S8** (per-tenant role → tool maps), **S9** (the
-sandbox keeps its own data), **S10** (the privacy view, `docs/privacy.md`),
+`docs/guardrails-and-evals.md`), **S6** (custom-metric autoscaling), **S7** (SPIFFE
+on every hop we own), **S7b** (TLS for the browser edge), **S8** (per-tenant role →
+tool maps), **S9** (the sandbox keeps its own data), **S10** (the privacy view,
+`docs/privacy.md`),
 **S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
 Postgres restart), **S13** (stop blaming the model for infrastructure faults),
 **S14** (the scripts pin their cluster context) and **S15** (the gateway must not
@@ -266,6 +268,20 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   rollout gate could not finish until a human restarted it. Jaeger has a liveness
   probe now (S7b); the rest of the stack does not (S16).
 - **Role changes lag** by up to one token lifetime (5 minutes).
+- **The approval backlog is read from the store at scrape time**, not accumulated
+  in the api process (S6). A gauge written per replica on change means only the
+  replica that handled it moves, and `max()` across replicas then follows a stale
+  queue — the api stayed at 5 replicas after the queue was drained until this was
+  fixed. If you add a metric for an autoscaler, make it answer "what is true now",
+  not "what did this process last see".
+- **Prometheus scrapes the api per pod** (S6): the counters are per-process, so
+  scraping through the Service round-robins between replicas and makes `rate()`
+  meaningless — and a `Pods`-type HPA needs the `pod` label.
+- **The gateway cannot be scraped.** It serves only mTLS with an SVID, and
+  Prometheus holds no SVID — so it has no metrics endpoint to read and nothing to
+  autoscale on beyond CPU. Giving it one is a design decision, not a config
+  change: a listener for scraping, an SVID for Prometheus, or a signal derived
+  from the audit stream it already sends to the api.
 - **Every script pins its cluster.** `scripts/lib.sh` wraps `kubectl` with
   `--context kind-agent-platform` (override with `KUBE_CONTEXT`), and no script
   changes your active context any more. For bare `kubectl` against the demo

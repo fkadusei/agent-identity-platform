@@ -245,12 +245,27 @@ observability_stack:
     image: grafana/grafana:11.4.0
 
 # --- autoscaling -------------------------------------------------------------
-# Needs metrics-server in the cluster (the kind manifests install it).
+# Needs metrics-server in the cluster (the kind manifests install it). Custom or
+# external metrics below also need prometheus-adapter — a cluster add-on, not part
+# of this chart — with matching rules; see docs/autoscaling.md.
 autoscaling:
   enabled: false
   minReplicas: 2
   maxReplicas: 5
   targetCPUUtilizationPercentage: 70
+  # Extra HPA metrics, keyed by service, appended to the CPU target. Each entry is
+  # an autoscaling/v2 metric, e.g. the signals the platform already exports:
+  #   extraMetrics:
+  #     api:
+  #       - type: External                       # the approval backlog (queue depth)
+  #         external:
+  #           metric: {name: approvals_pending}
+  #           target: {type: Value, value: "5"}
+  #       - type: Pods                           # requests/second per pod
+  #         pods:
+  #           metric: {name: http_requests_per_second}
+  #           target: {type: AverageValue, averageValue: "20"}
+  extraMetrics: {}
 
 # --- disruption --------------------------------------------------------------
 # A PodDisruptionBudget per stateless service: a node drain must leave one

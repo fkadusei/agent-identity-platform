@@ -84,6 +84,26 @@ helm lint deploy/helm/agent-platform
 | `observability_stack.*` | enable/disable the collector, Jaeger, Prometheus, Grafana |
 | `resources` | default requests/limits for every workload |
 | `ingress.*` | host, class, TLS secret, annotations — the browser edge (below) |
+| `autoscaling.*` | enabled, min/max, CPU target, and `extraMetrics` per service (below) |
+
+## Autoscaling
+
+`autoscaling.enabled` renders an HPA per stateless service, scaling on **CPU**.
+CPU is a proxy for load, so `autoscaling.extraMetrics` appends the signals that
+describe the real one — keyed by service, each entry a plain `autoscaling/v2`
+metric. The platform already exports the two the kind demo uses: the approval
+backlog (`External`, a queue depth) and requests per second per pod (`Pods`).
+
+Both need **prometheus-adapter** in the cluster, with rules that expose those
+Prometheus series as Kubernetes metrics — a cluster add-on, like metrics-server,
+not part of this chart (`deploy/kind/manifests/autoscaling/prometheus-adapter.yaml`
+is the reference, with the rules). The series must also be per-pod if you scale on
+a rate: a counter scraped through a Service round-robins between replicas and makes
+`rate()` meaningless. See `docs/autoscaling.md`.
+
+Worth knowing before you rely on it: an HPA whose metric cannot be read records
+the failure and does not scale on *any* of its metrics until it can. Adding a
+custom metric therefore adds a dependency to scaling.
 
 ## The browser edge
 

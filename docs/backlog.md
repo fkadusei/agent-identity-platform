@@ -170,14 +170,47 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Still open:** output-*content* checks, and a live eval in CI (deliberately
   absent — it would be flaky).
 
-## S6 — Custom-metric autoscaling
+## S6 — Custom-metric autoscaling — **done**
 
-- **What:** scale on the signal that matters — the approval backlog for the api,
-  request rate for the gateway — via a Prometheus Adapter.
-- **Why:** CPU is a proxy; the platform already exports the real signals
-  (`agent_platform_approvals_pending`, `agent_platform_http_requests_total`).
-- **Lands in:** `deploy/kind/manifests/autoscaling/`, the chart.
-- **Verified by:** pushing the backlog up and watching the HPA scale the api.
+- **What:** scale on the signal that matters instead of CPU: the approval backlog
+  for the api, and request rate per pod — via a Prometheus adapter.
+- **Why:** CPU is a proxy. The platform already exports the real signals, so
+  nothing new needed instrumenting; the HPA just could not see them.
+- **Built:**
+  - `prometheus-adapter` (`deploy/kind/manifests/autoscaling/`) exposing
+    `approvals_pending` on `external.metrics.k8s.io` (the queue depth — a property
+    of the platform, not of one pod) and `http_requests_per_second` on
+    `custom.metrics.k8s.io` (`Pods` — the api's counter turned into a rate). It
+    gets its own serving cert, pinned into both APIServices (never
+    `insecureSkipTLSVerify`), and skips the mesh on 6443 — the API server is not a
+    mesh client (S7's rule).
+  - The api's HPA carries all three metrics; the other services stay on CPU. An
+    HPA takes the largest, so CPU remains the fallback.
+  - The chart takes `autoscaling.extraMetrics` per service; the adapter is a
+    cluster add-on, like metrics-server.
+- **Two bugs found by watching it fail — both would have looked plausible while
+  being wrong:**
+  - Prometheus scraped the api's **Service**, so per-process counters jumped
+    backwards between replicas and `rate()` was noise (and there was no `pod`
+    label for a `Pods` metric). It now scrapes per pod.
+  - The backlog gauge was written **per replica and per tenant** when an approval
+    changed, so only the replica that handled the change moved: after draining the
+    queue the api **stayed at 5 replicas** forever, because `max()` across the
+    replicas followed a stale value. The count is now read from the store at
+    scrape time (`store.pending_count()`), across every tenant.
+- **Verified by:** a full cycle on kind — seven held approvals took the api
+  `2 → 3 → 5`, and deciding them brought it back to `2` after the 120s
+  stabilization window — with `kubectl describe hpa api` reporting all three
+  metrics (`0 / 5`, `171m / 20`, `5% / 70%`). Unit-tested at the property that
+  broke: `app/api/tests/test_metrics.py`.
+- **Corrected, not silently substituted:** the slice asked for "request rate for
+  the **gateway**", but the gateway serves **only** mTLS with an SVID, so
+  Prometheus (which holds no SVID) cannot scrape it — there is nothing to scale it
+  on beyond CPU. The rate metric was built for the api, which does export one. To
+  do the gateway later, either give it a listener to be scraped on, give
+  Prometheus an SVID, or derive the signal from the audit stream the gateway
+  already sends to the api (which is the shape `app/common/metrics.py` already
+  prefers).
 
 ## S7 — SPIFFE-native transport everywhere — **done**
 

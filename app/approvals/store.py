@@ -97,6 +97,15 @@ class ApprovalStore:
     def pending(self, tenant: str) -> list[Approval]:
         return [a for a in self._items.values() if a.status == "pending" and a.tenant == tenant]
 
+    def pending_count(self) -> int:
+        """Pending approvals across **every** tenant — the platform's queue depth.
+
+        Deliberately not `pending(tenant)`: the queue depth is a property of the
+        platform, and a per-replica or per-tenant value makes an autoscaler
+        follow whichever replica last handled a change (S6).
+        """
+        return sum(1 for a in self._items.values() if a.status == "pending")
+
     def all(self, tenant: str) -> list[Approval]:
         return [a for a in self._items.values() if a.tenant == tenant]
 
@@ -239,6 +248,14 @@ class PostgresApprovalStore:
                 (tenant,),
             ).fetchall()
         return [self._row_to_approval(r) for r in rows]
+
+    def pending_count(self) -> int:
+        """Pending approvals across **every** tenant — a cheap COUNT for /metrics."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT count(*) FROM approvals WHERE status = 'pending'"
+            ).fetchone()
+        return int(row[0]) if row else 0
 
     def decide(
         self,

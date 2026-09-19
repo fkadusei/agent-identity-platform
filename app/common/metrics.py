@@ -22,7 +22,10 @@ AUDIT_EVENTS = Counter(
     ["event"],
 )
 
-# Approval backlog (emitted wherever the store changes).
+# Approval backlog (the queue depth). Read from the store at scrape time, not
+# accumulated in-process: it is a property of the *platform*, so a per-replica
+# value would leave replicas disagreeing and an autoscaler following whichever
+# one last handled a change (S6).
 APPROVALS_PENDING = Gauge(
     "agent_platform_approvals_pending", "Approvals awaiting a decision"
 )
