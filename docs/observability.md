@@ -69,8 +69,12 @@ forwards its audit events to the API, one instrumentation point covers policy
 decisions and admin actions across the whole platform — so the dashboard and the
 audit log cannot drift apart.
 
-**Prometheus** (`deploy/kind/manifests/observability/prometheus.yaml`) scrapes
-the API, the OTel collector and OPA. **Grafana**
+**Prometheus** (`deploy/kind/manifests/observability/prometheus.yaml`) scrapes the
+API **per pod** — its counters are per-process, so scraping through the Service
+would round-robin between replicas and make `rate()` meaningless — plus the OTel
+collector and OPA. The approval backlog is read from the store at scrape time
+rather than accumulated in-process, so every replica reports the same queue
+([`autoscaling.md`](autoscaling.md) explains why that mattered). **Grafana**
 (`.../grafana.yaml`) is provisioned with the Prometheus datasource and a
 dashboard, both from ConfigMaps:
 

@@ -28,6 +28,12 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ $.Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- /* Signals that describe real load (a queue, a rate), from
+           prometheus-adapter. The HPA takes the largest of its metrics. */ -}}
+    {{- $extra := index ($.Values.autoscaling.extraMetrics | default dict) $name }}
+    {{- with $extra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 120

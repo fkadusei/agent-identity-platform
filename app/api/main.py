@@ -90,8 +90,19 @@ def get_store() -> ApprovalStore:
 
 
 @app.get("/metrics")
-def metrics_endpoint():
-    """Prometheus scrape target."""
+def metrics_endpoint(store: ApprovalStore = Depends(get_store)):
+    """Prometheus scrape target.
+
+    The backlog gauge is refreshed here, from the store, instead of only when an
+    approval changes: with two replicas, the one that handled the change is the
+    only one whose gauge moves, so every other replica reports a stale queue — and
+    an autoscaler reading `max()` across them scales on the stale value (S6). A
+    scrape is the one moment the number is actually read, so read it there.
+    """
+    try:
+        metrics.APPROVALS_PENDING.set(store.pending_count())
+    except Exception:  # a broken scrape is worse than a stale gauge
+        pass
     return metrics.metrics_response()
 
 
@@ -166,7 +177,6 @@ def create_approval(
         reason=body.get("reason", ""),
         tenant=delegation.tenant or "",
     )
-    metrics.APPROVALS_PENDING.set(len(store.pending(delegation.tenant or "")))
     audit(
         "approval.created",
         approval_id=approval.id,
@@ -229,7 +239,6 @@ def decide_approval(
             status_code=409,
             detail="approval not found, already decided, or self-approval is not allowed",
         )
-    metrics.APPROVALS_PENDING.set(len(store.pending(delegation.tenant or "")))
     audit(
         "approval.decided",
         approval_id=approval.id,

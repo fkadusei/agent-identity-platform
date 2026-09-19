@@ -113,8 +113,9 @@ completed items are kept below for the record.
       nodes and `scripts/ha-check.sh` proves an eviction is survivable. SPIRE,
       Keycloak, Postgres and the sandbox are documented as single-replica, and
       why (`docs/ha.md`)
-- [x] **Autoscaling** — api/tools/agent/gateway/opa scale 2→5 on CPU
-      utilization; metrics-server in-cluster (`docs/autoscaling.md`)
+- [x] **Autoscaling** — api/tools/agent/gateway/opa scale 2→5; the api also on the
+      **approval backlog** and per-pod request rate, via prometheus-adapter
+      (`docs/autoscaling.md`)
 - [x] **Tenancy depth** — approvals are scoped by tenant (create, list,
       decide, verify), keyed on the caller's identity; a manager sees only their
       own tenant's queue (`docs/tenancy.md`)
