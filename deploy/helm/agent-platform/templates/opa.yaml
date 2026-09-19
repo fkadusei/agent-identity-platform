@@ -68,6 +68,14 @@ spec:
               port: 8181
             initialDelaySeconds: 5
             periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8181
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:

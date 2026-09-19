@@ -199,6 +199,18 @@ spec:
           args: ["-config", "/run/spire/oidc/config/oidc-discovery-provider.conf"]
           ports:
             - containerPort: 11080
+          # `/keys` is the work this sidecar exists to do: the gateway verifies
+          # JWT-SVIDs against it, and Keycloak fetches JWKS from it. A provider
+          # that hangs stops naming machine callers rather than failing loudly, so
+          # it is restarted on the same terms as everything else (S16).
+          livenessProbe:
+            httpGet:
+              path: /keys
+              port: 11080
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 8
           volumeMounts:
             - name: spire-server-socket
               mountPath: /run/spire/server/private

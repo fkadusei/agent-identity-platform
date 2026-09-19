@@ -63,6 +63,14 @@ browser, and the verification scripts standing in for a user. That second listen
 is a different trust domain, and it is fronted by the ingress that terminates the
 browser's TLS: the first line of the diagram is real on kind, not a plan (S7b).
 
+`gateway` is the exception, and it is the strictest case: its **only** listener is
+mTLS, so nothing outside a workload can reach it at all. That has a consequence for
+operations, not for callers — a kubelet probe has no SVID to present, so it cannot
+check the serving listener, and asking whether the socket is open is answered by a
+hung process too. The gateway therefore serves **`/healthz` and nothing else** on a
+separate plaintext port (`health_port`), started only once its SVID is loaded. It is
+not the gateway's app on a second port: the model endpoint stays behind mTLS (S16).
+
 The **edge** is `ingress-nginx` with a certificate `setup.sh` generates (a CA in
 the gitignored `.edge/`, the leaf named `localhost` with the extensions strict
 clients require). It fronts `api:8080` and nothing else: the gateway is

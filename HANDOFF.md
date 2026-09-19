@@ -47,7 +47,7 @@ Then open **https://localhost:8443**. Demo users:
 ## Test everything
 
 ```sh
-.venv/bin/python -m pytest -q          # app: 199 passed (23 Postgres tests skip)
+.venv/bin/python -m pytest -q          # app: 200 passed (23 Postgres tests skip)
 sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed
 docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/   # policy: 45 passed
 ```
@@ -145,6 +145,10 @@ End-to-end, on the cluster:
 - **Durable identity and data** — SPIRE's registry lives in Postgres with its keys
   on a PVC (S1), and the demo database is on a PVC (S3), so restarting either pod
   no longer resets the platform ([`docs/data-stores.md`](docs/data-stores.md)).
+- **Self-healing** — every container has a liveness probe (S16), so a *hung*
+  process is restarted rather than reported forever. Verified by hanging fifteen of
+  them and watching each recover; the gateway needed a health-only listener, because
+  an mTLS-only service cannot be checked by a kubelet that has no SVID.
 
 ## Immediate next task
 
@@ -152,8 +156,10 @@ Phases 1–3 are complete and every threat is addressed. Next, pick from the ope
 backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S16) — each slice has a stable
 ID with what it is, why, where it lands and how we would verify it:
 
-- **S16** liveness probes — a hung process must be restarted, not just reported
-  (jaeger hung for 31h and parked `setup.sh`; only jaeger has one so far).
+- **Nothing.** Every slice on the board is done but one: **S1**'s shared KeyManager
+  half, which needs a cloud KMS (two SPIRE replicas cannot share a disk KeyManager).
+  The other open threads are documented limits, not slices — see the end of
+  [`docs/backlog.md`](docs/backlog.md).
 
 Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
 KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
@@ -165,8 +171,8 @@ tool maps), **S9** (the sandbox keeps its own data), **S10** (the privacy view,
 `docs/privacy.md`),
 **S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
 Postgres restart), **S13** (stop blaming the model for infrastructure faults),
-**S14** (the scripts pin their cluster context) and **S15** (the gateway must not
-serve an expired SVID).
+**S14** (the scripts pin their cluster context), **S15** (the gateway must not
+serve an expired SVID) and **S16** (a hung process restarts itself).
 
 ## The repository is public
 
@@ -265,8 +271,16 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   controller carries no sidecar.
 - **A readiness probe is not a restart.** A hung process stays `Running` and never
   `Ready`: jaeger did exactly that for 31 hours, logging nothing, and `setup.sh`'s
-  rollout gate could not finish until a human restarted it. Jaeger has a liveness
-  probe now (S7b); the rest of the stack does not (S16).
+  rollout gate could not finish until a human restarted it. Every container has a
+  liveness probe now (S16), so this class of hang heals itself — but the thresholds
+  are unhurried on purpose (a restart is not free), and a *too* eager one turns a
+  slow start into a restart loop.
+- **You cannot hang a container's PID 1 from inside it.** `kubectl exec <pod> --
+  kill -STOP 1` is a no-op: signals to a PID-namespace init process from inside the
+  namespace are discarded (the protection that stops a container killing itself),
+  and the process stays in state `S`. To test a probe, signal from the node and pick
+  the process by cgroup — the S16 verification script's approach. The first attempt
+  at it "passed" by doing nothing at all.
 - **Role changes lag** by up to one token lifetime (5 minutes).
 - **The approval backlog is read from the store at scrape time**, not accumulated
   in the api process (S6). A gauge written per replica on change means only the

@@ -133,6 +133,17 @@ spec:
               scheme: HTTPS
             initialDelaySeconds: 10
             periodSeconds: 10
+          # The kubelet does not verify the serving certificate (it cannot be given
+          # a CA), so an HTTPS probe here is fine — the same as the readiness probe.
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
       volumes:
         - name: tls
           secret:
