@@ -33,7 +33,12 @@ cd agent-identity-platform
 ./start.sh          # builds on first run (~10-15 min); resumes quickly after
 ```
 
-Then open **http://localhost:8080** and sign in:
+Then open **https://localhost:8443** and sign in:
+
+> The certificate is one `setup.sh` generates, not a public CA's, so the browser
+> asks you to trust it once — import `.edge/ca.crt` (gitignored, never
+> committed), or use the CLI with `--cacert .edge/ca.crt`. The edge terminates
+> TLS at an ingress; the API's own listener is never exposed to the host (S7b).
 
 | user | password | role | can |
 | --- | --- | --- | --- |

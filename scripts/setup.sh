@@ -319,7 +319,93 @@ kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gatewa
   --timeout=240s >/dev/null
 ok "api, tools, agent, gateway, sandbox ready"
 
-say "10. autoscaling"
+# ---------------------------------------------------------------------------
+# The browser edge (S7b). Everything else here is workload-to-workload; this is
+# the one hop a *person* uses, and it carried user tokens in the clear: the
+# browser reached the API through `kubectl port-forward`, plaintext end to end.
+# Now TLS terminates at an ingress, with a certificate we can verify.
+# ---------------------------------------------------------------------------
+say "10. browser edge (TLS at the ingress)"
+EDGE=.edge # gitignored: the CA, its key and the certificate never enter git
+# The upstream manifest is pinned by tag, and every image in it by digest.
+if ! kubectl get ns ingress-nginx >/dev/null 2>&1; then
+  kubectl apply -f \
+    "https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.15.1/deploy/static/provider/cloud/deploy.yaml" >/dev/null
+  ok "ingress-nginx controller-v1.15.1 installed (namespace ingress-nginx)"
+fi
+kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=240s >/dev/null
+# The admission webhook has failurePolicy=Fail, so an Ingress created while the
+# certgen jobs are still running is rejected — "no endpoints available". Wait for
+# them before applying ours. (On a re-run they may be complete and garbage
+# collected: `get` fails, so the wait is skipped rather than fatal.)
+for j in ingress-nginx-admission-create ingress-nginx-admission-patch; do
+  kubectl -n ingress-nginx get job "$j" >/dev/null 2>&1 \
+    && kubectl -n ingress-nginx wait --for=condition=complete "job/$j" --timeout=180s >/dev/null \
+    || true
+done
+
+# A certificate signed by a CA we generate, rather than a self-signed cert the
+# client has to trust blindly: `curl --cacert $EDGE/ca.crt` (and a browser
+# importing it) verifies the chain *and* the name on the certificate. Generated
+# once and kept, so a browser does not have to re-import it every run.
+#
+# The extensions are not decoration. A CA without basicConstraints + keyUsage is
+# accepted by curl and rejected by anything strict — Python/OpenSSL 3 refuses the
+# chain outright ("CA cert does not include key usage extension"), which is the
+# difference between a certificate that *verifies* and one that is merely
+# present. The leaf names the host and expires inside the 398-day browser limit.
+if [ ! -f "$EDGE/ca.crt" ]; then
+  mkdir -p "$EDGE"; umask 077
+  cat > "$EDGE/openssl.cnf" <<'EOF'
+[ req ]
+distinguished_name = dn
+[ dn ]
+[ v3_ca ]
+basicConstraints = critical, CA:TRUE
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+[ v3_leaf ]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = DNS:localhost, DNS:agent-platform.local
+EOF
+  openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj "/CN=agent-platform edge CA" \
+    -config "$EDGE/openssl.cnf" -extensions v3_ca \
+    -keyout "$EDGE/ca.key" -out "$EDGE/ca.crt" 2>/dev/null
+  openssl req -new -newkey rsa:2048 -nodes -subj "/CN=localhost" \
+    -config "$EDGE/openssl.cnf" -keyout "$EDGE/tls.key" -out "$EDGE/tls.csr" 2>/dev/null
+  openssl x509 -req -in "$EDGE/tls.csr" -CA "$EDGE/ca.crt" -CAkey "$EDGE/ca.key" \
+    -CAcreateserial -days 397 -out "$EDGE/tls.crt" \
+    -extfile "$EDGE/openssl.cnf" -extensions v3_leaf 2>/dev/null
+  rm -f "$EDGE/tls.csr" "$EDGE/ca.srl"
+  ok "edge CA + certificate generated into $EDGE (gitignored)"
+fi
+kubectl -n $NS create secret tls agent-platform-tls \
+  --cert="$EDGE/tls.crt" --key="$EDGE/tls.key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl apply -f "$MANIFESTS/edge/" >/dev/null
+ok "ingress agent-platform -> api:8080, tls secret agent-platform-tls"
+
+# GATE: fetch /healthz through the edge from outside the cluster, the way a
+# browser does — over https, with our CA, no -k. A certificate we skip
+# verifying would prove nothing.
+EDGE_PORT=9443
+kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller $EDGE_PORT:443 >/dev/null 2>&1 &
+EDGE_PF=$!
+trap 'kill $EDGE_PF 2>/dev/null || true' EXIT
+EDGE_CODE=""
+for _ in $(seq 1 20); do
+  EDGE_CODE=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$EDGE/ca.crt" \
+    --resolve "localhost:$EDGE_PORT:127.0.0.1" "https://localhost:$EDGE_PORT/healthz" 2>/dev/null || true)
+  [ "$EDGE_CODE" = "200" ] && break
+  sleep 2
+done
+kill $EDGE_PF 2>/dev/null || true; trap - EXIT
+[ "$EDGE_CODE" = "200" ] \
+  || die "the edge did not answer over TLS with our CA (got '${EDGE_CODE:-nothing}')"
+ok "https://localhost:8443/healthz answered 200 with a certificate that verifies"
+
+say "11. autoscaling"
 # metrics-server serves the metrics API over TLS. Give it a serving cert the API
 # server can verify (rather than skipping verification), signed by a small CA we
 # generate here.
@@ -342,7 +428,7 @@ kubectl -n kube-system rollout status deploy/metrics-server --timeout=180s >/dev
 kubectl apply -f "$MANIFESTS/autoscaling/hpa.yaml" >/dev/null
 ok "metrics-server + HPAs ready (api/tools/agent/gateway/opa scale on CPU)"
 
-say "11. GATE: the agent pod can fetch its SVID (no secrets involved)"
+say "12. GATE: the agent pod can fetch its SVID (no secrets involved)"
 OUT=""
 for _ in $(seq 1 12); do
   OUT=$(kubectl -n $NS exec deploy/agent -- python -c "

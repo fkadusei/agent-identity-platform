@@ -83,7 +83,25 @@ helm lint deploy/helm/agent-platform
 | `mesh.inject` | annotate pods for Linkerd injection (mTLS on every in-cluster hop) |
 | `observability_stack.*` | enable/disable the collector, Jaeger, Prometheus, Grafana |
 | `resources` | default requests/limits for every workload |
-| `ingress.*` | host, class, TLS, annotations |
+| `ingress.*` | host, class, TLS secret, annotations — the browser edge (below) |
+
+## The browser edge
+
+`ingress.enabled` renders one Ingress for the **api** — the listener for callers
+that cannot hold an SVID, which is a browser. It is deliberately not on the
+gateway: that is mTLS-only and only the agent should reach it.
+
+It terminates TLS, and references `ingress.tls.secretName`; the chart does **not**
+create that Secret. In production that is cert-manager, or a CA your users already
+trust. The kind demo does the same thing by hand — an `ingress-nginx` controller,
+a CA generated into the gitignored `.edge/`, and a gate that fetches over https
+*with* that CA rather than skipping verification
+(`deploy/kind/manifests/edge/`). See `docs/tls.md`.
+
+One residual, named rather than hidden: the ingress controller carries no mesh
+sidecar, so the hop from the controller to `api:8080` is plaintext in-cluster — the
+mesh can only encrypt a connection it originates. Mesh the controller
+(`linkerd.io/inject: ingress`) if that matters in your environment.
 
 ## Differences from the kind manifests
 

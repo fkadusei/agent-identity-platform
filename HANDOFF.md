@@ -17,7 +17,7 @@
   beyond the original plan. The 2026-09-16 gateway outage is fixed — see S13 and
   S15 in [`docs/backlog.md`](docs/backlog.md).
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-09-16
+- **Last updated:** 2026-09-19
 
 ## Resume in 60 seconds
 
@@ -27,7 +27,12 @@
 ./stop.sh           # stop it (keeps data); ./stop.sh --delete removes the cluster
 ```
 
-Then open **http://localhost:8080**. Demo users:
+Then open **https://localhost:8443**. Demo users:
+
+> The certificate is one `setup.sh` generates, not a public CA's — the browser
+> will ask you to trust it once (import `.edge/ca.crt`, gitignored). The command
+> line equivalents below all use `--cacert .edge/ca.crt`; nothing uses `-k`.
+> TLS terminates at the ingress, not on the api's own listener (S7b).
 
 | user | password | role | can |
 | --- | --- | --- | --- |
@@ -42,9 +47,9 @@ Then open **http://localhost:8080**. Demo users:
 ## Test everything
 
 ```sh
-.venv/bin/python -m pytest -q          # app: 160 passed (20 Postgres tests skip)
+.venv/bin/python -m pytest -q          # app: 198 passed (23 Postgres tests skip)
 sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed
-opa test policy/                       # policy: 31 passed
+docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/   # policy: 45 passed
 ```
 
 The Postgres-backed tests **skip** without a database. To run them:
@@ -64,7 +69,7 @@ End-to-end, on the cluster:
 ./scripts/attack-tests.sh   # all six attacks blocked
 ./scripts/tenancy-tests.sh  # tenant isolation: claim -> policy -> data
 ./scripts/role-tools.sh     # who may call which tool (no LLM)
-./scripts/tls-check.sh      # every in-cluster edge is mTLS
+./scripts/tls-check.sh      # mesh edges mTLS, SPIFFE hops named, the browser edge verified
 ./scripts/ha-check.sh       # replicas spread; an eviction is survivable
 ./logs.sh --last            # a trace of every interaction
 ```
@@ -120,7 +125,9 @@ End-to-end, on the cluster:
   by tenant; approvals are tenant-scoped (`docs/tenancy.md`).
 - **TLS/mTLS everywhere** — SPIFFE (with a named caller) on every hop between
   workloads we own, a service mesh (Linkerd) for the third-party and simulated
-  hops, and the boundary recorded in ADR-0012 (`docs/tls.md`).
+  hops, **and the browser edge terminated at an ingress with a certificate we
+  generate and verify** (S7b). The boundary is recorded in ADR-0012
+  (`docs/tls.md`).
 - **HA for the app tier** — api/tools/agent/gateway/opa at 2 replicas with
   anti-affinity and PodDisruptionBudgets (`docs/ha.md`).
 - **Autoscaling** — those services scale 2→5 on CPU (`docs/autoscaling.md`).
@@ -140,19 +147,19 @@ End-to-end, on the cluster:
 ## Immediate next task
 
 Phases 1–3 are complete and every threat is addressed. Next, pick from the open
-backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S15) — each slice has a stable
+backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S16) — each slice has a stable
 ID with what it is, why, where it lands and how we would verify it:
 
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
-- **S7b** terminate TLS for the browser edge on kind — the chart has supported
-  `ingress.tls` since Phase 3 and nothing has ever exercised it, so the one hop
-  carrying user tokens is still plaintext (ADR-0012).
+- **S16** liveness probes — a hung process must be restarted, not just reported
+  (jaeger hung for 31h and parked `setup.sh`; only jaeger has one so far).
 
 Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
 KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
 Postgres), **S3** (a persistent Postgres volume), **S4** (Keycloak hardened —
 no `start-dev`, no Trivy exception), **S5** (guardrails + evals,
-`docs/guardrails-and-evals.md`), **S8** (per-tenant role → tool maps), **S9** (the
+`docs/guardrails-and-evals.md`), **S7** (SPIFFE on every hop we own), **S7b** (TLS
+for the browser edge), **S8** (per-tenant role → tool maps), **S9** (the
 sandbox keeps its own data), **S10** (the privacy view, `docs/privacy.md`),
 **S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
 Postgres restart), **S13** (stop blaming the model for infrastructure faults),
@@ -219,7 +226,7 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 - **Keycloak runs in production mode** (S4) from `docker/keycloak.Dockerfile`,
   which bakes `kc.sh build` so the server starts with `--optimized` and a read-only
   root filesystem. Its listener is HTTP on purpose: the mesh carries the mTLS
-  in-cluster and the ingress owns the browser edge (S7).
+  in-cluster and the ingress owns the browser edge (S7b).
 - **OPA bundle:** the files are mounted with `subPath`, which does not update in
   place — `setup.sh` restarts OPA after a new revision.
 - **SPIRE's state is durable now** (S1): the registration registry lives in
@@ -246,6 +253,18 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   `WORKLOAD_AUDIENCE`; the SPIFFE port must also skip the mesh proxy
   (`skip-inbound/outbound-ports: "8443"`), or Linkerd terminates the connection and
   the peer's SVID never reaches the server.
+- **The browser edge is an ingress, with a certificate we generate** (S7b). The CA
+  lives in the gitignored `.edge/` and carries `basicConstraints` + `keyUsage`:
+  without them curl accepts the chain and strict clients (Python/OpenSSL 3) refuse
+  it — a mistake worth not repeating, and `tls-check.sh` now asserts it.
+  `start.sh` forwards the **controller** (`svc/ingress-nginx-controller`), never the
+  api, so the API's own listener is not exposed to the host; `stop.sh` clears both.
+  One residual remains: ingress→api:8080 is plaintext in-cluster, because the
+  controller carries no sidecar.
+- **A readiness probe is not a restart.** A hung process stays `Running` and never
+  `Ready`: jaeger did exactly that for 31 hours, logging nothing, and `setup.sh`'s
+  rollout gate could not finish until a human restarted it. Jaeger has a liveness
+  probe now (S7b); the rest of the stack does not (S16).
 - **Role changes lag** by up to one token lifetime (5 minutes).
 - **Every script pins its cluster.** `scripts/lib.sh` wraps `kubectl` with
   `--context kind-agent-platform` (override with `KUBE_CONTEXT`), and no script
@@ -275,14 +294,14 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 | `docs/guardrails-and-evals.md` | the agent's guardrails and the eval suite |
 | `docs/privacy.md` | the PII tool, its approval gate, the access trail |
 | `docs/tenancy.md` | tenant isolation, at every layer |
-| `docs/tls.md` | transport security (SPIFFE + mesh) |
+| `docs/tls.md` | transport security (SPIFFE + mesh + the browser edge) |
 | `docs/ha.md`, `docs/autoscaling.md` | redundancy and scaling |
 | `docs/llm-gateway.md` | the gateway, identity, rate/cost limits |
 | `docs/data-stores.md` | durable state (Postgres) |
 | `docs/operator-guide.md` | the runbook |
 | `docs/real-world-adoption.md` | adoption guide + production checklist |
 | `docs/roadmap.md` | phase checklist + backlog |
-| `docs/decisions/` | ADRs 0001–0011 |
+| `docs/decisions/` | ADRs 0001–0012 |
 | `docs/guides/` | plain-language user guides |
 | `docs/visualization/index.html` | interactive 3D architecture (open by double-click) |
 | `scripts/` | setup, demo, and the verification suites |

@@ -110,15 +110,17 @@ the `spire` and `keycloak` roles and databases for SPIRE's registry and Keycloak
 realm. To watch durability:
 
 ```bash
+API=https://localhost:8443; CA=.edge/ca.crt   # the https edge (./start.sh; tls.md)
+
 # create an approval, then restart the API and look again
 kubectl -n agent-platform rollout restart deploy/api
 kubectl -n agent-platform rollout status deploy/api
-curl -s localhost:8080/approvals          # the pending approval is still there
+curl -s --cacert $CA $API/approvals       # the pending approval is still there
 
 # the state is on a PersistentVolumeClaim, so it also outlives the database:
 kubectl -n agent-platform delete pod -l app=postgres
 kubectl -n agent-platform rollout status deploy/postgres
-curl -s localhost:8080/approvals          # still there
+curl -s --cacert $CA $API/approvals       # still there
 ```
 
 To run the app's stores **without** Postgres (in-memory), remove the `PG*` env
