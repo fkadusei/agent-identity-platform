@@ -73,14 +73,21 @@ subjects:
 # The HPA controller reads these APIs through its own service account, and the
 # built-in controller role covers only metrics.k8s.io — without this it gets a
 # 403 from the aggregator and the HPA reports the metric as unavailable.
+#
+# The resources are named rather than `*`: a wildcard here is a cluster-wide grant
+# (and the supply-chain scan flags it, correctly). Adding a metric below means
+# adding its resource here too — the custom/external APIs expose one per metric.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: custom-metrics-reader
 rules:
-  - apiGroups: ["custom.metrics.k8s.io", "external.metrics.k8s.io"]
-    resources: ["*"]
-    verbs: ["get", "list", "watch"]
+  - apiGroups: ["external.metrics.k8s.io"]
+    resources: ["approvals_pending"]
+    verbs: ["get", "list"]
+  - apiGroups: ["custom.metrics.k8s.io"]
+    resources: ["pods/http_requests_per_second"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
