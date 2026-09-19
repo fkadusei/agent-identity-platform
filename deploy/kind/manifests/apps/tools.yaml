@@ -3,7 +3,16 @@
 #
 # Verifies the caller's token (aud=mcp-tools, azp=the agent), asks OPA, and
 # requires a verified approval for high-risk actions before executing.
+#
+# It also holds a SPIFFE identity (S7), so the agent's hop to it can be proved at
+# the transport rather than trusted from the mesh. See docs/tls.md.
 # =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tools
+  namespace: agent-platform
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,7 +32,16 @@ spec:
         # declare requests too — otherwise CPU utilization cannot be computed.
         config.linkerd.io/proxy-cpu-request: 25m
         config.linkerd.io/proxy-memory-request: 64Mi
+        # The SPIFFE listener must NOT be mesh-terminated: Linkerd would prove
+        # *its* identity and hide the peer's SVID from our server, so the
+        # per-hop identity check in app/common/workload.py could never see it.
+        # These two tell the proxy to leave port 8443 alone in both directions —
+        # it passes straight through to app/common/server.py — while every other
+        # hop (Keycloak, OPA, Postgres, the sandbox, /metrics) keeps mesh mTLS.
+        config.linkerd.io/skip-inbound-ports: "8443"
+        config.linkerd.io/skip-outbound-ports: "8443"
     spec:
+      serviceAccountName: tools
       affinity:
         # Spread replicas across nodes when there is more than one (soft, so a
         # single-node cluster still schedules them).
@@ -49,16 +67,27 @@ spec:
               value: http://otel-collector:4318
             - name: KC_ISSUER
               value: http://keycloak:8080/realms/agent-platform
+            - name: SPIFFE_SOCKET
+              value: unix:///run/spire/sockets/agent.sock
+            - name: SPIFFE_BUNDLE
+              value: /run/spire/bundle/bundle.crt
+            - name: TOOLS_SPIFFE_ID
+              value: spiffe://acme.com/ns/agent-platform/sa/tools
+            # Requires machine callers to name themselves (S7); the default
+            # allow-list is the agent alone.
+            - name: WORKLOAD_AUDIENCE
+              value: spiffe://acme.com/ns/agent-platform/sa/tools
             - name: TOKEN_AUDIENCE
               value: mcp-tools
             - name: TRUSTED_WORKLOAD
               value: spiffe://acme.com/ns/agent-platform/sa/agent
             - name: OPA_URL
               value: http://opa:8181
+            # Machine hops to the api: SPIFFE, with the tools naming themselves.
             - name: APPROVALS_URL
-              value: http://api:8080
+              value: https://api:8443
             - name: AUDIT_URL
-              value: http://api:8080
+              value: https://api:8443
             # Real-integration path: call the sandbox over REST instead of the
             # in-process simulator. Point SANDBOX_BASE_URL at a real sandbox to
             # swap it (docs/integrations.md).
@@ -76,6 +105,10 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+            - name: spire-bundle
+              mountPath: /run/spire/bundle
             - name: tmp
               mountPath: /tmp
           readinessProbe:
@@ -92,6 +125,15 @@ spec:
               cpu: 500m
               memory: 512Mi
       volumes:
+        # The Workload API socket (on the node) and the trust bundle, which is
+        # how any workload here obtains and verifies an SVID.
+        - name: spire-agent-socket
+          hostPath:
+            path: /run/spire/sockets
+            type: Directory
+        - name: spire-bundle
+          configMap:
+            name: spire-bundle
         - name: tmp
           emptyDir: {}
 ---
@@ -107,3 +149,7 @@ spec:
     - name: http
       port: 8000
       targetPort: 8000
+    # The SPIFFE listener (S7): machine callers present an SVID here.
+    - name: spiffe
+      port: 8443
+      targetPort: 8443

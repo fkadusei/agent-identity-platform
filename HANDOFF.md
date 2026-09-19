@@ -118,8 +118,9 @@ End-to-end, on the cluster:
 - **Multi-tenant isolation (threat T9)** and **tenancy depth** — the tenant is an
   identity attribute; policy denies an unscoped caller; every data accessor scopes
   by tenant; approvals are tenant-scoped (`docs/tenancy.md`).
-- **TLS/mTLS everywhere** — SPIFFE mTLS on agent↔gateway plus a service mesh
-  (Linkerd) for every other in-cluster hop (`docs/tls.md`).
+- **TLS/mTLS everywhere** — SPIFFE (with a named caller) on every hop between
+  workloads we own, a service mesh (Linkerd) for the third-party and simulated
+  hops, and the boundary recorded in ADR-0012 (`docs/tls.md`).
 - **HA for the app tier** — api/tools/agent/gateway/opa at 2 replicas with
   anti-affinity and PodDisruptionBudgets (`docs/ha.md`).
 - **Autoscaling** — those services scale 2→5 on CPU (`docs/autoscaling.md`).
@@ -143,9 +144,9 @@ backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S15) — each slice has a 
 ID with what it is, why, where it lands and how we would verify it:
 
 - **S6** custom-metric autoscaling (CPU autoscaling is done);
-- **S7** SPIFFE-native transport on every hop, and ingress TLS for the browser —
-  the last piece of the TLS story now that Keycloak runs in production mode behind
-  the mesh (S4).
+- **S7b** terminate TLS for the browser edge on kind — the chart has supported
+  `ingress.tls` since Phase 3 and nothing has ever exercised it, so the one hop
+  carrying user tokens is still plaintext (ADR-0012).
 
 Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
 KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
@@ -188,6 +189,7 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 - ADR-0009 Provider-agnostic LLM + identity-authenticated gateway
 - ADR-0010 Supply-chain signing with cosign (keyless Sigstore)
 - ADR-0011 Self-service enrollment and role administration
+- ADR-0012 Transport identity: SPIFFE for the workloads we own, the mesh for the rest
 
 ## Governance (as configured)
 
@@ -239,6 +241,11 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   the pod and a `setup.sh` re-run. The volume is node-local (kind's `local-path`),
   so the pod cannot be rescheduled to another node, and `./stop.sh --delete`
   removes it. Production points `database.url` at a managed database.
+- **A hop must be named.** A machine call that presents no JWT-SVID is refused with
+  `workload identity rejected` — that is the control, not a fault. The manifests set
+  `WORKLOAD_AUDIENCE`; the SPIFFE port must also skip the mesh proxy
+  (`skip-inbound/outbound-ports: "8443"`), or Linkerd terminates the connection and
+  the peer's SVID never reaches the server.
 - **Role changes lag** by up to one token lifetime (5 minutes).
 - **Every script pins its cluster.** `scripts/lib.sh` wraps `kubectl` with
   `--context kind-agent-platform` (override with `KUBE_CONTEXT`), and no script

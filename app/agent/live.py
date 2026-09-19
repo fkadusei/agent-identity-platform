@@ -14,6 +14,7 @@ from agentnhi import Settings, TokenExchanger, audit
 from agentnhi.identity import fetch_jwt_svid
 from app.agent.deps import ToolCallResult
 from app.agent.llm import decide_tool
+from app.common import hop, workload
 from app.tools.catalog import TOOLS
 
 
@@ -37,6 +38,9 @@ class LiveDeps:
         self._tool_server_url = (tool_server_url or os.environ.get("TOOL_SERVER_URL", "http://tools:8000")).rstrip("/")
         self._approvals_url = (approvals_url or os.environ.get("APPROVALS_URL", "http://api:8080")).rstrip("/")
         self._agent_id = os.environ.get("AGENT_SPIFFE_ID", "spiffe://acme.com/ns/agent-nhi/sa/agent")
+        # The services we call, so the JWT-SVID's audience names one callee (S7).
+        self._tools_id = os.environ.get("TOOLS_SPIFFE_ID", workload.TOOLS)
+        self._api_id = os.environ.get("API_SPIFFE_ID", workload.API)
 
     def _tool_token(self) -> str:
         """SVID -> exchange the user's token for one scoped to the tools."""
@@ -72,15 +76,18 @@ class LiveDeps:
         if approval_id:
             body["approval_id"] = approval_id
         token = self._tool_token()
+        client, workload_headers = hop.open_hop(self._tool_server_url, self._tools_id)
         try:
-            resp = httpx.post(
+            resp = client.post(
                 f"{self._tool_server_url}/tools/{tool}",
                 json=body,
-                headers={"Authorization": f"Bearer {token}"},
+                headers={"Authorization": f"Bearer {token}", **workload_headers},
                 timeout=30,
             )
         except httpx.HTTPError as exc:
             return ToolCallResult("error", reason=f"tool server unreachable: {exc}")
+        finally:
+            client.close()
 
         if resp.status_code == 200:
             return ToolCallResult("ok", result=resp.json().get("result", {}))
@@ -92,12 +99,16 @@ class LiveDeps:
 
     def create_approval(self, tool: str, args: dict, reason: str) -> dict:
         token = self._tool_token()
-        resp = httpx.post(
-            f"{self._approvals_url}/approvals",
-            json={"tool": tool, "args": args, "reason": reason},
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=15,
-        )
+        client, workload_headers = hop.open_hop(self._approvals_url, self._api_id)
+        try:
+            resp = client.post(
+                f"{self._approvals_url}/approvals",
+                json={"tool": tool, "args": args, "reason": reason},
+                headers={"Authorization": f"Bearer {token}", **workload_headers},
+                timeout=15,
+            )
+        finally:
+            client.close()
         resp.raise_for_status()
         approval = resp.json()
         audit("approval.requested", approval_id=approval.get("id"), tool=tool)

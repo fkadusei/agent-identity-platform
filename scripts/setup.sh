@@ -239,6 +239,10 @@ ensure_entry() { # ensure_entry <service-account> <spiffe-id>
 
 ensure_entry agent "$SPIFFE_ID"
 ensure_entry gateway "spiffe://acme.com/ns/agent-platform/sa/gateway"
+# api and tools carry SVIDs too (S7): they are called by the agent, and that hop
+# is proved at the transport rather than trusted from the mesh.
+ensure_entry api "spiffe://acme.com/ns/agent-platform/sa/api"
+ensure_entry tools "spiffe://acme.com/ns/agent-platform/sa/tools"
 
 say "6. Keycloak"
 RENDERED=$(mktemp)

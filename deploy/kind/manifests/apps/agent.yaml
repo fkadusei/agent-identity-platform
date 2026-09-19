@@ -33,6 +33,14 @@ spec:
         # declare requests too — otherwise CPU utilization cannot be computed.
         config.linkerd.io/proxy-cpu-request: 25m
         config.linkerd.io/proxy-memory-request: 64Mi
+        # The SPIFFE listener must NOT be mesh-terminated: Linkerd would prove
+        # *its* identity and hide the peer's SVID from our server, so the
+        # per-hop identity check in app/common/workload.py could never see it.
+        # These two tell the proxy to leave port 8443 alone in both directions —
+        # it passes straight through to app/common/server.py — while every other
+        # hop (Keycloak, OPA, Postgres, the sandbox, /metrics) keeps mesh mTLS.
+        config.linkerd.io/skip-inbound-ports: "8443"
+        config.linkerd.io/skip-outbound-ports: "8443"
     spec:
       serviceAccountName: agent
       affinity:
@@ -66,12 +74,14 @@ spec:
               value: /run/spire/bundle/bundle.crt
             - name: AGENT_SPIFFE_ID
               value: spiffe://acme.com/ns/agent-platform/sa/agent
+            # Machine hops: SPIFFE on both sides, and the callee is named in a
+            # JWT-SVID header (S7). The user's token still rides in Authorization.
             - name: TOOL_SERVER_URL
-              value: http://tools:8000
+              value: https://tools:8443
             - name: APPROVALS_URL
-              value: http://api:8080
+              value: https://api:8443
             - name: AUDIT_URL
-              value: http://api:8080
+              value: https://api:8443
             # The agent reaches the model ONLY through the gateway, over mTLS.
             - name: LLM_GATEWAY_URL
               value: https://gateway:8443
@@ -158,3 +168,7 @@ spec:
     - name: http
       port: 8081
       targetPort: 8081
+    # The SPIFFE listener (S7): machine callers present an SVID here.
+    - name: spiffe
+      port: 8443
+      targetPort: 8443

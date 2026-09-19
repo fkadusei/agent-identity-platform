@@ -87,14 +87,21 @@ services:
     replicas: 2
     autoscale: true
     port: 8080
-    spiffe: false
+    # It holds an SVID so machine callers can verify it at the transport (S7).
+    spiffe: true
+    # ...on a second listener, since the browser (port 8080) cannot hold an SVID.
+    spiffePort: 8443
     env:
+      # The audience its machine callers must be bound to (S7).
+      - name: WORKLOAD_AUDIENCE
+        value: spiffe://acme.com/ns/agent-platform/sa/api
       - name: KC_ISSUER
         value: http://keycloak:8080/realms/agent-platform
       - name: TOKEN_AUDIENCE
         value: mcp-tools
+      # A machine hop: SPIFFE, with the api naming itself (S7).
       - name: AGENT_URL
-        value: http://agent:8081
+        value: https://agent:8443
       - name: PORTAL_CLIENT_ID
         value: portal
       - name: ADMIN_CLIENT_ID
@@ -116,8 +123,12 @@ services:
     replicas: 2
     autoscale: true
     port: 8000
-    spiffe: false
+    # It holds an SVID so the agent's hop to it is proved, not mesh-trusted (S7).
+    spiffe: true
+    spiffePort: 8443
     env:
+      - name: WORKLOAD_AUDIENCE
+        value: spiffe://acme.com/ns/agent-platform/sa/tools
       - name: KC_ISSUER
         value: http://keycloak:8080/realms/agent-platform
       - name: TOKEN_AUDIENCE
@@ -126,10 +137,11 @@ services:
         value: spiffe://acme.com/ns/agent-platform/sa/agent
       - name: OPA_URL
         value: http://opa:8181
+      # Machine hops: SPIFFE, with the tools naming themselves (S7).
       - name: APPROVALS_URL
-        value: http://api:8080
+        value: https://api:8443
       - name: AUDIT_URL
-        value: http://api:8080
+        value: https://api:8443
       # Real-integration path: call the sandbox over REST. Point SANDBOX_BASE_URL
       # at a real sandbox/vendor API to swap it (docs/integrations.md).
       - name: TOOLS_BACKEND
@@ -154,17 +166,19 @@ services:
     autoscale: true
     port: 8081
     spiffe: true
+    spiffePort: 8443
     env:
       - name: KC_ISSUER
         value: http://keycloak:8080/realms/agent-platform
       - name: AGENT_SPIFFE_ID
         value: spiffe://acme.com/ns/agent-platform/sa/agent
+      # Machine hops: SPIFFE, with the agent naming itself (S7).
       - name: TOOL_SERVER_URL
-        value: http://tools:8000
+        value: https://tools:8443
       - name: APPROVALS_URL
-        value: http://api:8080
+        value: https://api:8443
       - name: AUDIT_URL
-        value: http://api:8080
+        value: https://api:8443
       - name: LLM_GATEWAY_URL
         value: https://gateway:8443
       - name: LLM_GATEWAY_AUDIENCE

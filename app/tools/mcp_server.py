@@ -23,6 +23,9 @@ from app.tools.enforcement import Outcome, ToolEnforcer
 from app.tools.wiring import build_enforcer
 
 _token: ContextVar[str | None] = ContextVar("agent_token", default=None)
+# The caller's own SVID, naming the workload (S7) — lifted the same way as the
+# user-scoped token above, so the MCP transport enforces exactly what HTTP does.
+_workload_token: ContextVar[str | None] = ContextVar("workload_token", default=None)
 
 
 def build_mcp_server(enforcer: ToolEnforcer | None = None) -> MCPServer:
@@ -30,7 +33,9 @@ def build_mcp_server(enforcer: ToolEnforcer | None = None) -> MCPServer:
     server = MCPServer("agent-tools")
 
     def dispatch(name: str, args: dict) -> dict:
-        result = enforcer.call(_token.get(), name, args)
+        result = enforcer.call(
+            _token.get(), name, args, workload_token=_workload_token.get()
+        )
         if result.outcome is Outcome.OK:
             return result.result or {}
         return {"status": result.outcome.value, "reason": result.reason}
@@ -82,9 +87,11 @@ class _TokenMiddleware:
         headers = {k.decode().lower(): v.decode() for k, v in scope.get("headers", [])}
         auth = headers.get("authorization", "")
         reset = _token.set(auth.removeprefix("Bearer ").strip() or None)
+        reset_workload = _workload_token.set(headers.get("x-workload-token") or None)
         try:
             await self._app(scope, receive, send)
         finally:
+            _workload_token.reset(reset_workload)
             _token.reset(reset)
 
 

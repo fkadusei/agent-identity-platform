@@ -179,15 +179,54 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Lands in:** `deploy/kind/manifests/autoscaling/`, the chart.
 - **Verified by:** pushing the backlog up and watching the HPA scale the api.
 
-## S7 — SPIFFE-native transport everywhere
+## S7 — SPIFFE-native transport everywhere — **done**, except the browser edge
 
-- **What:** replace the mesh's own identity with SPIFFE mTLS on every hop, and
-  terminate TLS for the browser edge at an ingress.
-- **Why:** the app layer does SPIFFE for agent↔gateway, but the rest of the mesh
-  authenticates with Linkerd's identity — two identity systems where one would do.
-- **Lands in:** the service runners (`app/common/server.py`), the mesh config,
-  `deploy/helm/agent-platform/` ingress.
-- **Verified by:** `tls-check.sh` plus a peer-identity assertion per hop.
+- **What:** replace the mesh's own identity with SPIFFE mTLS on the hops between
+  workloads we own, and terminate TLS for the browser edge at an ingress.
+- **Why:** the app layer did SPIFFE for agent↔gateway, but the rest of the mesh
+  authenticated with Linkerd's identity — two identity systems where one would do,
+  and no hop told the application *who* its peer was.
+- **Built:** see [ADR-0012](decisions/ADR-0012-transport-identity.md) for the
+  boundary and why it is drawn there.
+  - `api`, `tools` and `agent` hold SVIDs beside `gateway` (ServiceAccounts, SPIRE
+    registration entries in `setup.sh`, the Workload API socket mounted, and
+    `agentnhi[spiffe]` installed — which `api` and `tools` were missing entirely, so
+    they could not have fetched one).
+  - `app/common/server.py` serves every one of their TLS listeners with
+    `CERT_REQUIRED` against the SPIRE bundle and rests 120s before the SVID expires
+    (S15's rule, now shared); `app/common/hop.py` is the client half.
+  - `app/common/workload.py` names the caller: a JWT-SVID audienced to the callee,
+    verified against SPIRE's JWKS, allow-listed. Enforced in the tools'
+    **enforcement core** — one choke point covering both the HTTP and MCP transports
+    — and on the api's machine routes. **`/audit/events` had taken no credential at
+    all**; only the agent and the tool server may ingest now.
+  - Each service serves **two listeners**: SPIFFE for workloads, its original port
+    for the browser and the verification scripts, which cannot hold an SVID.
+  - The mesh is **kept** for Keycloak, OPA, Postgres, the sandbox and `/metrics`,
+    and our SPIFFE port skips the proxy in both directions so it is never
+    mesh-terminated.
+- **Verified by:** `./scripts/tls-check.sh`, which now asserts per-hop identity as
+  well as mesh encryption — a client with no SVID cannot complete a handshake on any
+  hop we own, and the machine routes refuse an unnamed caller while admitting the
+  agent (`scripts/spiffe_hops_client.py`). Plus, on kind: the demo end to end over
+  the new hops, a tool call with a real exchanged token but no workload identity
+  refused, audit ingest refused, and all four suites green.
+- **Still open:** the **browser edge** — the ingress TLS the chart supports has
+  never been exercised on kind, so the user/tooling listener is plaintext in-cluster.
+  Tracked as **S7b** below. Also named in the ADR: the naming rides a bearer token
+  rather than the certificate's SAN, because our ASGI server does not expose the peer
+  certificate.
+
+## S7b — Terminate TLS for the browser edge
+
+- **What:** actually run the chart's `ingress.tls` on kind: an ingress with a
+  certificate in front of the api's user listener, instead of `port-forward`.
+- **Why:** it is the one hop carrying user tokens that is still unencrypted, and the
+  chart has supported it since Phase 3 without anyone exercising it.
+- **Lands in:** the kind manifests (an ingress controller + a certificate),
+  `deploy/helm/agent-platform/` ingress values.
+- **Verified by:** the UI reached over `https://` with a certificate, and
+  `tls-check.sh` reporting the edge as terminated rather than plaintext.
 
 ## S8 — Per-tenant role → tool maps — **done**
 

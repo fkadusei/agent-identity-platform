@@ -10,8 +10,10 @@ import httpx
 from agentnhi import Settings, TokenExchanger
 from agentnhi.identity import fetch_jwt_svid
 
+from app.common import hop, workload
+
 KC = "http://keycloak:8080/realms/agent-platform"
-TOOLS = "http://tools:8000"
+TOOLS = "https://tools:8443"
 AGENT_ID = "spiffe://acme.com/ns/agent-platform/sa/agent"
 DEMO_CLI_SECRET = os.environ["DEMO_CLI_SECRET"]
 S = Settings.from_env()
@@ -40,10 +42,16 @@ def tool_token(user_token):
 
 
 def call(tool, args, token):
-    resp = httpx.post(
-        f"{TOOLS}/tools/{tool}", json=args,
-        headers={"Authorization": f"Bearer {token}"}, timeout=15,
-    )
+    # An honest client of the tool server names itself (S7). Attack 2's *raw* user
+    # token must still be refused, and it is — on its audience, not on identity.
+    client, workload_headers = hop.open_hop(TOOLS, workload.TOOLS, timeout=15)
+    try:
+        resp = client.post(
+            f"{TOOLS}/tools/{tool}", json=args,
+            headers={"Authorization": f"Bearer {token}", **workload_headers},
+        )
+    finally:
+        client.close()
     return resp.status_code, resp.text[:160]
 
 

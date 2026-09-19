@@ -1,10 +1,20 @@
 # =============================================================================
-# Platform API — human approvals (and, later, tasks).
+# Platform API — approvals, tasks, audit, roles, admin.
 #
 # It authenticates callers with their exchanged token (aud=mcp-tools) and binds
-# each approval to the token's user and workload. No secrets, no SPIFFE socket
-# needed: it only verifies tokens.
+# each approval to the token's user and workload.
+#
+# It also holds a SPIFFE identity (S7): a registered service account, so the
+# Workload API issues it an SVID. The api serves two trust domains — the browser
+# (a user with a token) and the agent (a workload that can prove itself) — and
+# they are on separate listeners; see docs/tls.md.
 # =============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: api
+  namespace: agent-platform
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -24,7 +34,16 @@ spec:
         # declare requests too — otherwise CPU utilization cannot be computed.
         config.linkerd.io/proxy-cpu-request: 25m
         config.linkerd.io/proxy-memory-request: 64Mi
+        # The SPIFFE listener must NOT be mesh-terminated: Linkerd would prove
+        # *its* identity and hide the peer's SVID from our server, so the
+        # per-hop identity check in app/common/workload.py could never see it.
+        # These two tell the proxy to leave port 8443 alone in both directions —
+        # it passes straight through to app/common/server.py — while every other
+        # hop (Keycloak, OPA, Postgres, the sandbox, /metrics) keeps mesh mTLS.
+        config.linkerd.io/skip-inbound-ports: "8443"
+        config.linkerd.io/skip-outbound-ports: "8443"
     spec:
+      serviceAccountName: api
       affinity:
         # Spread replicas across nodes when there is more than one (soft, so a
         # single-node cluster still schedules them).
@@ -50,13 +69,25 @@ spec:
               value: http://otel-collector:4318
             - name: KC_ISSUER
               value: http://keycloak:8080/realms/agent-platform
+            - name: SPIFFE_SOCKET
+              value: unix:///run/spire/sockets/agent.sock
+            - name: SPIFFE_BUNDLE
+              value: /run/spire/bundle/bundle.crt
+            # Its identity, so a JWT-SVID it asks for is bound to it.
+            - name: API_SPIFFE_ID
+              value: spiffe://acme.com/ns/agent-platform/sa/api
             - name: TOKEN_AUDIENCE
               value: mcp-tools
             # NOTE: no TRUSTED_WORKLOAD here. The API accepts tokens from both
             # the agent (creating approvals) and human approvers (deciding them),
             # so it enforces the audience but not a single issuing workload.
+            # The task proxy is a machine hop: SPIFFE, with the api naming itself.
             - name: AGENT_URL
-              value: http://agent:8081
+              value: https://agent:8443
+            # This service's own SPIFFE ID: the audience its machine callers must
+            # be bound to (S7). Unset would mean "do not require a caller name".
+            - name: WORKLOAD_AUDIENCE
+              value: spiffe://acme.com/ns/agent-platform/sa/api
             # Client secrets, mounted from a Secret that setup.sh creates from
             # the gitignored .env (never committed):
             #   DEMO_/MANAGER_CLI_SECRET — the scripted demo's personas
@@ -120,6 +151,10 @@ spec:
             capabilities:
               drop: ["ALL"]
           volumeMounts:
+            - name: spire-agent-socket
+              mountPath: /run/spire/sockets
+            - name: spire-bundle
+              mountPath: /run/spire/bundle
             - name: tmp
               mountPath: /tmp
           readinessProbe:
@@ -136,6 +171,15 @@ spec:
               cpu: 500m
               memory: 512Mi
       volumes:
+        # The Workload API socket (on the node) and the trust bundle, which is
+        # how any workload here obtains and verifies an SVID.
+        - name: spire-agent-socket
+          hostPath:
+            path: /run/spire/sockets
+            type: Directory
+        - name: spire-bundle
+          configMap:
+            name: spire-bundle
         - name: tmp
           emptyDir: {}
 ---
@@ -151,3 +195,7 @@ spec:
     - name: http
       port: 8080
       targetPort: 8080
+    # The SPIFFE listener (S7): machine callers present an SVID here.
+    - name: spiffe
+      port: 8443
+      targetPort: 8443

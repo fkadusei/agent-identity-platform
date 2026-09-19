@@ -294,6 +294,8 @@ Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
 | An edge is not `SECURED` in `tls-check.sh` | the pod is not mesh-injected | annotate the namespace (`linkerd.io/inject=enabled`) and restart the deployment |
 | An agent gets `429` from the gateway | it hit its rate or token budget | raise `LLM_RATE_LIMIT_PER_MINUTE` / `LLM_TOKEN_BUDGET_PER_DAY`, or check `llm.limited` in the audit ([`llm-gateway.md`](llm-gateway.md)) |
 | Agent tasks fail with `CERTIFICATE_VERIFY_FAILED: certificate has expired` | the **gateway** is serving an expired SVID — the client certs are fine, the server's is not | should not recur since S15; check `gateway.svid_loaded` (`expires_in_seconds`) and `gateway.svid_restart` in `kubectl -n agent-platform logs deploy/gateway`, then restart the gateway |
+| Tasks fail with `workload identity rejected` | the caller presented no JWT-SVID, or one audienced elsewhere | that is the hop check working (S7): confirm `WORKLOAD_AUDIENCE` on the callee, that the caller is on port 8443, and that the SPIFFE port skips the mesh proxy (ADR-0012) |
+| A hop worked before the mesh was involved and stops after a Linkerd change | Linkerd terminated port 8443, hiding the peer's SVID | the SPIFFE port must be in `skip-inbound-ports` and `skip-outbound-ports` on our pods |
 | A run says "the model could not be reached" | the model call itself failed — gateway, SVID or timeout — not the model's answer | check `llm.fallback` and its `cause` on the agent's audit stream; since S13 the message names which fault it was |
 
 ## 8. Teardown

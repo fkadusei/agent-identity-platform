@@ -33,6 +33,14 @@ spec:
         # declare requests too — otherwise CPU utilization cannot be computed.
         config.linkerd.io/proxy-cpu-request: 25m
         config.linkerd.io/proxy-memory-request: 64Mi
+        # The SPIFFE listener must NOT be mesh-terminated: Linkerd would prove
+        # *its* identity and hide the peer's SVID from our server, so the
+        # per-hop identity check in app/common/workload.py could never see it.
+        # These two tell the proxy to leave port 8443 alone in both directions —
+        # it passes straight through to app/common/server.py — while every other
+        # hop (Keycloak, OPA, Postgres, the sandbox, /metrics) keeps mesh mTLS.
+        config.linkerd.io/skip-inbound-ports: "8443"
+        config.linkerd.io/skip-outbound-ports: "8443"
     spec:
       serviceAccountName: gateway
       affinity:

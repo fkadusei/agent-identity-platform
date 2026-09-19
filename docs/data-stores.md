@@ -152,6 +152,9 @@ service, operator, or an external cluster).
   [`backlog.md`](backlog.md)).
 - Every store recreates its tables on demand (`CREATE TABLE IF NOT EXISTS`), so a
   database that comes back empty still works — just without its history.
+- The sandbox keeps its refunds and drafts across a restart (S9), so repeated demo
+  runs accumulate on the same order. Remove `/data/sandbox-state.json` in the sandbox
+  pod and restart it (`./stop.sh --delete` drops the volume) for a clean baseline.
 - The agent's checkpointer pool is sized `min_size=1, max_size=5`. That is demo
   scale; size it against the database's connection budget in production (and put a
   pooler in front).

@@ -15,4 +15,4 @@ USER app
 ARG GIT_SHA=unknown
 ENV GIT_SHA=$GIT_SHA
 
-CMD ["uvicorn", "app.agent.service:app", "--host", "0.0.0.0", "--port", "8081"]
+CMD ["python", "-m", "app.agent.service"]

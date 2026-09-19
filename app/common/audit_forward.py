@@ -4,6 +4,11 @@ Each service emits one JSON line per event (the SDK's default sink). For the UI'
 audit timeline we also POST a copy to the API's `/audit/events` endpoint. The
 forwarding is best-effort and never blocks or fails a request: if the collector
 is down, the event is simply dropped (stdout remains the source of truth).
+
+Since S7 that endpoint requires the sender to name itself, so this uses the same
+hop helper as any other call we make: the workload's SVID on the transport, a
+JWT-SVID audienced to the api in the header. Before that, `/audit/events` took no
+credential at all.
 """
 from __future__ import annotations
 
@@ -13,22 +18,27 @@ import queue
 import sys
 import threading
 
-import httpx
-
-# NOTE: import the function directly. `import agentnhi.audit as _audit` would
-# bind the *function* `agentnhi.audit` re-exported by the package __init__,
-# not the module, and fail with "'function' object has no attribute 'set_sink'".
 from agentnhi.audit import set_sink as _set_sink
+
+from app.common import hop, workload
 
 _queue: "queue.Queue[dict]" = queue.Queue(maxsize=1000)
 _started = False
+
+
+def _post(url: str, record: dict) -> None:
+    client, headers = hop.open_hop(url, workload.API, timeout=2)
+    try:
+        client.post(f"{url}/audit/events", json=record, headers=headers)
+    finally:
+        client.close()
 
 
 def _worker(url: str) -> None:
     while True:
         record = _queue.get()
         try:
-            httpx.post(f"{url}/audit/events", json=record, timeout=2)
+            _post(url, record)
         except Exception:  # noqa: BLE001 - best effort
             pass
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import httpx
 
+from app.common import hop, workload
+
 
 class ApprovalsClient:
     def __init__(self, base_url: str, client: httpx.Client | None = None, timeout: float = 5.0):
@@ -34,10 +36,16 @@ class ApprovalsClient:
         url = f"{self._base_url}/approvals/verify"
         try:
             if self._client is not None:
+                # An injected client (tests) — no SPIFFE wiring to do.
                 resp = self._client.post(url, json=payload, timeout=self._timeout)
             else:
-                with httpx.Client() as client:
-                    resp = client.post(url, json=payload, timeout=self._timeout)
+                # A hop we own: the tools' SVID, and the tools' name (S7). The
+                # api's verify route admits only this workload.
+                client, headers = hop.open_hop(url, workload.API, timeout=self._timeout)
+                try:
+                    resp = client.post(url, json=payload, headers=headers)
+                finally:
+                    client.close()
             resp.raise_for_status()
             return bool(resp.json().get("valid"))
         except Exception:  # noqa: BLE001 - fail closed
