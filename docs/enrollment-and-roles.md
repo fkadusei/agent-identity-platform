@@ -65,19 +65,22 @@ Demo accounts: `alice`/`alice123` (support_rep), `manager`/`manager123`
 ## Try it end to end
 
 ```bash
+API=https://localhost:8443      # the https edge (./start.sh); see tls.md
+CA=.edge/ca.crt                 # its CA — --cacert, never -k
+
 # 1. enroll a new user (no roles)
-curl -s localhost:8080/enroll -H 'content-type: application/json' \
+curl -s --cacert $CA $API/enroll -H 'content-type: application/json' \
   -d '{"username":"carol","email":"carol@example.com","password":"password1"}'
 
 # 2. carol can sign in but can do nothing (no roles)
-curl -s localhost:8080/auth/login -H 'content-type: application/json' \
+curl -s --cacert $CA $API/auth/login -H 'content-type: application/json' \
   -d '{"username":"carol","password":"password1"}'   # -> roles: []
 
 # 3. an admin grants her support_rep
-TOKEN=$(curl -s localhost:8080/auth/login -H 'content-type: application/json' \
+TOKEN=$(curl -s --cacert $CA $API/auth/login -H 'content-type: application/json' \
   -d '{"username":"admin","password":"admin123"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')
-curl -s localhost:8080/admin/users -H "authorization: Bearer $TOKEN"   # find carol's id
-curl -s -X POST localhost:8080/admin/users/<id>/roles -H "authorization: Bearer $TOKEN" \
+curl -s --cacert $CA $API/admin/users -H "authorization: Bearer $TOKEN"   # find carol's id
+curl -s --cacert $CA -X POST $API/admin/users/<id>/roles -H "authorization: Bearer $TOKEN" \
   -H 'content-type: application/json' -d '{"role":"support_rep"}'
 
 # 4. carol can now run tasks

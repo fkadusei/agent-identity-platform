@@ -38,7 +38,7 @@ the model (an mTLS LLM gateway holds that).
 | Observability | OTel traces with identity + Prometheus/Grafana dashboard | alerting pipeline |
 | Supply chain | keyless cosign signing + admission policy | registry + policy controller |
 | Delivery | Helm chart; CI/CD with a human approval gate | GitOps |
-| Transport | mTLS on agent↔gateway | mTLS everywhere, cert-manager |
+| Transport | SPIFFE mTLS + named callers on every hop we own; Linkerd for the rest; TLS at the ingress | mTLS everywhere, cert-manager, a CA you trust |
 
 ## Where to start (the map)
 
@@ -85,9 +85,10 @@ scope choices in the reference, not oversights:
       accessor and approval is tenant-scoped ([`tenancy.md`](tenancy.md)).
 - [x] **TLS/mTLS everywhere** — SPIFFE mTLS with a named caller on every hop we
       own, a Linkerd mesh for the third-party and simulated hops (the boundary is
-      [ADR-0012](decisions/ADR-0012-transport-identity.md)), and the checks in
-      [`tls.md`](tls.md); terminate the browser edge at your ingress
-      (`deploy/helm/agent-platform/`).
+      [ADR-0012](decisions/ADR-0012-transport-identity.md)), the browser edge
+      terminated at an ingress with a certificate that is generated and *verified*
+      (S7b), and the checks in [`tls.md`](tls.md). In production, swap our
+      generated CA for cert-manager and one your users already trust.
 - [ ] **HA** — the app tier is replicated (2 replicas + PDBs, see
       [`ha.md`](ha.md)); SPIRE, Keycloak and Postgres still need a shared
       datastore / external DB / managed HA (S1–S4 in [`backlog.md`](backlog.md)).

@@ -1,0 +1,43 @@
+# =============================================================================
+# The browser edge — TLS terminates here, in front of the API's user listener.
+#
+# This is the chart's `ingress` block (className nginx, one host, one TLS
+# secret) rather than a kind-only shape, so the thing that runs is the thing a
+# real cluster would run. The certificate is not in git: setup.sh generates a
+# small CA and a certificate named for `HOST` below, and creates the Secret.
+#
+# The ingress fronts api:8080, the listener for callers that cannot hold an
+# SVID — the browser and the verification scripts. Workloads use the SPIFFE
+# listener (8443) and never come through here. See docs/tls.md and ADR-0012.
+#
+# Residual, stated rather than hidden: the controller carries no sidecar, so the
+# hop from the ingress to api:8080 is plaintext in-cluster (the mesh can only
+# encrypt a connection it originates). Before this, the whole path from the host
+# was plaintext. To close it in production, mesh the controller
+# (`linkerd.io/inject: ingress`) or terminate the edge inside the mesh.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: agent-platform
+  namespace: agent-platform
+  labels:
+    app.kubernetes.io/name: agent-platform
+    app.kubernetes.io/component: edge
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - localhost
+      secretName: agent-platform-tls
+  rules:
+    - host: localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8080

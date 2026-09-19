@@ -16,6 +16,7 @@ if [ -f .port-forward.pid ]; then
   kill "$(cat .port-forward.pid)" 2>/dev/null || true
   rm -f .port-forward.pid
 fi
+pkill -f "port-forward svc/ingress-nginx-controller" 2>/dev/null || true
 pkill -f "port-forward svc/api" 2>/dev/null || true
 
 if [ "${1:-}" = "--delete" ]; then

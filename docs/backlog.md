@@ -179,7 +179,7 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Lands in:** `deploy/kind/manifests/autoscaling/`, the chart.
 - **Verified by:** pushing the backlog up and watching the HPA scale the api.
 
-## S7 — SPIFFE-native transport everywhere — **done**, except the browser edge
+## S7 — SPIFFE-native transport everywhere — **done**
 
 - **What:** replace the mesh's own identity with SPIFFE mTLS on the hops between
   workloads we own, and terminate TLS for the browser edge at an ingress.
@@ -211,22 +211,48 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   agent (`scripts/spiffe_hops_client.py`). Plus, on kind: the demo end to end over
   the new hops, a tool call with a real exchanged token but no workload identity
   refused, audit ingest refused, and all four suites green.
-- **Still open:** the **browser edge** — the ingress TLS the chart supports has
-  never been exercised on kind, so the user/tooling listener is plaintext in-cluster.
-  Tracked as **S7b** below. Also named in the ADR: the naming rides a bearer token
-  rather than the certificate's SAN, because our ASGI server does not expose the peer
-  certificate.
+- **Closed since:** the **browser edge** (S7b below). Also named in the ADR: the
+  naming rides a bearer token rather than the certificate's SAN, because our ASGI
+  server does not expose the peer certificate.
 
-## S7b — Terminate TLS for the browser edge
+## S7b — TLS for the browser edge — **done**
 
-- **What:** actually run the chart's `ingress.tls` on kind: an ingress with a
-  certificate in front of the api's user listener, instead of `port-forward`.
-- **Why:** it is the one hop carrying user tokens that is still unencrypted, and the
-  chart has supported it since Phase 3 without anyone exercising it.
-- **Lands in:** the kind manifests (an ingress controller + a certificate),
-  `deploy/helm/agent-platform/` ingress values.
-- **Verified by:** the UI reached over `https://` with a certificate, and
-  `tls-check.sh` reporting the edge as terminated rather than plaintext.
+- **What:** actually run the chart's `ingress` on kind: an ingress, with a
+  certificate, in front of the api's user listener, instead of `port-forward`.
+- **Why:** it was the one hop carrying user tokens that was still unencrypted, and
+  the chart had supported it since Phase 3 with nobody exercising it. The demo's
+  own comment — "no host port mappings on purpose" — meant the browser path had
+  never been a real one.
+- **Delivered:**
+  - `ingress-nginx` (controller-v1.15.1, every image by digest) and a TLS Ingress
+    for the api that mirrors the chart's object —
+    `deploy/kind/manifests/edge/ingress.yaml`.
+  - A certificate **we generate**: a CA and a leaf named for the host, into the
+    gitignored `.edge/`, carrying the extensions strict clients require. A browser
+    imports `ca.crt`; the CLI uses `--cacert`. Nothing is skipped, and the API's own
+    listener is no longer exposed to the host.
+  - `start.sh`/`status.sh` reach the platform over `https://localhost:8443` through
+    the controller; `setup.sh` step 10 installs, generates and **gates** on a
+    verified `https` fetch from outside the cluster.
+  - `tls-check.sh` grew a third section: the chain, the name, the CA's extensions,
+    and a real fetch — all with the CA, none with `-k`.
+- **Residual, named:** the controller carries no sidecar, so ingress→api:8080 is
+  plaintext in-cluster (the mesh can only encrypt what it originates). Before this,
+  the *whole* host→api path was plaintext. Close it with
+  `linkerd.io/inject: ingress` on the controller, or terminate inside the mesh.
+- **Verified by:** `tls-check.sh` (all three sections green); and the user journey
+  over `https` — sign in, a $200 refund that policy holds for approval, the approver
+  queue, the decision, the refund `issued` — driven through the edge with a strict
+  TLS client (Python/OpenSSL 3, which is what rejected our first certificate).
+- **Found and fixed along the way:**
+  - The first CA was too loose for strict clients — no `basicConstraints`/`keyUsage`
+    — so curl accepted the chain and Python/OpenSSL 3 refused it outright. The
+    extensions are generated now, and `tls-check.sh` asserts them.
+  - **`setup.sh` could not finish for ~31 hours.** Jaeger's process hung (still
+    `Running`, not logging, UI dead) and, having a readiness probe but no liveness
+    probe, nothing ever restarted it — so the rollout gate parked the whole bring-up
+    and only a human could clear it. Jaeger has a liveness probe now; the rest of
+    the stack has the same gap — see S16.
 
 ## S8 — Per-tenant role → tool maps — **done**
 
@@ -488,6 +514,26 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Verified by:** `app/gateway/tests/test_run.py`, and on kind — both replicas
   logged `expires_in_seconds` of ~2470 (reproducing the half-spent SVID), and the
   live evals went from `1/8` with seven `llm.fallback` events to `5/8` with none.
+
+## S16 — Liveness probes (a hung process must heal itself)
+
+- **What:** every component in the demo has a readiness probe and **no** liveness
+  probe, so a process that hangs is never restarted: the kubelet has nothing to act
+  on, the container stays `Running`, and readiness only reports the failure forever.
+- **Why:** observed, not theorised. Jaeger hung for **31 hours** — no logs, no HTTP,
+  UI dead — and because a readiness probe is a signal rather than a restart, nothing
+  recovered it. The cost was a first-run path (`./start.sh` → `scripts/setup.sh`)
+  that could not complete without a human, plus a trace UI nobody could reach.
+- **Lands in:** `deploy/kind/manifests/**` — jaeger is done (S7b); the app tier
+  (api/tools/agent/gateway/sandbox) and the other third-party components
+  (postgres, opa, prometheus, grafana, otel-collector, metrics-server) are not.
+- **Care needed:** this is not a copy-paste. A liveness probe that is too eager
+  converts a slow start — or a database under load — into a restart loop, which is
+  worse than the hang. Postgres and Prometheus want an endpoint that reflects
+  availability without being expensive; the app tier can use `/healthz` with a
+  generous `failureThreshold`.
+- **Verified by (when done):** killing the process inside a container (e.g.
+  `SIGSTOP`) and watching the pod restart itself, per component.
 
 ## Not slices (documented limits)
 

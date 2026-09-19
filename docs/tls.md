@@ -31,8 +31,9 @@ the wrong thing. A mesh is the right tool for them for three reasons:
 
 - those products need no TLS code, and no certificate distribution of our own;
 - it covers the hops you would forget, including telemetry and `/metrics`;
-- it leaves the **browser edge alone**: the UI reaches the API over ordinary TLS and
-  authenticates with bearer tokens, which is what a browser can actually do.
+- it leaves the **browser edge** to the ingress (S7b): a browser holds no SVID and
+  cannot be meshed, so the UI reaches the API over ordinary TLS at an ingress and
+  authenticates with bearer tokens — which is what a browser can actually do.
 
 Because the mesh terminates TLS for it, **Keycloak's own listener is HTTP even in
 production mode** (S4). That is its documented deployment shape — `--http-enabled`
@@ -59,8 +60,19 @@ browser ──TLS──▶ ingress ──▶ api:8080        (edge: TLS at the i
 `api`, `tools` and `agent` each serve **two listeners**: the SPIFFE one for
 workloads, and their original port for callers that cannot hold an SVID — the
 browser, and the verification scripts standing in for a user. That second listener
-is a different trust domain, and in production it is fronted by the ingress that
-terminates the browser's TLS.
+is a different trust domain, and it is fronted by the ingress that terminates the
+browser's TLS: the first line of the diagram is real on kind, not a plan (S7b).
+
+The **edge** is `ingress-nginx` with a certificate `setup.sh` generates (a CA in
+the gitignored `.edge/`, the leaf named `localhost` with the extensions strict
+clients require). It fronts `api:8080` and nothing else: the gateway is
+deliberately not exposed — it is mTLS-only and only the agent should reach it.
+
+One residual, stated rather than hidden: the ingress controller carries **no
+sidecar**, so its hop to `api:8080` is plaintext *in-cluster* — the mesh can only
+encrypt a connection it originates. Before S7b, the whole path from the host was
+plaintext; now only that one in-cluster leg is. To close it, mesh the controller
+(`linkerd.io/inject: ingress`) or terminate the edge inside the mesh.
 
 ## Verify
 
@@ -68,12 +80,17 @@ terminates the browser's TLS.
 ./scripts/tls-check.sh
 ```
 
-Two checks, because one cannot see the other:
+Three checks, because no one of them can see the others:
 
 - the **mesh** — every edge it carries must be `SECURED`;
 - the **hops we own** — asked directly, from inside a pod that holds an SVID: a
   client with no SVID must not complete the handshake, and on the machine routes a
-  caller with no *name* must be refused while the agent is admitted.
+  caller with no *name* must be refused while the agent is admitted;
+- the **browser edge** — fetched from outside the cluster the way a browser does,
+  with our CA and never `-k`: the certificate must chain to it, must *name* the
+  host, and the CA itself must carry `basicConstraints`/`keyUsage` (a CA without
+  them passes curl and is refused by Python/OpenSSL 3 — that is the difference
+  between a certificate that verifies and one that is merely present).
 
 ```
 Every edge the mesh carries is mTLS.
@@ -84,7 +101,14 @@ Every edge the mesh carries is mTLS.
   agent → agent     mTLS required ✓     — (shared with the user path)
   agent → gateway   mTLS required ✓     — (shared with the user path)
 
-Every hop is authenticated: SPIFFE where we own it, the mesh for the rest.
+BROWSER EDGE (TLS terminated at the ingress)
+  certificate chains to    our CA ✓
+  our CA                   CA:TRUE + keyCertSign ✓ (strict clients accept it)
+  names                    localhost ✓ (SAN)
+  https://localhost/healthz 200 ✓ (certificate verified)
+
+Every hop is authenticated: SPIFFE where we own it, the mesh for the rest,
+and the browser edge by a certificate we verify.
 ```
 
 (The `403` on `agent → tools` is the tool call failing later for a missing *user*
@@ -96,7 +120,15 @@ token — the point is that it is no longer refused for a missing *identity*.)
 for injection, and registers the SPIFFE entries for `api` and `tools` as well as
 `agent` and `gateway`. The Helm chart takes `mesh.inject` to annotate the pods it
 deploys, and `spiffe: true` adds the Workload API socket, the SVID expectations and
-the port-skip rule.
+the port-skip rule. It then installs `ingress-nginx` (pinned, images by digest),
+generates the edge certificate into the gitignored `.edge/`, and **gates** on a
+verified `https` fetch through the edge — the chart's `ingress` block, which had
+never been exercised on kind, is what runs.
+
+On kind the browser reaches the controller through a `port-forward` (`start.sh`),
+because `cluster.yaml` publishes no host ports on purpose. It is a port-forward to
+the **ingress**, not to the API: the certificate and the TLS termination are real
+either way, and the API's own listener is never exposed to the host.
 
 Without the CLI, setup skips the mesh and the third-party hops run in plaintext; the
 SPIFFE hops still apply, because they do not depend on it.
@@ -110,9 +142,12 @@ SPIFFE hops still apply, because they do not depend on it.
   workload that may create an approval, and the tool server the only one that may
   verify one. Elsewhere the name is not asserted, and authorization stays where it
   belongs: bearer tokens (audience + `azp`), OPA policy and tenant scoping.
-- **The browser edge** — TLS at the ingress is chart-supported but **not yet
-  exercised on kind** (the demo uses `port-forward`, so the edge listener is
-  plaintext in-cluster today). That is the open half of S7.
+- **The browser edge** — yes (S7b): TLS terminates at the ingress with a
+  certificate from our own CA, and `tls-check.sh` verifies it rather than skipping
+  it. The residual is the ingress→api leg in-cluster (above) and the *name*: a
+  browser proves a user with a bearer token, not a workload identity, which is the
+  right shape for a person. The chart's `ingress` block is the same object a real
+  cluster runs; on kind the host is `localhost` and the CA is one you import.
 - **Egress to the model provider** — the gateway reaches a hosted provider over the
   provider's own TLS; the local default (Ollama) stays in-cluster.
 
