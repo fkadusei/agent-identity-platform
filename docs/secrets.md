@@ -44,6 +44,14 @@ deploy time.
    only `manage-users` plus read-roles on the realm — never the bootstrap admin.
 4. If `LLM_API_KEY` is set, it is placed in the `llm-api-key` Secret, consumed
    **only** by the gateway.
+5. If `SPIRE_KEY_MANAGER=aws_kms` (S1's shared-KeyManager half, opt-in), the
+   credentials and the key policy are staged in the `spire-kms-credentials` and
+   `spire-kms-key-policy` Secrets, and the non-secret settings (region, server id)
+   in the `spire-kms-config` ConfigMap — mounted by `spire-server.yaml` with
+   `optional: true`, so the same manifest works in both modes. Switching back to
+   `disk` **deletes** them, so a discarded credential does not sit in the cluster.
+   The KMS key itself is never handled here: the plugin creates and uses it inside
+   AWS (`docs/ha.md` lists the permissions it needs).
 
 `.env` is in [`.gitignore`](../.gitignore); CI runs gitleaks plus an explicit
 check that `.env` is never tracked.

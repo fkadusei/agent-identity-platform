@@ -169,8 +169,82 @@ ensure_database keycloak "$KEYCLOAK_DB_PASSWORD"
 ok "postgres ready; databases 'spire' and 'keycloak' ready"
 
 say "5. SPIRE"
+# Which KeyManager signs the CA, and whether every replica shares it (S1's shared
+# half). `disk` is the default — no credentials, one replica. `aws_kms` creates and
+# uses the keys inside KMS, so more than one replica can sign with the same CA.
+# See docs/ha.md.
+KEY_MANAGER="${SPIRE_KEY_MANAGER:-disk}"
+KMS_DISK=""
+KMS_AWS=""
+case "$KEY_MANAGER" in
+  disk)    KMS_DISK=1 ;;
+  aws_kms) KMS_AWS=1 ;;
+  *) die "SPIRE_KEY_MANAGER=$KEY_MANAGER is not supported yet (disk | aws_kms)" ;;
+esac
+export KMS_DISK KMS_AWS
+
+if [ -n "$KMS_AWS" ]; then
+  [ -n "${SPIRE_KMS_REGION:-}" ] \
+    || die "SPIRE_KEY_MANAGER=aws_kms needs SPIRE_KMS_REGION in $ENV_FILE"
+  # Shared by every replica on purpose: the plugin's default is a per-server
+  # identifier *file*, which each replica would create for itself — one identifier
+  # each means one key each, which means a different CA each. No dots: the plugin
+  # accepts only alphanumerics, forward slashes, underscores and dashes, so the
+  # trust domain's own name (acme.com) has to be written differently here.
+  : "${SPIRE_KMS_SERVER_ID:=acme-com}"
+  export SPIRE_KMS_REGION SPIRE_KMS_SERVER_ID
+  for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+    [ -n "${!v:-}" ] || die "SPIRE_KEY_MANAGER=aws_kms needs $v in $ENV_FILE"
+  done
+  kubectl -n $NS create secret generic spire-kms-credentials \
+    --from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+    --from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+    --from-literal=AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  # The plugin's default key policy expects the server to assume an IAM role;
+  # credentials passed as access keys do not, so we name the principal explicitly.
+  if [ -n "${SPIRE_KMS_PRINCIPAL_ARN:-}" ]; then
+    POLICY=$(mktemp)
+    cat > "$POLICY" <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "The SPIRE server's own principal owns the keys it creates",
+      "Effect": "Allow",
+      "Principal": { "AWS": "${SPIRE_KMS_PRINCIPAL_ARN}" },
+      "Action": "kms:*",
+      "Resource": "*"
+    }
+  ]
+}
+JSON
+    kubectl -n $NS create secret generic spire-kms-key-policy \
+      --from-file=policy.json="$POLICY" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    rm -f "$POLICY"
+    # Two variables on purpose: the template's conditional tests the *flag* and
+    # substitutes the path inside the block (a {if} on a path is never true).
+    SPIRE_KMS_KEY_POLICY_FILE=/run/spire/keys/policy.json
+    export SPIRE_KMS_KEY_POLICY_FILE KMS_AWS_POLICY=1
+    ok "KMS key policy names ${SPIRE_KMS_PRINCIPAL_ARN}"
+  else
+    info "no SPIRE_KMS_PRINCIPAL_ARN set — KMS mode expects an assumed role (or will fail creating keys)"
+  fi
+  kubectl -n $NS create configmap spire-kms-config \
+    --from-literal=SPIRE_KMS_REGION="$SPIRE_KMS_REGION" \
+    --from-literal=SPIRE_KMS_SERVER_ID="$SPIRE_KMS_SERVER_ID" \
+    --from-literal=SPIRE_KMS_KEY_POLICY_FILE="${SPIRE_KMS_KEY_POLICY_FILE:-}" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  ok "KMS mode: the CA is signed by AWS KMS (credentials in a Secret, never here)"
+else
+  # Switching back to disk must not leave usable credentials in the cluster.
+  kubectl -n $NS delete secret spire-kms-credentials spire-kms-key-policy --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n $NS delete configmap spire-kms-config --ignore-not-found >/dev/null 2>&1 || true
+fi
+
 # The server config carries the datastore password, so it is rendered from a
 # template into a Secret — never committed. Same pattern as the Keycloak realm.
+# The KeyManager block is chosen here, by the flags exported above.
 SPIRE_CONF=$(mktemp)
 python3 scripts/render.py "$MANIFESTS/spire/server.conf.tmpl" > "$SPIRE_CONF"
 kubectl -n $NS create secret generic spire-server-config \
@@ -243,6 +317,35 @@ ensure_entry gateway "spiffe://acme.com/ns/agent-platform/sa/gateway"
 # is proved at the transport rather than trusted from the mesh.
 ensure_entry api "spiffe://acme.com/ns/agent-platform/sa/api"
 ensure_entry tools "spiffe://acme.com/ns/agent-platform/sa/tools"
+
+# Replicas only make sense once the CA is shared: with the disk KeyManager each
+# replica mints its own, so the demo stays at one and says so.
+REPLICAS="${SPIRE_SERVER_REPLICAS:-1}"
+if [ -n "$KMS_AWS" ] && [ "$REPLICAS" -lt 2 ]; then
+  REPLICAS=2
+fi
+if [ "$REPLICAS" != "1" ]; then
+  kubectl -n $NS scale statefulset/spire-server --replicas="$REPLICAS" >/dev/null
+  kubectl -n $NS rollout status statefulset/spire-server --timeout=300s >/dev/null
+fi
+
+# GATE: every replica must present the *same* CA. That is the entire point of the
+# switch — two servers signing with different CAs would hand out different trust
+# bundles, and a fleet silently alternating between them is worse than one server.
+SEEN=""
+for pod in $(kubectl -n $NS get pod -l app=spire-server -o name | sed 's|pod/||' | sort); do
+  fp=$(kubectl -n $NS exec "$pod" -c spire-server -- /opt/spire/bin/spire-server bundle show \
+        -socketPath "$SOCKET" 2>/dev/null \
+      | openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
+  [ -n "$fp" ] || die "could not read the trust bundle from $pod"
+  SEEN="$SEEN$fp
+"
+  info "$pod CA sha256 ${fp:0:24}…"
+done
+DISTINCT=$(printf '%s' "$SEEN" | sort -u | grep -c . || true)
+[ "$DISTINCT" = "1" ] \
+  || die "SPIRE replicas are signing with different CAs ($DISTINCT distinct) — the KeyManager is not shared"
+ok "spire-server: $KEY_MANAGER KeyManager, $REPLICAS replica(s), one CA across all of them"
 
 say "6. Keycloak"
 RENDERED=$(mktemp)

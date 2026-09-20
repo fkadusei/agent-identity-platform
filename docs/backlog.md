@@ -55,7 +55,7 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 
 ---
 
-## S1 — HA: SPIRE server — **done**, except the shared KeyManager
+## S1 — HA: SPIRE server — **done**
 
 - **What:** run SPIRE with a shared datastore and a shared key manager, 2+ replicas.
 - **Why:** identity is the critical path — without it nothing gets an SVID. It was
@@ -77,11 +77,30 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   unchanged (4 entries before and after); the trust bundle's SHA-256 fingerprint was
   **identical**, so no workload needed restarting to pick up a fresh SVID; a
   workload still fetched a new SVID; and every app pod's restart count stayed **0**.
-- **Still open:** the **shared KeyManager**, and with it the 2+ replicas. That needs
-  a cloud KMS (AWS/GCP/Azure) and kind has none, so the demo keeps the disk
-  KeyManager and one replica. A second replica would also use the `sql` datastore's
-  `read_only` / `ro_connection_string` for reads. Note the new critical path: SPIRE
-  now needs Postgres reachable, which is precisely why production points
+- **Built (the shared KeyManager half):** the KeyManager is now **switchable**.
+  `SPIRE_KEY_MANAGER` in `.env` selects the block in `server.conf.tmpl` — `disk`
+  (default: no credentials, single replica, CA on a PVC) or `aws_kms` (the CA is
+  created, rotated and *used* inside KMS; every replica signs with the same one).
+  `scripts/render.py` gained `{{#if}}/{{#unless}}` blocks so one template describes
+  both, rather than two files drifting apart, and `spire-server.yaml` mounts the
+  KMS config/credentials/key policy with `optional: true` so a single manifest
+  serves both modes. `setup.sh` stages those (and **deletes** them when switching
+  back to disk), scales to `SPIRE_SERVER_REPLICAS`, and **gates** on every replica
+  presenting the same trust-bundle fingerprint.
+- **The setting HA turns on:** `SPIRE_KMS_SERVER_ID` must be identical on every
+  replica. The plugin's default identifier is a per-server *file*, which each
+  replica would create for itself — one identifier each, therefore one key each,
+  therefore a different CA each, which is worse than a single server.
+- **Verified by:** `disk` mode unchanged end to end (`setup.sh`, the suite, the new
+  CA gate); both modes rendering correctly from the one template; renderer
+  conditionals unit-tested; and the `aws_kms` plugin **loading in our own image** —
+  a probe with no credentials fails at `KMS:ListAliases` with `no EC2 IMDS role
+  found`, which proves the plugin is compiled in and that the wiring reaches AWS.
+- **Still open, precisely:** the AWS path is implemented and gated but has not been
+  exercised against a live key, because that needs credentials. The 2-replica
+  one-CA assertion is the thing to watch when they arrive. Also unchanged: a second
+  replica would use the `sql` datastore's `read_only` connection string for reads,
+  and SPIRE now needs Postgres reachable — which is why production points
   `database.url` at a managed, HA database.
 
 ## S2 — HA: Keycloak — **done**
