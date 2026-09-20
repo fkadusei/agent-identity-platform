@@ -59,8 +59,30 @@ itself: one identifier each, therefore one key each, therefore a different CA ea
 Every replica must share that value — and it cannot contain dots, so the trust
 domain's own name has to be written as `acme-com`.
 
-**What AWS needs.** The plugin *creates and rotates its own keys* (there is no
-key to pre-create), so the principal named in `SPIRE_KMS_PRINCIPAL_ARN` needs:
+**Role-based access (recommended).** Two principals, so the long-lived credential is
+nearly powerless:
+
+| Principal | Has | Why |
+| --- | --- | --- |
+| IAM user `spire-kms-base` | **only** `sts:AssumeRole` on the role below | this is the key that sits in `.env`; if it leaks, it can do nothing but try to assume one role |
+| IAM role `spire-kms` | the KMS permissions in the table below | this is what actually signs. The plugin assumes it (via `SPIRE_KMS_ROLE_ARN`), and the SDK **refreshes** the assumed-role credentials itself — an expired session does not stop identity from starting |
+
+`setup.sh` writes the role into a profile file mounted in the pod (`role_arn` +
+`source_profile`), because the plugin uses the SDK's default credential chain and a
+role is assumed from a *profile*, not from environment variables. Set
+`SPIRE_KMS_EXTERNAL_ID` to require one when the role is assumed (the trust policy
+then needs a matching `sts:ExternalId` condition).
+
+**Production (EKS) does better still:** give the SPIRE server's ServiceAccount an
+IRSA / EKS Pod Identity role (`eks.amazonaws.com/role-arn`), and there is **no
+credential in the cluster at all** — the pod's projected token is exchanged for the
+role. `SPIRE_KEY_MANAGER` and the role ARN are then the only settings, and neither
+is a secret. kind has no OIDC provider to do this with, which is why the demo uses
+the base-credential shape above.
+
+**What the KMS principal needs.** The plugin *creates and rotates its own keys*
+(there is no key to pre-create), so the role named in `SPIRE_KMS_PRINCIPAL_ARN`
+needs:
 
 | Permission | Why |
 | --- | --- |

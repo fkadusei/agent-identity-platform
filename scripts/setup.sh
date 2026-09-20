@@ -196,11 +196,47 @@ if [ -n "$KMS_AWS" ]; then
   for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
     [ -n "${!v:-}" ] || die "SPIRE_KEY_MANAGER=aws_kms needs $v in $ENV_FILE"
   done
-  kubectl -n $NS create secret generic spire-kms-credentials \
-    --from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
-    --from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
-    --from-literal=AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  if [ -n "${SPIRE_KMS_ROLE_ARN:-}" ]; then
+    # Role-based access. The credential in .env belongs to a principal whose *only*
+    # permission is to assume this one role; the role holds the KMS permissions.
+    # The plugin uses the SDK's default chain, which can assume a role given a
+    # profile — so the credentials arrive as a *file* with role_arn/source_profile,
+    # not as environment variables. That also means the SDK refreshes the
+    # assumed-role credentials itself: an expired session does not stop identity
+    # from starting, unlike static keys.
+    CREDS=$(mktemp); CONF=$(mktemp)
+    cat > "$CREDS" <<EOF
+[base]
+aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+EOF
+    cat > "$CONF" <<EOF
+[profile spire]
+role_arn = ${SPIRE_KMS_ROLE_ARN}
+source_profile = base
+region = ${SPIRE_KMS_REGION}
+EOF
+    if [ -n "${SPIRE_KMS_EXTERNAL_ID:-}" ]; then
+      printf 'external_id = %s\n' "$SPIRE_KMS_EXTERNAL_ID" >> "$CONF"
+    fi
+    kubectl -n $NS create secret generic spire-kms-credentials \
+      --from-file=credentials="$CREDS" --from-file=config="$CONF" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    rm -f "$CREDS" "$CONF"
+    AWS_PROFILE=spire
+    AWS_CONFIG_FILE=/run/spire/aws/config
+    AWS_SHARED_CREDENTIALS_FILE=/run/spire/aws/credentials
+    export AWS_PROFILE AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
+    # The keys belong to the role, so the key policy names the role.
+    : "${SPIRE_KMS_PRINCIPAL_ARN:=$SPIRE_KMS_ROLE_ARN}"
+    ok "role-based: the base credential may only assume ${SPIRE_KMS_ROLE_ARN}"
+  else
+    kubectl -n $NS create secret generic spire-kms-credentials \
+      --from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+      --from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+      --from-literal=AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  fi
   # The plugin's default key policy expects the server to assume an IAM role;
   # credentials passed as access keys do not, so we name the principal explicitly.
   if [ -n "${SPIRE_KMS_PRINCIPAL_ARN:-}" ]; then
@@ -230,11 +266,20 @@ JSON
   else
     info "no SPIRE_KMS_PRINCIPAL_ARN set — KMS mode expects an assumed role (or will fail creating keys)"
   fi
-  kubectl -n $NS create configmap spire-kms-config \
-    --from-literal=SPIRE_KMS_REGION="$SPIRE_KMS_REGION" \
-    --from-literal=SPIRE_KMS_SERVER_ID="$SPIRE_KMS_SERVER_ID" \
-    --from-literal=SPIRE_KMS_KEY_POLICY_FILE="${SPIRE_KMS_KEY_POLICY_FILE:-}" \
-    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  # Written out rather than built with --from-literal flags so the role-only
+  # variables (AWS_PROFILE and the two file paths) appear only when there is a role
+  # to assume — an empty AWS_PROFILE is one more thing the SDK has to interpret.
+  {
+    printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: spire-kms-config\n  namespace: %s\ndata:\n' "$NS"
+    printf '  SPIRE_KMS_REGION: "%s"\n' "$SPIRE_KMS_REGION"
+    printf '  SPIRE_KMS_SERVER_ID: "%s"\n' "$SPIRE_KMS_SERVER_ID"
+    printf '  SPIRE_KMS_KEY_POLICY_FILE: "%s"\n' "${SPIRE_KMS_KEY_POLICY_FILE:-}"
+    if [ -n "${SPIRE_KMS_ROLE_ARN:-}" ]; then
+      printf '  AWS_PROFILE: "%s"\n' "$AWS_PROFILE"
+      printf '  AWS_CONFIG_FILE: "%s"\n' "$AWS_CONFIG_FILE"
+      printf '  AWS_SHARED_CREDENTIALS_FILE: "%s"\n' "$AWS_SHARED_CREDENTIALS_FILE"
+    fi
+  } | kubectl apply -f - >/dev/null
   ok "KMS mode: the CA is signed by AWS KMS (credentials in a Secret, never here)"
 else
   # Switching back to disk must not leave usable credentials in the cluster.
@@ -266,7 +311,14 @@ kubectl apply -f "$MANIFESTS/spire/" >/dev/null
 # check-images.sh warns about, and why OPA is restarted in step 7. Expect ~30s
 # before the fresh server republishes the trust bundle (the bundle publisher's
 # tick); the agents retry until it lands.
-kubectl -n $NS rollout restart statefulset/spire-server >/dev/null
+#
+# Delete the pod rather than `rollout restart` it, and not for style: a StatefulSet
+# rolling update **waits for the running pod to be Ready** before it replaces it, so
+# a crash-looping server — a KeyManager it cannot authenticate with, say — blocks
+# its own recovery. `setup.sh` would then time out in `rollout status` with the old
+# config still running, which is the worst possible answer to "fix the credentials
+# and re-run". Deleting the pod recreates it from the applied template, ready or not.
+kubectl -n $NS delete pod spire-server-0 --ignore-not-found --wait=true >/dev/null 2>&1 || true
 kubectl -n $NS rollout status statefulset/spire-server --timeout=240s >/dev/null
 kubectl -n $NS rollout restart daemonset/spire-agent >/dev/null
 kubectl -n $NS rollout status daemonset/spire-agent --timeout=300s >/dev/null

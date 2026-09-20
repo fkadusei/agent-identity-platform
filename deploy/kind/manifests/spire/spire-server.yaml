@@ -198,6 +198,12 @@ spec:
             - name: spire-kms-policy
               mountPath: /run/spire/keys
               readOnly: true
+            # Role-based access reads a profile file (role_arn + source_profile), so
+            # the same Secret is also mounted. In static-credential mode these files
+            # are simply never referenced.
+            - name: spire-kms-creds
+              mountPath: /run/spire/aws
+              readOnly: true
           readinessProbe:
             exec:
               # Without this the container is Ready the moment it is Running, so a
@@ -257,6 +263,13 @@ spec:
         - name: spire-kms-policy
           secret:
             secretName: spire-kms-key-policy
+            optional: true
+        # KMS mode only, and then either env-style literals (static credentials) or
+        # the profile files for a role (AWS_CONFIG_FILE / AWS_SHARED_CREDENTIALS_FILE
+        # come from the spire-kms-config ConfigMap).
+        - name: spire-kms-creds
+          secret:
+            secretName: spire-kms-credentials
             optional: true
         - name: oidc-config
           configMap:
