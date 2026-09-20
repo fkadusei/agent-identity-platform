@@ -38,11 +38,13 @@ cd "$(dirname "$0")/.."
 REGION=""
 EXTERNAL_ID=""
 DRY_RUN=""
+ACCOUNT_ARG=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --region) REGION="${2:-}"; shift 2 ;;
     --external-id) EXTERNAL_ID="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"; shift ;;
     --dry-run) DRY_RUN=1; shift ;;
+    --account) ACCOUNT_ARG="${2:-}"; shift 2 ;;
     -h|--help) sed -n '2,34p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1 (try --help)" >&2; exit 2 ;;
   esac
@@ -55,9 +57,13 @@ die()  { printf '\033[1;31m   ✗ %s\033[0m\n' "$*" >&2; exit 1; }
 
 # In a dry run, mutating commands are printed instead of executed. Reads still run,
 # so the plan is based on what is really there.
+#
+# The "would run" line goes to stderr on purpose: callers redirect these commands'
+# stdout (`>/dev/null`) to keep normal runs quiet, and a plan that disappears into a
+# redirect is worse than no plan at all.
 run() {
   if [ -n "$DRY_RUN" ]; then
-    printf '   would run: %s\n' "$*"
+    printf '   would run: %s\n' "$*" >&2
     return 0
   fi
   "$@"
@@ -66,10 +72,45 @@ run() {
 command -v aws >/dev/null 2>&1 || die "the aws CLI is not on PATH"
 command -v python3 >/dev/null 2>&1 || die "python3 is not on PATH"
 
-IDENTITY="$(aws sts get-caller-identity --output json 2>/dev/null)" \
-  || die "no usable AWS credentials — this needs an identity that can manage IAM"
-ACCOUNT="$(printf '%s' "$IDENTITY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Account"])')"
-CALLER="$(printf '%s' "$IDENTITY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Arn"])')"
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# Who is running this. A browser console sign-in is not a CLI credential, and an
+# expired one is the most common reason this fails — so show AWS's own words rather
+# than replacing them with a guess.
+IDENTITY=""
+CALLER=""
+if IDENTITY="$(aws sts get-caller-identity --output json 2>"$TMP/identity.err")"; then
+  ACCOUNT="$(printf '%s' "$IDENTITY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Account"])')"
+  CALLER="$(printf '%s' "$IDENTITY" | python3 -c 'import json,sys; print(json.load(sys.stdin)["Arn"])')"
+elif [ -n "$ACCOUNT_ARG" ] && [ -n "$DRY_RUN" ]; then
+  case "$ACCOUNT_ARG" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]) ;;
+    *) die "--account wants the 12-digit account id, got '$ACCOUNT_ARG'" ;;
+  esac
+  ACCOUNT="$ACCOUNT_ARG"
+  CALLER="(not authenticated)"
+  UNAUTHENTICATED=1
+else
+  printf '\033[1;31m   ✗ the aws CLI has no usable credentials.\033[0m\n' >&2
+  printf '\033[2m     AWS says: %s\033[0m\n' "$(tr -d '\n' < "$TMP/identity.err")" >&2
+  cat >&2 <<'HELP'
+
+     A sign-in in the browser console is not a CLI credential. Pick one:
+
+       aws login                 # if this CLI is set up for sign-in sessions
+       aws configure             # paste an access key for an administrator
+       export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... [AWS_SESSION_TOKEN=...]
+
+     Root is not required: this script needs only IAM write (CreatePolicy,
+     CreatePolicyVersion, CreateRole, AttachRolePolicy, PutUserPolicy, CreateUser,
+     ListAccessKeys, CreateAccessKey).
+
+     To see the whole plan without any credentials:
+       ./scripts/setup-aws-kms-role.sh --account <12-digit-id> --dry-run
+HELP
+  exit 1
+fi
 
 if [ -z "$REGION" ]; then
   REGION="$(aws configure get region 2>/dev/null || true)"
@@ -93,9 +134,9 @@ info "region:   $REGION  (the CA keys are created here)"
 case "$CALLER" in
   *:root) info "you are authenticated as root; that is fine for a one-time setup, and no root access key is created or used" ;;
 esac
-
-TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP"' EXIT
+if [ -n "$UNAUTHENTICATED" ]; then
+  info "no credentials: the reads below fail, so the plan assumes nothing exists yet"
+fi
 
 say "1. the KMS policy the role will hold ($POLICY)"
 cat > "$TMP/kms.json" <<'JSON'
