@@ -39,6 +39,10 @@ REGION=""
 EXTERNAL_ID=""
 DRY_RUN=""
 ACCOUNT_ARG=""
+# Set only when the identity check was skipped (--account with --dry-run). Declared
+# here because `set -u` does not care that the flag is only read on one path — which
+# is exactly how this landed in the authenticated path as an unbound variable.
+UNAUTHENTICATED=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --region) REGION="${2:-}"; shift 2 ;;
