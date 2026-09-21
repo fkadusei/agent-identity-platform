@@ -62,7 +62,7 @@ case "$sub" in
   "iam list-access-keys") need --user-name "$@"; printf '%s' "${STUB_KEYS:-}" ;;
   "iam create-access-key")
     need --user-name "$@"
-    echo '{"AccessKey":{"AccessKeyId":"AKIASTUBKEYEXAMPLE","SecretAccessKey":"stubSecret/with+chars="}}' ;;
+    echo '{"AccessKey":{"AccessKeyId":"AKIASTUBKEYEXAMPLE","SecretAccessKey":"s/x+y="}}' ;;
   *) exit 0 ;;
 esac
 STUB
@@ -122,7 +122,7 @@ printf '\n\033[1;34m== the env file is shell-parseable\033[0m\n'
   [ "$SPIRE_KEY_MANAGER" = "aws_kms" ] \
     && [ "$SPIRE_KMS_SERVER_ID" = "acme-com" ] \
     && [ "$SPIRE_KMS_ROLE_ARN" = "arn:aws:iam::111122223333:role/spire-kms" ] \
-    && [ "$AWS_SECRET_ACCESS_KEY" = "stubSecret/with+chars=" ] )
+    && [ "$AWS_SECRET_ACCESS_KEY" = "s/x+y=" ] )
 check "values survive sourcing (quoting holds for / + =)" test $? -eq 0
 
 printf '\n\033[1;34m== re-run against existing resources\033[0m\n'
