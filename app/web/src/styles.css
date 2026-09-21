@@ -99,11 +99,18 @@ body {
 
 .app { max-width: 960px; margin: 0 auto; padding: 36px 24px 96px; }
 
-/* --- header ---------------------------------------------------------------- */
-/* the top row: the action on the left, the session it ends on the right */
-header {
-  display: flex; justify-content: space-between; gap: 16px;
-  flex-wrap: wrap; align-items: center;
+/* --- top bar ---------------------------------------------------------------
+   Full width on purpose: the action sits in the corner of the *page*, not at the
+   left edge of the centred column, which on a wide screen is nowhere near it. Sticky,
+   so the control stays where it was while the page scrolls. */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; justify-content: space-between; align-items: center;
+  gap: 16px; flex-wrap: wrap;
+  padding: 12px 24px;
+  background: rgb(11 15 22 / 0.82);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line-soft);
 }
 .brand { display: flex; align-items: flex-start; gap: 14px; margin-top: 18px; }
 .brand .mark {
@@ -421,6 +428,7 @@ pre {
 /* --- responsive + motion --------------------------------------------------- */
 @media (max-width: 720px) {
   .app { padding: 24px 16px 72px; }
+  .topbar { padding: 10px 16px; }
   nav { scroll-snap-type: x proximity; }
   nav button { scroll-snap-align: start; white-space: nowrap; }
   h1 { font-size: 18px; }

@@ -152,12 +152,15 @@ export default function App() {
   };
 
   return (
-    <div className="app" data-tab={tab}>
-      {/* Sign out sits at the top left, and the session it ends is on the right.
-          The brand stays below both whether or not you are signed in, so signing in
-          and out does not rearrange the page. */}
+    <>
+      {/*
+        A full-width bar, not a row inside the centred column: "top left" should mean
+        the corner of the page, and the column's left edge sits far from it on a wide
+        screen. Sign out is flush left, the session it ends is flush right, and the bar
+        stays put while the page scrolls so the control is always where it was.
+      */}
       {session && (
-        <header>
+        <header className="topbar" data-tab={tab}>
           <button className="ghost" onClick={signOut}>Sign out</button>
           <span className="facts">
             {FACT("signed in", session.user, "user")}
@@ -176,7 +179,8 @@ export default function App() {
         </header>
       )}
 
-      <div className="brand">
+      <div className="app" data-tab={tab}>
+        <div className="brand">
         <span className="mark" aria-hidden="true">AI</span>
         <div>
           <h1>Agent Identity Platform</h1>
@@ -227,7 +231,8 @@ export default function App() {
           </main>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
