@@ -460,3 +460,24 @@ main h2::before {
   border-radius: 999px; background: var(--tab, var(--accent));
   box-shadow: 0 0 0 4px rgb(255 255 255 / 0.04); vertical-align: 1px;
 }
+
+/* --- the tools a role may call ---------------------------------------------
+   These are identifiers, not prose: each one gets its own chip in the tool hue, under
+   a label that says what the group is. The tool names are monospaced so they read as
+   something callable rather than as words in a sentence. */
+.toolbelt {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  margin: 14px 0 10px; padding: 12px 14px;
+  border: 1px solid var(--hue-tool-line); border-radius: var(--r-md);
+  background: linear-gradient(180deg, var(--hue-tool-soft), transparent);
+}
+.toolbelt-label {
+  font-size: 10.5px; font-weight: 650; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--hue-tool);
+}
+.tools { display: flex; flex-wrap: wrap; gap: 6px; }
+code.tool {
+  font-size: 12px; font-weight: 550; padding: 3px 9px;
+  color: var(--hue-tool); background: var(--surface);
+  border: 1px solid var(--hue-tool-line); border-radius: 999px;
+}

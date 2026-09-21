@@ -431,10 +431,16 @@ function Console({
         </p>
       )}
       {canRun && (
-        <p className="hint">
-          Your role may call: {session.tools.map((t) => <code key={t}>{t}</code>).reduce(
-            (acc, el) => (acc === null ? el : [acc, " ", el]), null as any)}
-        </p>
+        <div className="toolbelt">
+          <span className="toolbelt-label">Tools your role may call</span>
+          <span className="tools">
+            {session.tools.map((t) => (
+              <code className="tool" key={t} title="a tool this role may invoke">
+                {t}
+              </code>
+            ))}
+          </span>
+        </div>
       )}
       {canApprove && (
         <p className="hint">
