@@ -53,7 +53,13 @@ case "$sub" in
   "iam create-policy") need --policy-name "$@"; need --policy-document "$@" ;;
   "iam create-policy-version") need --policy-arn "$@"; need --policy-document "$@" ;;
   "iam get-role") need --role-name "$@"; [ "${STUB_ROLE_EXISTS:-}" = "1" ] || exit 254 ;;
-  "iam create-role") need --role-name "$@"; need --assume-role-policy-document "$@" ;;
+  "iam create-role")
+    need --role-name "$@"; need --assume-role-policy-document "$@"
+    if [ "${STUB_ROLE_RACE:-}" = "1" ] && [ ! -f "${STUB_DIR:-/tmp}/role-attempted" ]; then
+      : > "${STUB_DIR:-/tmp}/role-attempted"
+      printf 'aws: [ERROR]: An error occurred (MalformedPolicyDocument) when calling the CreateRole operation: Invalid principal in policy: "AWS":"arn:aws:iam::111122223333:user/spire-kms-base"\n' >&2
+      exit 254
+    fi ;;
   "iam update-assume-role-policy") need --role-name "$@"; need --policy-document "$@" ;;
   "iam attach-role-policy") need --role-name "$@"; need --policy-arn "$@" ;;
   "iam get-user") need --user-name "$@"; [ "${STUB_USER_EXISTS:-}" = "1" ] || exit 254 ;;
@@ -158,6 +164,14 @@ run_script "$WORK/run3.log" STUB_POLICY_EXISTS=1 STUB_ROLE_EXISTS=1 STUB_USER_EX
 check "exits non-zero" test $? -ne 0
 check "says how to remove it" grep -q "delete-access-key" "$WORK/run3.log"
 check "does not create another key" test "$(count 'iam create-access-key')" -eq 0
+
+printf '\n\033[1;34m== IAM has not caught up with the new user yet\033[0m\n'
+rm -f "$STUB_DIR/role-attempted"
+STUB_DIR="$STUB_DIR" run_script "$WORK/run6.log" STUB_ROLE_RACE=1 STUB_POLICY_EXISTS=0 \
+  STUB_ROLE_EXISTS=0 STUB_USER_EXISTS=0 -- --region us-east-1
+check "retries the role instead of failing" test $? -eq 0
+check "and says why it is waiting" grep -q "cannot see the new user yet" "$WORK/run6.log"
+check "created the role in the end" heard "iam create-role"
 
 printf '\n\033[1;34m== no credentials: the plan still works, and says so\033[0m\n'
 : > "$LOG"

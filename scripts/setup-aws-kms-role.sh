@@ -238,14 +238,46 @@ if external_id:
     statement["Condition"] = {"StringEquals": {"sts:ExternalId": external_id}}
 print(json.dumps({"Version": "2012-10-17", "Statement": [statement]}, indent=2))
 PY
+# IAM is eventually consistent, and a trust policy is validated against the principal
+# *as IAM knows it right now*. A user created a moment ago may not be visible yet, and
+# the call fails with
+#   MalformedPolicyDocument: Invalid principal in policy: "...:user/spire-kms-base"
+# which reads like a configuration error and is a wait. Retry, and only that error:
+# anything else is a real problem worth showing.
+retry_until_principal_is_visible() {
+  local attempt out
+  if [ -n "$DRY_RUN" ]; then
+    printf '   would run: %s\n' "$*" >&2
+    return 0
+  fi
+  for attempt in 1 2 3 4 5 6; do
+    if out="$("$@" 2>&1)"; then
+      return 0
+    fi
+    case "$out" in
+      *"Invalid principal"*)
+        info "IAM cannot see the new user yet (attempt $attempt) — waiting"
+        sleep $((attempt * 2))
+        ;;
+      *)
+        printf '%s\n' "$out" >&2
+        return 1
+        ;;
+    esac
+  done
+  printf '%s\n' "$out" >&2
+  return 1
+}
 if aws iam get-role --role-name "$ROLE" >/dev/null 2>&1; then
-  run aws iam update-assume-role-policy --role-name "$ROLE" \
-    --policy-document "file://$TMP/trust.json"
+  retry_until_principal_is_visible aws iam update-assume-role-policy --role-name "$ROLE" \
+    --policy-document "file://$TMP/trust.json" \
+    || die "could not update the trust policy on $ROLE"
   ok "exists — trust policy updated"
 else
-  run aws iam create-role --role-name "$ROLE" \
+  retry_until_principal_is_visible aws iam create-role --role-name "$ROLE" \
     --description "SPIRE server KMS KeyManager (S1)" \
-    --assume-role-policy-document "file://$TMP/trust.json" >/dev/null
+    --assume-role-policy-document "file://$TMP/trust.json" \
+    || die "could not create $ROLE (see the error above)"
   ok "created"
 fi
 run aws iam attach-role-policy --role-name "$ROLE" --policy-arn "$POLICY_ARN"
