@@ -167,9 +167,21 @@ cat > "$TMP/kms.json" <<'JSON'
 }
 JSON
 if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
-  run aws iam create-policy-version --policy-arn "$POLICY_ARN" \
-    --policy-document "file://$TMP/kms.json" --set-as-default >/dev/null
-  ok "exists — added a new default version"
+  # Only add a version when the document actually changed. IAM keeps five versions
+  # per managed policy, so "always create a version" turns a re-runnable script into
+  # one that fails on its sixth run with LimitExceeded.
+  CURRENT="$(aws iam get-policy "$POLICY_ARN" --query 'Policy.DefaultVersionId' --output text)"
+  HAVE="$(aws iam get-policy-version --policy-arn "$POLICY_ARN" --version-id "$CURRENT" \
+    --query 'PolicyVersion.Document' --output json 2>/dev/null \
+    | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))' 2>/dev/null || echo "")"
+  WANT="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1])), sort_keys=True))' "$TMP/kms.json")"
+  if [ -n "$HAVE" ] && [ "$HAVE" = "$WANT" ]; then
+    ok "exists — document unchanged, no new version"
+  else
+    run aws iam create-policy-version --policy-arn "$POLICY_ARN" \
+      --policy-document "file://$TMP/kms.json" --set-as-default >/dev/null
+    ok "exists — added a new default version"
+  fi
 else
   run aws iam create-policy --policy-name "$POLICY" \
     --policy-document "file://$TMP/kms.json" >/dev/null
@@ -178,7 +190,36 @@ fi
 info "CreateKey and ScheduleKeyDeletion cannot be scoped to a pre-existing key,"
 info "because the plugin creates the keys it manages. That is why this is a role."
 
-say "2. the role that signs ($ROLE)"
+# The user is created first, and not for tidiness: IAM validates the principal
+# named in a trust policy **at role creation**, so a role trusting a user that does
+# not exist yet fails with
+#   MalformedPolicyDocument: Invalid principal in policy: "...:user/spire-kms-base"
+# The reverse — the user policy naming a role that does not exist yet — is fine,
+# because identity policies are not checked against resource existence.
+say "2. the base user, which may do exactly one thing ($USER)"
+if aws iam get-user --user-name "$USER" >/dev/null 2>&1; then
+  ok "exists"
+else
+  run aws iam create-user --user-name "$USER" >/dev/null
+  ok "created"
+fi
+python3 - "$ACCOUNT" "$ROLE" > "$TMP/assume.json" <<'PY'
+import json, sys
+account, role = sys.argv[1], sys.argv[2]
+print(json.dumps({
+    "Version": "2012-10-17",
+    "Statement": [{
+        "Effect": "Allow",
+        "Action": "sts:AssumeRole",
+        "Resource": f"arn:aws:iam::{account}:role/{role}",
+    }],
+}, indent=2))
+PY
+run aws iam put-user-policy --user-name "$USER" --policy-name SpireAssumeKmsRole \
+  --policy-document "file://$TMP/assume.json"
+ok "its only permission: sts:AssumeRole on $ROLE_ARN"
+
+say "3. the role that signs ($ROLE)"
 python3 - "$ACCOUNT" "$USER" "$EXTERNAL_ID" > "$TMP/trust.json" <<'PY'
 import json, sys
 account, user, external_id = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -206,29 +247,6 @@ ok "KMS policy attached"
 if [ -n "$EXTERNAL_ID" ]; then
   info "trust policy requires sts:ExternalId (stored in .env below)"
 fi
-
-say "3. the base user, which may do exactly one thing ($USER)"
-if aws iam get-user --user-name "$USER" >/dev/null 2>&1; then
-  ok "exists"
-else
-  run aws iam create-user --user-name "$USER" >/dev/null
-  ok "created"
-fi
-python3 - "$ACCOUNT" "$ROLE" > "$TMP/assume.json" <<'PY'
-import json, sys
-account, role = sys.argv[1], sys.argv[2]
-print(json.dumps({
-    "Version": "2012-10-17",
-    "Statement": [{
-        "Effect": "Allow",
-        "Action": "sts:AssumeRole",
-        "Resource": f"arn:aws:iam::{account}:role/{role}",
-    }],
-}, indent=2))
-PY
-run aws iam put-user-policy --user-name "$USER" --policy-name SpireAssumeKmsRole \
-  --policy-document "file://$TMP/assume.json"
-ok "its only permission: sts:AssumeRole on $ROLE_ARN"
 
 say "4. the credential for .env"
 umask 077
