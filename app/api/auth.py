@@ -57,10 +57,17 @@ def platform_roles(roles) -> list[str]:
 
 @router.get("/auth/config")
 def auth_config() -> dict:
-    """Lets the UI show or hide the Enroll page, and name the acting agent."""
+    """Lets the UI show or hide the Enroll page, name the acting agent, and know which
+    roles an admin may grant.
+
+    The roles are served rather than duplicated in the UI: when both sides kept their own
+    list they drifted, and a role present in the policy but missing from either list left
+    a user looking unprivileged while their token carried the role.
+    """
     return {
         "signup_enabled": signup_enabled(),
         "agent_id": AGENT_SPIFFE_ID,
+        "roles": list(PLATFORM_ROLES),
     }
 
 

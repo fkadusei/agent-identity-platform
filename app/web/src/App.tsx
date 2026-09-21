@@ -27,18 +27,6 @@ import {
 
 type Tab = "console" | "approvals" | "privacy" | "roles" | "audit" | "admin";
 
-// The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
-// The same set the api reports as platform roles; a role missing here cannot be
-// granted or revoked from the admin table, even though the policy enforces it.
-const ASSIGNABLE = [
-  "support_rep",
-  "billing",
-  "read_only",
-  "privacy",
-  "manager",
-  "platform_admin",
-];
-
 // Example tasks, each tied to the tool it exercises, so the console offers only
 // what this user's role can actually do — a privacy user sees the PII request, a
 // support rep sees the refunds. Without this the privacy path is invisible.
@@ -100,6 +88,11 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("console");
   const [signupEnabled, setSignupEnabled] = useState(false);
   const [agentId, setAgentId] = useState("");
+  // The roles an admin may grant come from the api, which is the side that has to know
+  // them. This used to be a list here too, and the two drifted: `billing` and
+  // `read_only` existed in the policy and the realm but not in either list, so a user
+  // holding one of them signed in as "no roles".
+  const [assignable, setAssignable] = useState<string[]>([]);
   const [mode, setMode] = useState<"login" | "enroll">("login");
   // Set when the token expires under a tab that is already open. The tab is kept
   // (unlike an explicit sign-out) so signing back in returns you to what you were
@@ -136,6 +129,7 @@ export default function App() {
       .then((c) => {
         setSignupEnabled(c.signup_enabled);
         setAgentId(c.agent_id ?? "");
+        setAssignable(c.roles ?? []);
       })
       .catch(() => {});
   }, []);
@@ -236,7 +230,7 @@ export default function App() {
             {tab === "privacy" && <Privacy session={session} />}
             {tab === "roles" && <Roles session={session} />}
             {tab === "audit" && <Audit session={session} />}
-            {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} />}
+            {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} assignable={assignable} />}
           </main>
         </>
       )}
@@ -749,7 +743,15 @@ function Approvals({
   );
 }
 
-function Admin({ token, self }: { token: string; self: string }) {
+function Admin({
+  token,
+  self,
+  assignable,
+}: {
+  token: string;
+  self: string;
+  assignable: string[];
+}) {
   const [users, setUsers] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -829,6 +831,7 @@ function Admin({ token, self }: { token: string; self: string }) {
             setCreating(false);
             refresh();
           }}
+          assignable={assignable}
         />
       )}
       <table className="users">
@@ -850,7 +853,7 @@ function Admin({ token, self }: { token: string; self: string }) {
                 <span className="muted">{u.email}</span>
               </td>
               <td>
-                {ASSIGNABLE.map((r) => (
+                {assignable.map((r) => (
                   <label key={r} className="role">
                     <input
                       type="checkbox"
@@ -881,7 +884,15 @@ function Admin({ token, self }: { token: string; self: string }) {
   );
 }
 
-function CreateUser({ token, onCreated }: { token: string; onCreated: () => void }) {
+function CreateUser({
+  token,
+  onCreated,
+  assignable,
+}: {
+  token: string;
+  onCreated: () => void;
+  assignable: string[];
+}) {
   const [form, setForm] = useState({ username: "", email: "", password: "", tenant: "acme" });
   const [roles, setRoles] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -919,7 +930,7 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
         title="The tenant this account is scoped to"
       />
       <div>
-        {ASSIGNABLE.map((r) => (
+        {assignable.map((r) => (
           <label key={r} className="role">
             <input type="checkbox" checked={roles.includes(r)} onChange={() => toggle(r)} /> {r}
           </label>
