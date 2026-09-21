@@ -926,6 +926,32 @@ approval_refund_limit := 500   # <= this (and > auto): needs approval; above: de
       reset them to zero.</li>
   </ol>
 
+  <h3>Swapping the model</h3>
+  <p>
+    The model is named in exactly one place — a ConfigMap the gateway reads at startup,
+    rendered from the gitignored <code>.env</code> — so changing it touches no manifest and
+    rebuilds no image:
+  </p>
+  <div class="codeblock"><div class="cap">one command, local models</div><pre>./scripts/use-model.sh qwen3:30b-a3b            # swap
+./scripts/use-model.sh llama3.2:3b              # and back
+./scripts/use-model.sh --eval qwen3:30b-a3b     # swap, then score it with the live evals</pre></div>
+  <p>
+    Which model you choose is not cosmetic. Measured with the eval suite on one machine:
+    a 30B MoE scored <b>6/8</b>, a 3B scored <b>4–5/8</b> — and the 3B's failures include
+    <i>"PII is refused for a support rep"</i>, a security guardrail rather than a nicety.
+    The portable default in the repository is <code>qwen3:30b-a3b</code>;
+    <code>llama3.2:3b</code> is a quarter of the size and much quicker.
+  </p>
+  <div class="callout info">
+    <b>Two things the first swap taught us</b>
+    A <b>thinking</b> model (Qwen3 and friends) puts its JSON in <code>thinking</code> and
+    returns <code>response</code> empty, so the agent reported an unparseable reply while
+    the model had answered correctly — the gateway now asks for <code>think: false</code>
+    and falls back, which took that model from 1/8 to 6/8. And the audit had been recording
+    the model the <i>caller</i> asked for, which is usually nothing: it now records the
+    model resolved for the call, which is what makes "which model decided this?" answerable.
+  </div>
+
   <h3>Provider-agnostic by construction</h3>
   <p>
     The gateway speaks an OpenAI-compatible API and a local Ollama endpoint. The default is
@@ -1242,6 +1268,7 @@ tenant.                                            A second tenant's data is unr
       <tr><td class="mono">./stop.sh [--delete]</td><td>Stop it (keeping data) or remove the cluster entirely</td></tr>
       <tr><td class="mono">./scripts/setup.sh</td><td>The gated bring-up; idempotent, and safe to re-run</td></tr>
       <tr><td class="mono">./scripts/demo.sh</td><td>The happy path, including the approval</td></tr>
+      <tr><td class="mono">./scripts/use-model.sh</td><td>Swap the model the gateway uses — no manifest edit, no rebuild (<a href="#gateway">§10</a>)</td></tr>
       <tr><td class="mono">./scripts/attack-tests.sh</td><td>Six attacks, each of which must fail</td></tr>
       <tr><td class="mono">./scripts/tenancy-tests.sh</td><td>One tenant's data unreachable from another</td></tr>
       <tr><td class="mono">./scripts/role-tools.sh</td><td>Who may call which tool — deterministic, no model involved</td></tr>
@@ -1515,6 +1542,25 @@ helm lint deploy/helm/agent-platform</pre></div>
     (see §1). An assertion is the difference between a claim and a check.
   </p>
 
+  <h3>9 · A model swap found an assumption about where answers live</h3>
+  <p>
+    Swapping in a Qwen3 model for the demo's small one took the evals from 5/8 to
+    <b>1/8</b> — every case failing with <i>"the model's reply could not be understood"</i>.
+    The model was answering correctly; it was answering <i>somewhere else</i>. With
+    <code>format: json</code>, a thinking model returns <code>response</code> empty and puts
+    the JSON in <code>thinking</code>:
+  </p>
+  <div class="codeblock"><div class="cap">the same call, straight from Ollama</div><pre>response: ''
+thinking: '{"tool": "refunds.quote", "args": {} }'   ← correct, and ignored</pre></div>
+  <p>
+    <b>Now:</b> the gateway asks for <code>think: false</code> and falls back to
+    <code>thinking</code> for a model that ignores the request — the same model then scores
+    <b>6/8</b>. The same swap exposed a second assumption: <code>llm.call</code> recorded
+    the model the <i>caller</i> named, and the agent names none, so the field that exists to
+    answer "which model decided this?" had been recording an empty string. It now records
+    the model resolved for the call, and a test asserts it.
+  </p>
+
   <h3>What the project settled on</h3>
   <div class="grid2">
     <div class="tile"><h4>Every claim gets a check</h4><p>If it is written down as behaviour, it has a test, a gate, or a suite.</p></div>
@@ -1623,6 +1669,7 @@ helm lint deploy/helm/agent-platform</pre></div>
       <tr><td class="mono">AGENT_URL · TOOLS_URL · GATEWAY_URL</td><td>Where each service calls its peers — over the SPIFFE listener</td></tr>
       <tr><td class="mono">OPA_URL · DATABASE_URL / PG*</td><td>Policy decisions, and durable state (empty means in-memory)</td></tr>
       <tr><td class="mono">LLM_PROVIDER · LLM_BASE_URL · LLM_MODEL · LLM_API_KEY</td><td>The gateway's provider; the key is consumed only there</td></tr>
+      <tr><td class="mono">OLLAMA_URL · OLLAMA_MODEL</td><td>Which local model, rendered into the gateway's config by <code>setup.sh</code> from <code>.env</code></td></tr>
       <tr><td class="mono">LLM_RATE_LIMIT_PER_MINUTE · LLM_TOKEN_BUDGET_PER_DAY</td><td>Per-agent limits, keyed on the caller's SPIFFE ID, stored in Postgres</td></tr>
       <tr><td class="mono">LLM_GATEWAY_AUDIENCE · SPIRE_JWKS_URL</td><td>How the gateway decides which workload is asking</td></tr>
       <tr><td class="mono">SIGNUP_ENABLED</td><td>Whether the self-service enrollment page is offered</td></tr>
