@@ -30,6 +30,12 @@ jobs:
       - name: pre-commit hook blocks secrets
         run: ./scripts/test-hooks.sh
 
+      # The AWS role-setup script runs by hand, against a real account, where a
+      # mistake is expensive. Its self-test needs no AWS access: it drives the script
+      # through a stub that enforces the same required arguments the real CLI does.
+      - name: AWS role-setup script self-test
+        run: ./scripts/test-aws-kms-role.sh
+
       - name: validate config files
         run: |
           python3 - <<'PY'

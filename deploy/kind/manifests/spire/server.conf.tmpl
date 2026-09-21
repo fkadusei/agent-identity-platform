@@ -45,11 +45,6 @@ plugins {
   # entries, instead of coming back with an empty registry as the demo's sqlite
   # datastore did. It also removes sqlite's single-writer limit, which was a
   # blocker for ever running two replicas.
-  #
-  # The remaining half of S1 — a *shared* KeyManager, so 2+ replicas can sign
-  # with the same CA — needs a cloud KMS (AWS/GCP/Azure). kind has none, so the
-  # demo keeps the disk KeyManager and stays single-replica; its keys live on a
-  # PersistentVolumeClaim so a restart does not regenerate the CA either.
   DataStore "sql" {
     plugin_data {
       database_type     = "postgres"
@@ -70,11 +65,50 @@ plugins {
     }
   }
 
+  # Which KeyManager signs the CA — and whether every replica shares it. This is
+  # the difference between one server and a failover pair: with per-pod disk keys
+  # each replica mints its own CA, so two replicas would hand out different trust
+  # bundles, which is worse than having only one.
+  #
+  # `SPIRE_KEY_MANAGER` in .env selects the block (setup.sh turns it into the flags
+  # below). The default is `disk`, so an unattended demo needs no credentials.
+  # A conditional tests a *flag* (1/true/yes/on), never a value: a path or an ARN
+  # goes inside the block as an ordinary variable reference. (Neither marker may be
+  # spelled out in prose — the header above explains why, and render.py enforces it.)
+{{#if KMS_AWS}}
+  # AWS KMS (S1's shared half). Keys are created, rotated and used *in* KMS: the CA
+  # private key never leaves it, and every replica signs with the same one.
+  #
+  # `key_identifier_value` is what makes that true, and it is the setting to get
+  # right. The plugin's default is a per-server identifier *file*, which each replica
+  # would create for itself — one identifier each, therefore one key each, therefore
+  # a different CA each. Every replica must share this value.
+  #
+  # Tag-based discovery is the plugin's recommended mode: it tags the keys it manages
+  # and prunes ones whose liveness signal has not been refreshed for two weeks.
+  KeyManager "aws_kms" {
+    plugin_data {
+      region                         = "${SPIRE_KMS_REGION}"
+      key_identifier_value           = "${SPIRE_KMS_SERVER_ID}"
+      enable_tag_based_key_discovery = true
+{{#if KMS_AWS_POLICY}}
+      # The plugin's default key policy expects the SPIRE server to assume an IAM
+      # role; static credentials do not, so an explicit policy is named instead.
+      key_policy_file                = "${SPIRE_KMS_KEY_POLICY_FILE}"
+{{/if}}
+    }
+  }
+{{/if}}
+{{#if KMS_DISK}}
+  # Disk KeyManager — the default, and the only mode kind can run without
+  # credentials. Keys live on the PVC (spire-server-data), so a restart keeps the
+  # same CA; they are *not* shareable, so this mode stays single-replica.
   KeyManager "disk" {
     plugin_data {
       keys_path = "/run/spire/data/keys.json"
     }
   }
+{{/if}}
 
   # Keeps the trust bundle current in the spire-bundle ConfigMap above, which
   # is how SPIRE agents bootstrap.

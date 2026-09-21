@@ -169,8 +169,127 @@ ensure_database keycloak "$KEYCLOAK_DB_PASSWORD"
 ok "postgres ready; databases 'spire' and 'keycloak' ready"
 
 say "5. SPIRE"
+# Which KeyManager signs the CA, and whether every replica shares it (S1's shared
+# half). `disk` is the default — no credentials, one replica. `aws_kms` creates and
+# uses the keys inside KMS, so more than one replica can sign with the same CA.
+# See docs/ha.md.
+KEY_MANAGER="${SPIRE_KEY_MANAGER:-disk}"
+KMS_DISK=""
+KMS_AWS=""
+case "$KEY_MANAGER" in
+  disk)    KMS_DISK=1 ;;
+  aws_kms) KMS_AWS=1 ;;
+  *) die "SPIRE_KEY_MANAGER=$KEY_MANAGER is not supported yet (disk | aws_kms)" ;;
+esac
+export KMS_DISK KMS_AWS
+
+if [ -n "$KMS_AWS" ]; then
+  [ -n "${SPIRE_KMS_REGION:-}" ] \
+    || die "SPIRE_KEY_MANAGER=aws_kms needs SPIRE_KMS_REGION in $ENV_FILE"
+  # Shared by every replica on purpose: the plugin's default is a per-server
+  # identifier *file*, which each replica would create for itself — one identifier
+  # each means one key each, which means a different CA each. No dots: the plugin
+  # accepts only alphanumerics, forward slashes, underscores and dashes, so the
+  # trust domain's own name (acme.com) has to be written differently here.
+  : "${SPIRE_KMS_SERVER_ID:=acme-com}"
+  export SPIRE_KMS_REGION SPIRE_KMS_SERVER_ID
+  for v in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY; do
+    [ -n "${!v:-}" ] || die "SPIRE_KEY_MANAGER=aws_kms needs $v in $ENV_FILE"
+  done
+  if [ -n "${SPIRE_KMS_ROLE_ARN:-}" ]; then
+    # Role-based access. The credential in .env belongs to a principal whose *only*
+    # permission is to assume this one role; the role holds the KMS permissions.
+    # The plugin uses the SDK's default chain, which can assume a role given a
+    # profile — so the credentials arrive as a *file* with role_arn/source_profile,
+    # not as environment variables. That also means the SDK refreshes the
+    # assumed-role credentials itself: an expired session does not stop identity
+    # from starting, unlike static keys.
+    CREDS=$(mktemp); CONF=$(mktemp)
+    cat > "$CREDS" <<EOF
+[base]
+aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+EOF
+    cat > "$CONF" <<EOF
+[profile spire]
+role_arn = ${SPIRE_KMS_ROLE_ARN}
+source_profile = base
+region = ${SPIRE_KMS_REGION}
+EOF
+    if [ -n "${SPIRE_KMS_EXTERNAL_ID:-}" ]; then
+      printf 'external_id = %s\n' "$SPIRE_KMS_EXTERNAL_ID" >> "$CONF"
+    fi
+    kubectl -n $NS create secret generic spire-kms-credentials \
+      --from-file=credentials="$CREDS" --from-file=config="$CONF" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    rm -f "$CREDS" "$CONF"
+    AWS_PROFILE=spire
+    AWS_CONFIG_FILE=/run/spire/aws/config
+    AWS_SHARED_CREDENTIALS_FILE=/run/spire/aws/credentials
+    export AWS_PROFILE AWS_CONFIG_FILE AWS_SHARED_CREDENTIALS_FILE
+    # The keys belong to the role, so the key policy names the role.
+    : "${SPIRE_KMS_PRINCIPAL_ARN:=$SPIRE_KMS_ROLE_ARN}"
+    ok "role-based: the base credential may only assume ${SPIRE_KMS_ROLE_ARN}"
+  else
+    kubectl -n $NS create secret generic spire-kms-credentials \
+      --from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+      --from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+      --from-literal=AWS_SESSION_TOKEN="${AWS_SESSION_TOKEN:-}" \
+      --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  fi
+  # The plugin's default key policy expects the server to assume an IAM role;
+  # credentials passed as access keys do not, so we name the principal explicitly.
+  if [ -n "${SPIRE_KMS_PRINCIPAL_ARN:-}" ]; then
+    POLICY=$(mktemp)
+    cat > "$POLICY" <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "The SPIRE server's own principal owns the keys it creates",
+      "Effect": "Allow",
+      "Principal": { "AWS": "${SPIRE_KMS_PRINCIPAL_ARN}" },
+      "Action": "kms:*",
+      "Resource": "*"
+    }
+  ]
+}
+JSON
+    kubectl -n $NS create secret generic spire-kms-key-policy \
+      --from-file=policy.json="$POLICY" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    rm -f "$POLICY"
+    # Two variables on purpose: the template's conditional tests the *flag* and
+    # substitutes the path inside the block (a {if} on a path is never true).
+    SPIRE_KMS_KEY_POLICY_FILE=/run/spire/keys/policy.json
+    export SPIRE_KMS_KEY_POLICY_FILE KMS_AWS_POLICY=1
+    ok "KMS key policy names ${SPIRE_KMS_PRINCIPAL_ARN}"
+  else
+    info "no SPIRE_KMS_PRINCIPAL_ARN set — KMS mode expects an assumed role (or will fail creating keys)"
+  fi
+  # Written out rather than built with --from-literal flags so the role-only
+  # variables (AWS_PROFILE and the two file paths) appear only when there is a role
+  # to assume — an empty AWS_PROFILE is one more thing the SDK has to interpret.
+  {
+    printf 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: spire-kms-config\n  namespace: %s\ndata:\n' "$NS"
+    printf '  SPIRE_KMS_REGION: "%s"\n' "$SPIRE_KMS_REGION"
+    printf '  SPIRE_KMS_SERVER_ID: "%s"\n' "$SPIRE_KMS_SERVER_ID"
+    printf '  SPIRE_KMS_KEY_POLICY_FILE: "%s"\n' "${SPIRE_KMS_KEY_POLICY_FILE:-}"
+    if [ -n "${SPIRE_KMS_ROLE_ARN:-}" ]; then
+      printf '  AWS_PROFILE: "%s"\n' "$AWS_PROFILE"
+      printf '  AWS_CONFIG_FILE: "%s"\n' "$AWS_CONFIG_FILE"
+      printf '  AWS_SHARED_CREDENTIALS_FILE: "%s"\n' "$AWS_SHARED_CREDENTIALS_FILE"
+    fi
+  } | kubectl apply -f - >/dev/null
+  ok "KMS mode: the CA is signed by AWS KMS (credentials in a Secret, never here)"
+else
+  # Switching back to disk must not leave usable credentials in the cluster.
+  kubectl -n $NS delete secret spire-kms-credentials spire-kms-key-policy --ignore-not-found >/dev/null 2>&1 || true
+  kubectl -n $NS delete configmap spire-kms-config --ignore-not-found >/dev/null 2>&1 || true
+fi
+
 # The server config carries the datastore password, so it is rendered from a
 # template into a Secret — never committed. Same pattern as the Keycloak realm.
+# The KeyManager block is chosen here, by the flags exported above.
 SPIRE_CONF=$(mktemp)
 python3 scripts/render.py "$MANIFESTS/spire/server.conf.tmpl" > "$SPIRE_CONF"
 kubectl -n $NS create secret generic spire-server-config \
@@ -192,7 +311,14 @@ kubectl apply -f "$MANIFESTS/spire/" >/dev/null
 # check-images.sh warns about, and why OPA is restarted in step 7. Expect ~30s
 # before the fresh server republishes the trust bundle (the bundle publisher's
 # tick); the agents retry until it lands.
-kubectl -n $NS rollout restart statefulset/spire-server >/dev/null
+#
+# Delete the pod rather than `rollout restart` it, and not for style: a StatefulSet
+# rolling update **waits for the running pod to be Ready** before it replaces it, so
+# a crash-looping server — a KeyManager it cannot authenticate with, say — blocks
+# its own recovery. `setup.sh` would then time out in `rollout status` with the old
+# config still running, which is the worst possible answer to "fix the credentials
+# and re-run". Deleting the pod recreates it from the applied template, ready or not.
+kubectl -n $NS delete pod spire-server-0 --ignore-not-found --wait=true >/dev/null 2>&1 || true
 kubectl -n $NS rollout status statefulset/spire-server --timeout=240s >/dev/null
 kubectl -n $NS rollout restart daemonset/spire-agent >/dev/null
 kubectl -n $NS rollout status daemonset/spire-agent --timeout=300s >/dev/null
@@ -244,6 +370,41 @@ ensure_entry gateway "spiffe://acme.com/ns/agent-platform/sa/gateway"
 ensure_entry api "spiffe://acme.com/ns/agent-platform/sa/api"
 ensure_entry tools "spiffe://acme.com/ns/agent-platform/sa/tools"
 
+# Replicas only make sense once the CA is shared: with the disk KeyManager each
+# replica mints its own, so the demo stays at one and says so.
+REPLICAS="${SPIRE_SERVER_REPLICAS:-1}"
+if [ -n "$KMS_AWS" ] && [ "$REPLICAS" -lt 2 ]; then
+  REPLICAS=2
+fi
+if [ "$REPLICAS" != "1" ]; then
+  kubectl -n $NS scale statefulset/spire-server --replicas="$REPLICAS" >/dev/null
+  kubectl -n $NS rollout status statefulset/spire-server --timeout=300s >/dev/null
+fi
+
+# GATE: every replica must present the same *bundle*. That is the entire point of the
+# switch — two servers signing with different CAs would hand out different trust
+# bundles, and a fleet silently alternating between them is worse than one server.
+#
+# Compare the whole bundle, not one certificate: a bundle carries its rotation
+# history (this demo rotates every 12h, so several CAs are in flight), and the first
+# certificate in it is the *oldest*. Fingerprinting that would keep matching after a
+# KeyManager change while the two replicas disagreed about the current CA — passing
+# the check that exists to catch exactly that.
+SEEN=""
+for pod in $(kubectl -n $NS get pod -l app=spire-server -o name | sed 's|pod/||' | sort); do
+  bundle=$(kubectl -n $NS exec "$pod" -c spire-server -- /opt/spire/bin/spire-server bundle show \
+             -socketPath "$SOCKET" 2>/dev/null)
+  [ -n "$bundle" ] || die "could not read the trust bundle from $pod"
+  digest=$(printf '%s' "$bundle" | openssl dgst -sha256 -r | cut -d' ' -f1)
+  SEEN="$SEEN$digest
+"
+  info "$pod trust bundle sha256 ${digest:0:24}… ($(printf '%s' "$bundle" | grep -c 'BEGIN CERTIFICATE') CAs)"
+done
+DISTINCT=$(printf '%s' "$SEEN" | sort -u | grep -c . || true)
+[ "$DISTINCT" = "1" ] \
+  || die "SPIRE replicas are serving different trust bundles ($DISTINCT distinct) — the KeyManager is not shared"
+ok "spire-server: $KEY_MANAGER KeyManager, $REPLICAS replica(s), one bundle across all of them"
+
 say "6. Keycloak"
 RENDERED=$(mktemp)
 python3 scripts/render.py "$MANIFESTS/keycloak/realm.json.tmpl" > "$RENDERED"
@@ -285,6 +446,18 @@ ok "keycloak ready (realm imported by job; 2 replicas; Postgres-backed)"
 say "7. OPA"
 # Build the versioned bundle (revision stamped into every decision) and mount it.
 POLICY_REVISION=$(./scripts/build-bundle.sh)
+# Then sign it, because the bundle is a deploy artifact and its gate is
+# build → sign → verify (docs/supply-chain.md). Building without signing leaves the
+# previous signature attached to a different artifact, and the local verify then
+# fails in a way that looks like a broken key rather than a stale signature — which
+# is exactly how this went unnoticed until an end-to-end run.
+if command -v cosign >/dev/null 2>&1; then
+  ./scripts/sign-bundle.sh >/dev/null 2>&1 \
+    && ok "policy bundle signed (revision $POLICY_REVISION)" \
+    || info "could not sign the bundle — ./scripts/verify-bundle.sh will report the mismatch"
+else
+  info "cosign not installed — bundle left unsigned (verify-bundle.sh needs it)"
+fi
 kubectl -n $NS create configmap opa-bundle \
   --from-file=authz.rego=dist/bundle/authz.rego \
   --from-file=data.json=dist/bundle/data.json \

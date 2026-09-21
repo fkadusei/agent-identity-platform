@@ -21,11 +21,107 @@ or an upgrade cannot take a whole service down.
 
 | Component | Why not | What production does |
 | --- | --- | --- |
-| `spire-server` | Its state survives the pod now (S1: the registry is in Postgres and the keys are on a PVC), so a restart keeps the same CA and entries. HA still needs a **shared KeyManager** as well as a shared datastore, and that means a cloud KMS; the demo keeps the disk KeyManager, which is single-replica by nature. | Shared datastore + AWS/GCP/Azure KMS, 2+ replicas |
+| `spire-server` | Its state survives the pod (S1: the registry is in Postgres and the keys are on a PVC), so a restart keeps the same CA and entries. HA also needs a **shared KeyManager**, and the default disk one is single-replica by nature — two replicas would each mint their own CA. | Shared datastore + a KMS KeyManager, 2+ replicas — supported here, see below |
 | `keycloak` | 2 replicas behind the Service against Postgres (S2), sessions shared through the `ispn` cache discovering peers via the database. HA is otherwise taken care of; a genuine multi-site setup would add an external Infinispan. | 2+ replicas + a managed database (what the demo now does, minus the database being managed) |
 | `postgres` | Its data is on a `PersistentVolumeClaim` now (S3), so it survives a pod restart and is not lost with the process — but it is still one replica, and running HA Postgres well (failover, backups) is its own discipline. | A managed HA database with backups; the chart takes the DSN (`database.url`) |
 | `sandbox` | It holds the synthetic data, which now survives a restart on its own volume (S9) — but it is still a single writer, so replicas would disagree. | A real backend (the tools' HTTP backend already targets one) |
 | observability | Jaeger/Prometheus/Grafana are demo-scale. | Managed backends |
+
+## The identity tier: a shared KeyManager (S1's other half)
+
+Identity is the critical path — nothing gets an SVID without it — so a single
+SPIRE server is the sharpest single point of failure in the platform. Both halves
+of HA are now supported:
+
+| Half | State |
+| --- | --- |
+| **Shared datastore** | Done and default: the registry is in Postgres, so a replacement replica reads the same entries. |
+| **Shared KeyManager** | Switchable: `SPIRE_KEY_MANAGER=aws_kms` in `.env` (default `disk`). |
+
+```bash
+# .env — the demo stays unattended without this; KMS mode is opt-in.
+SPIRE_KEY_MANAGER=aws_kms
+SPIRE_KMS_REGION=eu-west-1
+SPIRE_KMS_SERVER_ID=acme-com          # shared by every replica — see below
+SPIRE_KMS_PRINCIPAL_ARN=arn:aws:iam::123456789012:user/spire-kms
+AWS_ACCESS_KEY_ID=...                 # or AWS_SESSION_TOKEN too, for temporary creds
+AWS_SECRET_ACCESS_KEY=...
+```
+
+Then `./scripts/setup.sh` scales the server to 2 replicas and **gates on both
+replicas presenting the same CA** — that is the whole point of the switch, and it
+is asserted rather than assumed (a fleet silently alternating between two trust
+bundles is worse than one server).
+
+**The setting that decides whether HA works is `SPIRE_KMS_SERVER_ID`.** The plugin's
+default identifier is a *file* per server, which each replica would create for
+itself: one identifier each, therefore one key each, therefore a different CA each.
+Every replica must share that value — and it cannot contain dots, so the trust
+domain's own name has to be written as `acme-com`.
+
+**Role-based access (recommended).** Two principals, so the long-lived credential is
+nearly powerless:
+
+| Principal | Has | Why |
+| --- | --- | --- |
+| IAM user `spire-kms-base` | **only** `sts:AssumeRole` on the role below | this is the key that sits in `.env`; if it leaks, it can do nothing but try to assume one role |
+| IAM role `spire-kms` | the KMS permissions in the table below | this is what actually signs. The plugin assumes it (via `SPIRE_KMS_ROLE_ARN`), and the SDK **refreshes** the assumed-role credentials itself — an expired session does not stop identity from starting |
+
+`setup.sh` writes the role into a profile file mounted in the pod (`role_arn` +
+`source_profile`), because the plugin uses the SDK's default credential chain and a
+role is assumed from a *profile*, not from environment variables. Set
+`SPIRE_KMS_EXTERNAL_ID` to require one when the role is assumed (the trust policy
+then needs a matching `sts:ExternalId` condition).
+
+**Production (EKS) does better still:** give the SPIRE server's ServiceAccount an
+IRSA / EKS Pod Identity role (`eks.amazonaws.com/role-arn`), and there is **no
+credential in the cluster at all** — the pod's projected token is exchanged for the
+role. `SPIRE_KEY_MANAGER` and the role ARN are then the only settings, and neither
+is a secret. kind has no OIDC provider to do this with, which is why the demo uses
+the base-credential shape above.
+
+**What the KMS principal needs.** The plugin *creates and rotates its own keys*
+(there is no key to pre-create), so the role named in `SPIRE_KMS_PRINCIPAL_ARN`
+needs:
+
+| Permission | Why |
+| --- | --- |
+| `kms:CreateKey`, `kms:CreateAlias`, `kms:UpdateAlias`, `kms:DeleteAlias`, `kms:ListAliases` | the plugin manages a key per server instance and an alias to find it |
+| `kms:DescribeKey`, `kms:GetPublicKey`, `kms:Sign` | signing SVIDs — the CA private key never leaves KMS |
+| `kms:ScheduleKeyDeletion` | pruning keys whose liveness signal has gone stale (two weeks) |
+| `tag:GetResources` | tag-based key discovery (`enable_tag_based_key_discovery`) |
+
+Two consequences worth deciding before you turn it on: the policy can **create and
+schedule deletion of KMS keys**, so scope it to a dedicated principal (never a
+personal one); and the plugin's default key policy assumes SPIRE *assumes a role*,
+which static credentials do not — `setup.sh` therefore writes an explicit key policy
+naming `SPIRE_KMS_PRINCIPAL_ARN`. On kind, credentials arrive as a Kubernetes
+Secret; in production, use workload identity (IRSA/EKS Pod Identity, GKE, Azure)
+and no key material at all.
+
+**What switching does to the CA — it changes it.** A KMS-backed server starts with a
+new CA (the disk one is a different key), and SPIRE keeps the old CAs in the bundle
+while existing SVIDs are still valid, so the bundle grows a certificate rather than
+losing one. That makes switching a maintenance-window operation, not a zero-downtime
+flip: workloads holding SVIDs signed by the old CA are rejected once peers refresh
+their bundle, so they have to fetch new identities. `setup.sh`'s ordering is what
+covers it — SPIRE first, then the app tier restarts — and the suite passes
+immediately afterwards.
+
+Related, and worth knowing before reading a bundle: the demo sets `ca_ttl = 24h`, and
+SPIRE rotates at roughly the halfway point, so **the CA rotates every ~12 hours** and
+a live bundle carries several. The setup gate therefore compares the *whole* bundle
+across replicas: fingerprinting one certificate (the first, which is the oldest) keeps
+matching across a KeyManager change, which is precisely the condition the gate exists
+to catch.
+
+**Cost and latency, measured with AWS KMS in `us-east-1`:** every SVID issuance is one
+KMS `Sign`. From inside the cluster, fetching an identity took **5 ms (X.509-SVID, p50)
+and 18 ms (JWT-SVID, p50)** — the agent's own view, which is what matters. (Timing
+`aws kms sign` from a laptop measures CLI startup and credential resolution, not the
+signature: it came out ~467 ms, which is a fact about the CLI.) Each issuance is one
+request, so the running cost is that request count against your region's KMS request
+price — look it up rather than assume a figure.
 
 ## Multi-node: the SPIRE registration fix
 
