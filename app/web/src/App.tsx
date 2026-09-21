@@ -161,7 +161,6 @@ export default function App() {
       */}
       {session && (
         <header className="topbar" data-tab={tab}>
-          <button className="ghost" onClick={signOut}>Sign out</button>
           <span className="facts">
             {FACT("signed in", session.user, "user")}
             {session.tenant && FACT("tenant", session.tenant, "tenant")}
@@ -176,6 +175,7 @@ export default function App() {
               FACT("roles", "none")
             )}
           </span>
+          <button className="ghost" onClick={signOut}>Sign out</button>
         </header>
       )}
 
