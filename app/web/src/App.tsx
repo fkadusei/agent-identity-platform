@@ -538,11 +538,11 @@ function ResultCard({
         {STATUS_LABEL[outcome.status] ?? outcome.status}
       </div>
 
-    [ 	]*<div className="facts resultfacts">
-    [ 	]*{outcome.tool && FACT("tool", outcome.tool, "tool")}
-    [ 	]*{outcome.approval_id && FACT("approval", outcome.approval_id, "decision")}
-    [ 	]*{outcome.thread_id && FACT("thread", outcome.thread_id, "when")}
-    [ 	]*</div>
+        <div className="facts resultfacts">
+        {outcome.tool && FACT("tool", outcome.tool, "tool")}
+        {outcome.approval_id && FACT("approval", outcome.approval_id, "decision")}
+        {outcome.thread_id && FACT("thread", outcome.thread_id, "when")}
+        </div>
 
       <h3>What just happened</h3>
       <ol className="steps">
