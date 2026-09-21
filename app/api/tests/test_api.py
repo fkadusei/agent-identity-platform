@@ -160,3 +160,34 @@ def test_a_manager_cannot_decide_another_tenants_approval(client):
         headers={"Authorization": "Bearer y"},
     )
     assert resp.status_code == 409  # not found in this tenant
+
+
+def test_the_cache_policy_revalidates_the_shell_and_immortalises_bundles():
+    """A stale build in a browser looks exactly like a bug, so the policy is asserted.
+
+    `Cache-Control: no-cache` does not mean "do not cache" — it means "revalidate",
+    which the ETag makes cheap. The bundles carry a content hash, so they never need to
+    be re-fetched at all. Checked by driving the middleware directly, so this runs even
+    where the UI has not been built (the app-tests job does not build it).
+    """
+    import asyncio
+
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from app.api.main import _cache_headers
+
+    def header_for(path: str) -> str | None:
+        scope = {"type": "http", "method": "GET", "path": path, "headers": []}
+        request = Request(scope)
+
+        async def call_next(_request):
+            return Response("x")
+
+        return asyncio.run(_cache_headers(request, call_next)).headers.get("cache-control")
+
+    assert header_for("/") == "no-cache"
+    assert header_for("/index.html") == "no-cache"
+    assert header_for("/assets/index-abc123.js") == "public, max-age=31536000, immutable"
+    # the API itself is not part of the caching story
+    assert header_for("/healthz") is None
