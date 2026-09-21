@@ -153,41 +153,39 @@ export default function App() {
 
   return (
     <div className="app" data-tab={tab}>
-      <header>
-        <div className="brand">
-          <span className="mark" aria-hidden="true">AI</span>
-          <div>
-            <h1>Agent Identity Platform</h1>
-            <p className="sub">
+      {/* Sign out sits at the top left, and the session it ends is on the right.
+          The brand stays below both whether or not you are signed in, so signing in
+          and out does not rearrange the page. */}
+      {session && (
+        <header>
+          <button className="ghost" onClick={signOut}>Sign out</button>
+          <span className="facts">
+            {FACT("signed in", session.user, "user")}
+            {session.tenant && FACT("tenant", session.tenant, "tenant")}
+            {session.roles.length ? (
+              session.roles.map((r) => (
+                <span className={`fact role-${r}`} key={r}>
+                  <span className="k">role</span>
+                  <span className="v">{r}</span>
+                </span>
+              ))
+            ) : (
+              FACT("roles", "none")
+            )}
+          </span>
+        </header>
+      )}
+
+      <div className="brand">
+        <span className="mark" aria-hidden="true">AI</span>
+        <div>
+          <h1>Agent Identity Platform</h1>
+          <p className="sub">
             A support copilot with a cryptographic identity — no API keys, policy
             on every action, human approval for high-risk ones.
-            </p>
-          </div>
+          </p>
         </div>
-        <div className="who">
-          {session ? (
-            <>
-              <span className="facts">
-                {FACT("signed in", session.user, "user")}
-                {session.tenant && FACT("tenant", session.tenant, "tenant")}
-                {session.roles.length ? (
-                  session.roles.map((r) => (
-                    <span className={`fact role-${r}`} key={r}>
-                      <span className="k">role</span>
-                      <span className="v">{r}</span>
-                    </span>
-                  ))
-                ) : (
-                  FACT("roles", "none")
-                )}
-              </span>
-              <button className="ghost" onClick={signOut}>Sign out</button>
-            </>
-          ) : (
-            <span>{mode === "login" ? "sign in to continue" : "create an account"}</span>
-          )}
-        </div>
-      </header>
+      </div>
 
       {!session && notice && <p className="notice">{notice}</p>}
 

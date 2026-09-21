@@ -100,11 +100,12 @@ body {
 .app { max-width: 960px; margin: 0 auto; padding: 36px 24px 96px; }
 
 /* --- header ---------------------------------------------------------------- */
+/* the top row: the action on the left, the session it ends on the right */
 header {
-  display: flex; justify-content: space-between; gap: 24px;
-  flex-wrap: wrap; align-items: flex-start;
+  display: flex; justify-content: space-between; gap: 16px;
+  flex-wrap: wrap; align-items: center;
 }
-.brand { display: flex; align-items: flex-start; gap: 14px; }
+.brand { display: flex; align-items: flex-start; gap: 14px; margin-top: 18px; }
 .brand .mark {
   flex: none; width: 40px; height: 40px; border-radius: 11px;
   display: grid; place-items: center;
@@ -116,10 +117,6 @@ h1 {
   margin: 2px 0 0; font-size: 20px; font-weight: 650; letter-spacing: -0.015em;
 }
 .sub { color: var(--muted); margin: 5px 0 0; max-width: 52ch; font-size: 14px; }
-.who {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  color: var(--muted); font-size: 13.5px;
-}
 
 /* --- labelled facts --------------------------------------------------------
    Structured data (who, which tenant, which tool, when) as a row of chips rather
@@ -426,7 +423,6 @@ pre {
   .app { padding: 24px 16px 72px; }
   nav { scroll-snap-type: x proximity; }
   nav button { scroll-snap-align: start; white-space: nowrap; }
-  .who { font-size: 13px; }
   h1 { font-size: 18px; }
 }
 
