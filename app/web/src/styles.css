@@ -52,6 +52,16 @@
   --fast: 120ms ease;
   --slow: 220ms cubic-bezier(0.2, 0.7, 0.2, 1);
 
+
+  /* one hue per kind of fact, and one per section — colour that carries meaning */
+  --hue-agent: #b9a3ff; --hue-agent-soft: #1b1730; --hue-agent-line: #362a5c;
+  --hue-user: #7cc4ff; --hue-user-soft: #101f2f; --hue-user-line: #23456b;
+  --hue-tool: #5fd3c0; --hue-tool-soft: #0f2624; --hue-tool-line: #1f4d47;
+  --hue-policy: #ff9fc0; --hue-policy-soft: #2b1421; --hue-policy-line: #562a3e;
+  --hue-tenant: #6ee7a8; --hue-tenant-soft: #10281d; --hue-tenant-line: #245139;
+  --hue-decision: #f0c56a; --hue-decision-soft: #2a2110; --hue-decision-line: #4f3f1c;
+  --hue-when: #93a3b8; --hue-when-soft: #151d29; --hue-when-line: #2b3648;
+
   --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Inter,
     Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas,
@@ -128,6 +138,35 @@ h1 {
   text-transform: uppercase; letter-spacing: 0.06em;
 }
 .fact .v { color: var(--ink); font-weight: 600; }
+/* The colour says what kind of fact this is, so rows can be scanned by shape. */
+.fact.agent  { border-color: var(--hue-agent-line);  background: var(--hue-agent-soft); }
+.fact.agent .v  { color: var(--hue-agent); }
+.fact.user   { border-color: var(--hue-user-line);   background: var(--hue-user-soft); }
+.fact.user .v   { color: var(--hue-user); }
+.fact.tool   { border-color: var(--hue-tool-line);   background: var(--hue-tool-soft); }
+.fact.tool .v   { color: var(--hue-tool); }
+.fact.policy { border-color: var(--hue-policy-line); background: var(--hue-policy-soft); }
+.fact.policy .v { color: var(--hue-policy); }
+.fact.tenant { border-color: var(--hue-tenant-line); background: var(--hue-tenant-soft); }
+.fact.tenant .v { color: var(--hue-tenant); }
+.fact.decision { border-color: var(--hue-decision-line); background: var(--hue-decision-soft); }
+.fact.decision .v { color: var(--hue-decision); }
+.fact.when   { border-color: var(--hue-when-line);   background: var(--hue-when-soft); }
+.fact.when .v   { color: var(--hue-when); font-weight: 550; }
+
+/* Roles keep the identity theme: a role you can recognise by colour. */
+.fact.role-support_rep  { border-color: var(--hue-user-line); background: var(--hue-user-soft); }
+.fact.role-support_rep .v  { color: var(--hue-user); }
+.fact.role-manager      { border-color: var(--hue-decision-line); background: var(--hue-decision-soft); }
+.fact.role-manager .v      { color: var(--hue-decision); }
+.fact.role-privacy      { border-color: var(--hue-agent-line); background: var(--hue-agent-soft); }
+.fact.role-privacy .v      { color: var(--hue-agent); }
+.fact.role-platform_admin { border-color: var(--hue-policy-line); background: var(--hue-policy-soft); }
+.fact.role-platform_admin .v { color: var(--hue-policy); }
+.fact.role-billing      { border-color: var(--hue-tool-line); background: var(--hue-tool-soft); }
+.fact.role-billing .v      { color: var(--hue-tool); }
+.fact.role-read_only    { border-color: var(--hue-when-line); background: var(--hue-when-soft); }
+.fact.role-read_only .v    { color: var(--hue-when); }
 .event .facts { margin-top: 2px; }
 
 /* --- nav ------------------------------------------------------------------- */
@@ -278,9 +317,13 @@ pre {
 .event:hover { background: var(--surface); }
 .event:hover::after { background: var(--accent); }
 .ev {
-  background: none; border: none; padding: 0; color: var(--accent);
+  background: none; border: none; padding: 0; color: var(--ink-dim);
   font-size: 12.5px; font-weight: 600;
 }
+/* Colour by outcome: a trail is scanned before it is read. */
+.ev.ok { color: var(--green); }
+.ev.warn { color: var(--amber); }
+.ev.bad { color: var(--red); }
 .approval { margin-top: 10px; }
 
 /* --- auth + admin ---------------------------------------------------------- */
@@ -342,6 +385,9 @@ pre {
   background: var(--accent-soft); border: 1px solid var(--accent-line);
   color: var(--accent-strong); white-space: nowrap;
 }
+.chain .node.agent { background: var(--hue-agent-soft); border-color: var(--hue-agent-line); color: var(--hue-agent); }
+.chain .node.user  { background: var(--hue-user-soft);  border-color: var(--hue-user-line);  color: var(--hue-user); }
+.chain .node.tool  { background: var(--hue-tool-soft);  border-color: var(--hue-tool-line);  color: var(--hue-tool); }
 .chain .arrow { color: var(--faint); }
 
 /* --- roles & tools matrix -------------------------------------------------- */
@@ -388,4 +434,29 @@ pre {
   *, *::before, *::after {
     animation-duration: 0.001ms !important; transition-duration: 0.001ms !important;
   }
+}
+
+/* --- a hue per section -----------------------------------------------------
+   The active tab and the page heading share the section's colour, so "where am I"
+   is answered by colour rather than by reading the nav. */
+.app[data-tab="console"]   { --tab: var(--hue-user); }
+.app[data-tab="approvals"] { --tab: var(--hue-decision); }
+.app[data-tab="privacy"]   { --tab: var(--hue-agent); }
+.app[data-tab="roles"]     { --tab: var(--hue-tool); }
+.app[data-tab="audit"]     { --tab: var(--hue-tenant); }
+.app[data-tab="admin"]     { --tab: var(--hue-policy); }
+
+nav button.active {
+  color: var(--tab, var(--accent));
+  border-bottom-color: var(--tab, var(--accent));
+}
+nav button.active::before {
+  content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 7px;
+  border-radius: 999px; background: var(--tab, var(--accent)); vertical-align: 1px;
+}
+main h2 { color: var(--tab, var(--ink)); }
+main h2::before {
+  content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 9px;
+  border-radius: 999px; background: var(--tab, var(--accent));
+  box-shadow: 0 0 0 4px rgb(255 255 255 / 0.04); vertical-align: 1px;
 }

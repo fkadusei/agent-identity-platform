@@ -50,12 +50,25 @@ const EXAMPLES: { label: string; task: string; tool: string }[] = [
 const at = (ts: number | undefined) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
 
 /** One labelled chip: the caption is a micro-label, the value carries the emphasis. */
-const FACT = (k: string, v: any) => (
-  <span className="fact">
+type Kind = "agent" | "user" | "tool" | "policy" | "when" | "tenant" | "decision" | "";
+
+/** One labelled chip. `kind` is what gives it a colour: the colour says which sort of
+    fact it is (who, which tool, which policy), not decoration. */
+const FACT = (k: string, v: any, kind: Kind = "") => (
+  <span className={kind ? `fact ${kind}` : "fact"}>
     <span className="k">{k}</span>
     <span className="v">{v}</span>
   </span>
 );
+
+/** Colour by outcome, so a trail can be scanned rather than read. */
+const tone = (s: any) => {
+  const v = String(s ?? "").toLowerCase();
+  if (/deny|denied|refus|error|fail/.test(v)) return "bad";
+  if (/approval|held|require|pending|limit/.test(v)) return "warn";
+  if (/allow|ok|issued|approved|success/.test(v)) return "ok";
+  return "";
+};
 
 const shortId = (id: string) => id.split("/").filter(Boolean).slice(-2).join("/");
 
@@ -139,7 +152,7 @@ export default function App() {
   };
 
   return (
-    <div className="app">
+    <div className="app" data-tab={tab}>
       <header>
         <div className="brand">
           <span className="mark" aria-hidden="true">AI</span>
@@ -155,9 +168,18 @@ export default function App() {
           {session ? (
             <>
               <span className="facts">
-                {FACT("signed in", session.user)}
-                {session.tenant && FACT("tenant", session.tenant)}
-                {FACT("roles", session.roles.length ? session.roles.join(", ") : "none")}
+                {FACT("signed in", session.user, "user")}
+                {session.tenant && FACT("tenant", session.tenant, "tenant")}
+                {session.roles.length ? (
+                  session.roles.map((r) => (
+                    <span className={`fact role-${r}`} key={r}>
+                      <span className="k">role</span>
+                      <span className="v">{r}</span>
+                    </span>
+                  ))
+                ) : (
+                  FACT("roles", "none")
+                )}
               </span>
               <button className="ghost" onClick={signOut}>Sign out</button>
             </>
@@ -523,13 +545,13 @@ function ResultCard({
       </ol>
 
       <div className="chain" title={agentId}>
-        <span className="node">agent {shortId(agentId) || "agent"}</span>
+        <span className="node agent">agent {shortId(agentId) || "agent"}</span>
         <span className="arrow">→</span>
-        <span className="node">user {session.user}</span>
+        <span className="node user">user {session.user}</span>
         {outcome.tool && (
           <>
             <span className="arrow">→</span>
-            <span className="node">tool {outcome.tool}</span>
+            <span className="node tool">tool {outcome.tool}</span>
           </>
         )}
       </div>
@@ -653,11 +675,11 @@ function Approvals({
             <code>{a.id}</code>
           </div>
           <div className="chain" title={a.agent}>
-            <span className="node">agent {shortId(a.agent || agentId) || "agent"}</span>
+            <span className="node agent">agent {shortId(a.agent || agentId) || "agent"}</span>
             <span className="arrow">→</span>
-            <span className="node">user {a.user}</span>
+            <span className="node user">user {a.user}</span>
             <span className="arrow">→</span>
-            <span className="node">tool {a.tool}</span>
+            <span className="node tool">tool {a.tool}</span>
           </div>
           <p className="reason">{a.reason}</p>
           <pre>{JSON.stringify(a.args, null, 2)}</pre>
@@ -876,14 +898,14 @@ function Audit({ session }: { session: Session }) {
       <div className="timeline">
         {events.map((e, i) => (
           <div className="event" key={i}>
-            <code className="ev">{e.event}</code>
+            <code className={`ev ${tone(e.event)}`}>{e.event}</code>
             <span className="facts">
-              {e.spiffe_id && FACT("agent", shortId(e.spiffe_id))}
-              {e.sub && FACT("user", e.sub)}
-              {e.tool && FACT("tool", e.tool)}
-              {e.decision && FACT("decision", e.decision)}
-              {e.ts && FACT("when", at(e.ts))}
-              {e.policy_version && FACT("policy", e.policy_version)}
+              {e.spiffe_id && FACT("agent", shortId(e.spiffe_id), "agent")}
+              {e.sub && FACT("user", e.sub, "user")}
+              {e.tool && FACT("tool", e.tool, "tool")}
+              {e.decision && FACT("decision", e.decision, "decision")}
+              {e.ts && FACT("when", at(e.ts), "when")}
+              {e.policy_version && FACT("policy", e.policy_version, "policy")}
             </span>
           </div>
         ))}
@@ -944,12 +966,12 @@ function Privacy({ session }: { session: Session }) {
       <div className="timeline">
         {data.access.map((a: any, i: number) => (
           <div className="event" key={i}>
-            <code className="ev">{outcome(a)}</code>
+            <code className={`ev ${tone(outcome(a))}`}>{outcome(a)}</code>
             <span className="facts">
-              {FACT("user", a.user)}
-              {FACT("tool", a.tool)}
-              {FACT("when", at(a.at))}
-              {a.policy_version && FACT("policy", a.policy_version)}
+              {FACT("user", a.user, "user")}
+              {FACT("tool", a.tool, "tool")}
+              {FACT("when", at(a.at), "when")}
+              {a.policy_version && FACT("policy", a.policy_version, "policy")}
             </span>
             {a.reason && <p className="reason">{a.reason}</p>}
           </div>
@@ -965,10 +987,10 @@ function Privacy({ session }: { session: Session }) {
           <div className="event" key={a.id}>
             <code className="ev">{a.status}</code>
             <span className="facts">
-              {a.args?.customer_id && FACT("customer", a.args.customer_id)}
-              {FACT("asked by", a.user)}
-              {FACT("when", at(a.created_at))}
-              {a.approver && FACT("decided by", a.approver)}
+              {a.args?.customer_id && FACT("customer", a.args.customer_id, "tool")}
+              {FACT("asked by", a.user, "user")}
+              {FACT("when", at(a.created_at), "when")}
+              {a.approver && FACT("decided by", a.approver, "decision")}
             </span>
             {a.reason && <p className="reason">{a.reason}</p>}
             {a.note && <p className="reason">“{a.note}”</p>}
