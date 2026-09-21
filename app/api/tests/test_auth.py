@@ -76,3 +76,25 @@ def test_platform_roles_filters_keycloak_builtins():
     assert platform_roles(["default-roles-agent-platform", "offline_access", "support_rep"]) == [
         "support_rep"
     ]
+
+
+def test_platform_roles_keeps_every_role_the_platform_has_and_no_builtins():
+    """Every role the policy enforces must survive this filter.
+
+    `billing` and `read_only` were missing from PLATFORM_ROLES, so a user holding only
+    one of them signed in with `roles: []` while the policy still granted them tools —
+    the UI said "no roles" and the platform let them work. A list that decides what the
+    user sees has to include every role the policy acts on.
+    """
+    from app.api.auth import PLATFORM_ROLES, platform_roles
+
+    assert set(PLATFORM_ROLES) == {
+        "support_rep",
+        "billing",
+        "read_only",
+        "privacy",
+        "manager",
+        "platform_admin",
+    }
+    kept = platform_roles(["billing", "default-roles-agent-platform", "offline_access"])
+    assert kept == ["billing"]

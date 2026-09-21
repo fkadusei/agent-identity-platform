@@ -23,9 +23,22 @@ from app.common import metrics
 
 router = APIRouter()
 
-# The roles this platform knows about. Keycloak also emits built-ins
-# (default-roles-…, offline_access, uma_authorization) that are not ours.
-PLATFORM_ROLES = ("support_rep", "manager", "privacy", "platform_admin")
+# The roles this platform knows about — every role the policy has tools for, and no
+# others. Keycloak also emits built-ins (default-roles-…, offline_access,
+# uma_authorization) that are not ours, and those are dropped.
+#
+# This list is the UI's view of a user, and a role missing from it is invisible even
+# though the policy honours it: `billing` and `read_only` were absent here, so bella
+# signed in showing *no roles* while OPA — which does know `billing` — handed her three
+# tools. Capability and display disagreed, and the display is what a person believes.
+PLATFORM_ROLES = (
+    "support_rep",
+    "billing",
+    "read_only",
+    "privacy",
+    "manager",
+    "platform_admin",
+)
 
 # The agent's SPIFFE ID, surfaced so the UI can show the real delegation chain.
 AGENT_SPIFFE_ID = os.environ.get(

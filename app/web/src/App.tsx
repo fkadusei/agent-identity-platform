@@ -28,7 +28,16 @@ import {
 type Tab = "console" | "approvals" | "privacy" | "roles" | "audit" | "admin";
 
 // The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
-const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
+// The same set the api reports as platform roles; a role missing here cannot be
+// granted or revoked from the admin table, even though the policy enforces it.
+const ASSIGNABLE = [
+  "support_rep",
+  "billing",
+  "read_only",
+  "privacy",
+  "manager",
+  "platform_admin",
+];
 
 // Example tasks, each tied to the tool it exercises, so the console offers only
 // what this user's role can actually do — a privacy user sees the PII request, a
