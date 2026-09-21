@@ -130,12 +130,15 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <div>
-          <h1>Agent Identity Platform</h1>
-          <p className="sub">
+        <div className="brand">
+          <span className="mark" aria-hidden="true">AI</span>
+          <div>
+            <h1>Agent Identity Platform</h1>
+            <p className="sub">
             A support copilot with a cryptographic identity — no API keys, policy
             on every action, human approval for high-risk ones.
-          </p>
+            </p>
+          </div>
         </div>
         <div className="who">
           {session ? (
@@ -145,7 +148,7 @@ export default function App() {
                 {session.tenant && <> · tenant {session.tenant}</>}
                 {session.roles.length ? <> · {session.roles.join(", ")}</> : <> · no roles</>}
               </span>
-              <button onClick={signOut}>Sign out</button>
+              <button className="ghost" onClick={signOut}>Sign out</button>
             </>
           ) : (
             <span>{mode === "login" ? "sign in to continue" : "create an account"}</span>
@@ -241,7 +244,7 @@ function Login({
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
         />
-        <button disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        <button className="primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </form>
       {error && <div className="error">{error}</div>}
       <p className="hint">
@@ -293,7 +296,7 @@ function Enroll({ onDone, onCancel }: { onDone: () => void; onCancel: () => void
         <p className="hint">
           Your account has <b>no roles</b> yet. Ask an admin to grant you access, then sign in.
         </p>
-        <button onClick={onDone}>Back to sign in</button>
+        <button className="ghost" onClick={onDone}>Back to sign in</button>
       </section>
     );
   }
@@ -312,7 +315,7 @@ function Enroll({ onDone, onCancel }: { onDone: () => void; onCancel: () => void
           value={form.password}
           onChange={set("password")}
         />
-        <button>Create account</button>
+        <button className="primary">Create account</button>
       </form>
       {error && <div className="error">{error}</div>}
       <p className="hint">
@@ -416,7 +419,7 @@ function Console({
         </div>
       )}
       <textarea value={task} onChange={(e) => setTask(e.target.value)} rows={2} />
-      <button disabled={!canRun || busy} onClick={run}>
+      <button className="primary" disabled={!canRun || busy} onClick={run}>
         {busy ? "Running…" : "Run"}
       </button>
       {error && <div className="error">{error}</div>}
@@ -527,7 +530,7 @@ function ResultCard({
               <p>
                 Approved by a manager. <b>Resume</b> to let the agent finish.
               </p>
-              <button disabled={busy} onClick={onResume}>
+              <button className="primary" disabled={busy} onClick={onResume}>
                 Resume now
               </button>
             </>
@@ -541,10 +544,10 @@ function ResultCard({
                 Held for approval <code>{outcome.approval_id}</code> — you can decide it.
               </span>
               <div>
-                <button disabled={busy} onClick={() => onDecide(true)}>
+                <button className="ok" disabled={busy} onClick={() => onDecide(true)}>
                   Approve
                 </button>
-                <button disabled={busy} onClick={() => onDecide(false)}>
+                <button className="danger" disabled={busy} onClick={() => onDecide(false)}>
                   Deny
                 </button>
               </div>
@@ -555,7 +558,7 @@ function ResultCard({
                 Held for approval <code>{outcome.approval_id}</code> — a manager must
                 decide it in the Approvals tab.
               </span>
-              <button disabled={busy} onClick={onResume}>
+              <button className="primary" disabled={busy} onClick={onResume}>
                 Resume when approved
               </button>
             </div>
@@ -650,10 +653,10 @@ function Approvals({
           <div className="row">
             <span className="muted">requested by {a.user}</span>
             <div>
-              <button disabled={!canApprove} onClick={() => decide(a.id, true)}>
+              <button className="ok" disabled={!canApprove} onClick={() => decide(a.id, true)}>
                 Approve
               </button>
-              <button disabled={!canApprove} onClick={() => decide(a.id, false)}>
+              <button className="danger" disabled={!canApprove} onClick={() => decide(a.id, false)}>
                 Deny
               </button>
             </div>
@@ -768,7 +771,7 @@ function Admin({ token, self }: { token: string; self: string }) {
               <td className="actions">
                 <button onClick={() => toggleEnabled(u)}>{u.enabled ? "Disable" : "Enable"}</button>
                 <button onClick={() => reset(u)}>Reset password</button>
-                <button disabled={u.username === self} onClick={() => remove(u)}>
+                <button className="danger" disabled={u.username === self} onClick={() => remove(u)}>
                   Delete
                 </button>
               </td>
@@ -824,7 +827,7 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
           </label>
         ))}
       </div>
-      <button>Create</button>
+      <button className="primary">Create</button>
       {error && <div className="error">{error}</div>}
     </form>
   );
