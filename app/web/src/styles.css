@@ -101,3 +101,16 @@ input {
 .examples { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
 .chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; color: var(--muted); }
 .chip:hover { color: var(--accent); border-color: var(--accent); }
+
+/* --- session expiry + stale data ------------------------------------------ */
+/* An explanation, not a failure: the token expired and the tab stayed open. */
+.notice {
+  color: var(--amber); background: #2a2413; border: 1px solid #55481f;
+  border-radius: 8px; padding: 10px 12px; margin: 16px 0 0; max-width: 60ch;
+}
+.stale { color: var(--amber); }
+
+/* --- keyboard focus -------------------------------------------------------- */
+/* Buttons and inputs are styled by hand, which hides the browser's default ring;
+   without this, keyboard users cannot see where they are. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

@@ -1,6 +1,14 @@
 // Minimal API client. In production the UI is same-origin; in dev, Vite proxies.
 const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
+// A 401 on a call that *carried* a token means the token is no longer good. The
+// demo's user tokens live 5 minutes (the realm's `accessTokenLifespan`), so a tab
+// left open meets this. It is worth announcing rather than letting each page fail
+// on its own: the audit timeline used to catch it and render "No events yet", which
+// reads as data loss instead of an expired session. The app listens for this, drops
+// the session and explains what happened.
+export const SESSION_EXPIRED = "agent-platform:session-expired";
+
 async function request(path: string, init: RequestInit = {}): Promise<any> {
   let res: Response;
   try {
@@ -19,7 +27,17 @@ async function request(path: string, init: RequestInit = {}): Promise<any> {
         `\`kubectl port-forward svc/api 8080:8080\` still alive?`,
     );
   }
+  // Only an *authenticated* call can expire: a 401 from /auth/login is a wrong
+  // password, and signing the user out over it would be nonsense.
+  const carriedToken = Boolean(
+    (init.headers as Record<string, string> | undefined)?.Authorization,
+  );
   const body = await res.json().catch(() => ({}));
+  if (res.status === 401 && carriedToken) {
+    clearSession();
+    window.dispatchEvent(new CustomEvent(SESSION_EXPIRED));
+    throw new Error("Your session expired — sign in again to continue.");
+  }
   if (!res.ok) throw new Error(errorMessage(body, res.status));
   return body;
 }

@@ -12,6 +12,7 @@ import {
   grantRole,
   listApprovals,
   clearSession,
+  SESSION_EXPIRED,
   listUsers,
   loadSession,
   login,
@@ -67,6 +68,23 @@ export default function App() {
   const [signupEnabled, setSignupEnabled] = useState(false);
   const [agentId, setAgentId] = useState("");
   const [mode, setMode] = useState<"login" | "enroll">("login");
+  // Set when the token expires under a tab that is already open. The tab is kept
+  // (unlike an explicit sign-out) so signing back in returns you to what you were
+  // doing, rather than to the console.
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const onExpired = () => {
+      setSessionState(null);
+      setMode("login");
+      setNotice(
+        "Your session expired (tokens last 5 minutes). Sign in again and you will come " +
+          "back to this tab — the page was left open, nothing was lost.",
+      );
+    };
+    window.addEventListener(SESSION_EXPIRED, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED, onExpired);
+  }, []);
 
   useEffect(() => {
     authConfig()
@@ -123,10 +141,15 @@ export default function App() {
         </div>
       </header>
 
+      {!session && notice && <p className="notice">{notice}</p>}
+
       {!session &&
         (mode === "login" ? (
           <Login
-            onLogin={setSession}
+            onLogin={(s) => {
+              setNotice("");
+              setSession(s);
+            }}
             onEnroll={() => setMode("enroll")}
             signupEnabled={signupEnabled}
           />
@@ -797,8 +820,20 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
 
 function Audit({ session }: { session: Session }) {
   const [events, setEvents] = useState<any[]>([]);
+  const [stale, setStale] = useState(false);
   useEffect(() => {
-    const load = async () => setEvents(await getAudit(session.token).catch(() => []));
+    // Keep the last good timeline when a refresh fails, and say it is stale. The
+    // previous version caught the failure and set an empty array, so a dropped
+    // port-forward or an expired token rendered "No events yet" — which reads as the
+    // audit trail having been lost, rather than as not having been re-read.
+    const load = async () => {
+      try {
+        setEvents(await getAudit(session.token));
+        setStale(false);
+      } catch {
+        setStale(true);
+      }
+    };
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
@@ -810,6 +845,7 @@ function Audit({ session }: { session: Session }) {
       <p className="hint">
         One record per event, keyed by identity. Tokens and personal data are
         redacted before anything is written.
+        {stale && <> <b className="stale">Not updating — the last good view is below.</b></>}
       </p>
       <div className="timeline">
         {events.map((e, i) => (
