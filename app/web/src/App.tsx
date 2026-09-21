@@ -46,6 +46,17 @@ const EXAMPLES: { label: string; task: string; tool: string }[] = [
 ];
 
 // "spiffe://acme.com/ns/agent-platform/sa/agent" -> "sa/agent" (title has the rest).
+/** Every timestamp in the UI goes through this, so they read the same everywhere. */
+const at = (ts: number | undefined) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
+
+/** One labelled chip: the caption is a micro-label, the value carries the emphasis. */
+const FACT = (k: string, v: any) => (
+  <span className="fact">
+    <span className="k">{k}</span>
+    <span className="v">{v}</span>
+  </span>
+);
+
 const shortId = (id: string) => id.split("/").filter(Boolean).slice(-2).join("/");
 
 const STATUS_LABEL: Record<string, string> = {
@@ -143,10 +154,10 @@ export default function App() {
         <div className="who">
           {session ? (
             <>
-              <span>
-                signed in as <b>{session.user}</b>
-                {session.tenant && <> · tenant {session.tenant}</>}
-                {session.roles.length ? <> · {session.roles.join(", ")}</> : <> · no roles</>}
+              <span className="facts">
+                {FACT("signed in", session.user)}
+                {session.tenant && FACT("tenant", session.tenant)}
+                {FACT("roles", session.roles.length ? session.roles.join(", ") : "none")}
               </span>
               <button className="ghost" onClick={signOut}>Sign out</button>
             </>
@@ -866,11 +877,13 @@ function Audit({ session }: { session: Session }) {
         {events.map((e, i) => (
           <div className="event" key={i}>
             <code className="ev">{e.event}</code>
-            <span className="meta">
-              {e.spiffe_id && <>agent <b>{shortId(e.spiffe_id)}</b> · </>}
-              {e.sub && <>user <b>{e.sub}</b> · </>}
-              {e.tool && <>tool <code>{e.tool}</code> · </>}
-              {e.decision && <>decision <b>{e.decision}</b></>}
+            <span className="facts">
+              {e.spiffe_id && FACT("agent", shortId(e.spiffe_id))}
+              {e.sub && FACT("user", e.sub)}
+              {e.tool && FACT("tool", e.tool)}
+              {e.decision && FACT("decision", e.decision)}
+              {e.ts && FACT("when", at(e.ts))}
+              {e.policy_version && FACT("policy", e.policy_version)}
             </span>
           </div>
         ))}
@@ -914,8 +927,6 @@ function Privacy({ session }: { session: Session }) {
         <p className="hint">Loading…</p>
       </section>
     );
-
-  const at = (ts: number) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
   const outcome = (a: any) => STATUS_LABEL[a.decision] ?? a.decision ?? a.event;
 
   return (
@@ -934,11 +945,13 @@ function Privacy({ session }: { session: Session }) {
         {data.access.map((a: any, i: number) => (
           <div className="event" key={i}>
             <code className="ev">{outcome(a)}</code>
-            <span className="meta">
-              user <b>{a.user}</b> · tool <code>{a.tool}</code>
-              {a.reason && <> · {a.reason}</>} · {at(a.at)}
-              {a.policy_version && <> · policy <b>{a.policy_version}</b></>}
+            <span className="facts">
+              {FACT("user", a.user)}
+              {FACT("tool", a.tool)}
+              {FACT("when", at(a.at))}
+              {a.policy_version && FACT("policy", a.policy_version)}
             </span>
+            {a.reason && <p className="reason">{a.reason}</p>}
           </div>
         ))}
         {data.access.length === 0 && (
@@ -951,22 +964,14 @@ function Privacy({ session }: { session: Session }) {
         {data.approvals.map((a: any) => (
           <div className="event" key={a.id}>
             <code className="ev">{a.status}</code>
-            <span className="meta">
-              {a.args?.customer_id && (
-                <>
-                  customer <b>{a.args.customer_id}</b> ·{" "}
-                </>
-              )}
-              asked by <b>{a.user}</b>
-              {a.reason && <> · {a.reason}</>} · {at(a.created_at)}
-              {a.approver && (
-                <>
-                  {" "}
-                  · decided by <b>{a.approver}</b> {at(a.decided_at)}
-                </>
-              )}
-              {a.note && <> — “{a.note}”</>}
+            <span className="facts">
+              {a.args?.customer_id && FACT("customer", a.args.customer_id)}
+              {FACT("asked by", a.user)}
+              {FACT("when", at(a.created_at))}
+              {a.approver && FACT("decided by", a.approver)}
             </span>
+            {a.reason && <p className="reason">{a.reason}</p>}
+            {a.note && <p className="reason">“{a.note}”</p>}
           </div>
         ))}
         {data.approvals.length === 0 && (
