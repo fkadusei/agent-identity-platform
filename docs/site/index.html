@@ -1,0 +1,1837 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Agent Identity Platform — the whole thing, explained</title>
+<meta name="description" content="A plain-language explanation of the Agent Identity Platform: how workload identity, token delegation, policy, human approval, audit and multi-tenancy fit together, with the code that does it." />
+<style>
+/* ==========================================================================
+   One page, no dependencies. Dark by default; a light theme is one attribute
+   away. The palette is the platform's own, so the documentation and the product
+   look like the same thing.
+   ========================================================================== */
+:root{
+  --bg:#0b0f16; --bg2:#0e131c; --surface:#131a24; --surface2:#182231; --surface3:#1d2938;
+  --line:#24304a; --line2:#1c2536; --line3:#33415c;
+  --ink:#e8eef7; --ink2:#c3cedd; --muted:#8d9bb0; --faint:#64738a;
+  --accent:#8fb4ff; --accent2:#b6ccff; --accent-soft:#16233c; --accent-line:#2f4770;
+  --green:#6ee7a8; --green-soft:#10281d; --green-line:#245139;
+  --amber:#f0c56a; --amber-soft:#2a2110; --amber-line:#4f3f1c;
+  --red:#ff9d92; --red-soft:#2b1513; --red-line:#572824;
+  --violet:#b9a3ff; --violet-soft:#1b1730; --violet-line:#362a5c;
+  --teal:#5fd3c0; --teal-soft:#0f2624; --teal-line:#1f4d47;
+  --rose:#ff9fc0; --rose-soft:#2b1421; --rose-line:#562a3e;
+  --r:10px; --r2:14px; --shadow:0 6px 20px -8px rgb(0 0 0/.55);
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html[data-theme="light"]{
+  --bg:#f7f9fc; --bg2:#eef2f8; --surface:#ffffff; --surface2:#f4f7fb; --surface3:#eaeff7;
+  --line:#d7e0ee; --line2:#e4eaf4; --line3:#bcc9dd;
+  --ink:#101826; --ink2:#2a3a52; --muted:#5a6b85; --faint:#8194ad;
+  --accent:#2f63c8; --accent2:#1f4da8; --accent-soft:#e8f0ff; --accent-line:#b9cdf3;
+  --green:#0f7a4a; --green-soft:#e8f8f0; --green-line:#b3e3cb;
+  --amber:#8a5a00; --amber-soft:#fdf5e3; --amber-line:#efdba6;
+  --red:#a8322a; --red-soft:#fdeceb; --red-line:#f3c3bf;
+  --violet:#6242c4; --violet-soft:#f0ecfe; --violet-line:#cec2f6;
+  --teal:#0b6f61; --teal-soft:#e6f7f4; --teal-line:#b0e2da;
+  --rose:#a8305f; --rose-soft:#fdecf3; --rose-line:#f4c2d7;
+  --shadow:0 6px 18px -10px rgb(16 24 38/.25);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 var(--sans);
+  -webkit-font-smoothing:antialiased}
+::selection{background:rgb(143 180 255/.28)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:var(--mono);font-size:.86em;background:var(--bg2);border:1px solid var(--line2);
+  padding:1px 6px;border-radius:6px;color:var(--ink2)}
+h1,h2,h3,h4{line-height:1.3;letter-spacing:-.01em}
+h2{font-size:1.6rem;margin:0 0 .4rem}
+h3{font-size:1.12rem;margin:2rem 0 .5rem}
+h4{font-size:.98rem;margin:1.4rem 0 .35rem;color:var(--ink2)}
+p{margin:.7rem 0}
+
+/* --- layout ------------------------------------------------------------- */
+.wrap{display:grid;grid-template-columns:288px minmax(0,1fr);gap:0;max-width:1400px;margin:0 auto}
+aside{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line2);
+  padding:22px 16px 60px;background:linear-gradient(180deg,var(--surface),var(--bg))}
+main{padding:34px 40px 120px;max-width:980px}
+@media (max-width:980px){
+  .wrap{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line2)}
+  main{padding:24px 18px 90px}
+}
+
+/* --- sidebar ------------------------------------------------------------ */
+.brandline{display:flex;align-items:center;gap:11px;margin-bottom:16px}
+.brandline .mark{width:34px;height:34px;flex:none;border-radius:10px;display:grid;place-items:center;
+  font:700 13px/1 var(--sans);color:#0b0f16;
+  background:linear-gradient(150deg,var(--accent2),var(--accent) 60%,#6f92d8)}
+.brandline b{display:block;font-size:.95rem}
+.brandline span{display:block;font-size:.72rem;color:var(--faint)}
+.tools{display:flex;gap:8px;margin:0 0 14px}
+.tools button{flex:1;font:inherit;font-size:.76rem;padding:6px 8px;cursor:pointer;color:var(--muted);
+  background:var(--surface2);border:1px solid var(--line);border-radius:9px}
+.tools button:hover{color:var(--accent);border-color:var(--accent-line)}
+.filter{width:100%;font:inherit;font-size:.8rem;padding:8px 10px;color:var(--ink);
+  background:var(--bg2);border:1px solid var(--line);border-radius:9px;margin-bottom:12px}
+nav ol{list-style:none;margin:0;padding:0}
+nav .group{margin:0 0 10px}
+nav .gtitle{font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--faint);padding:8px 8px 4px}
+nav a{display:block;padding:5px 9px;border-radius:7px;color:var(--ink2);font-size:.86rem;
+  border-left:2px solid transparent}
+nav a:hover{background:var(--surface2);text-decoration:none;color:var(--ink)}
+nav a.active{color:var(--accent);background:var(--accent-soft);border-left-color:var(--accent)}
+nav a.hidden{display:none}
+.progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0;z-index:50}
+
+/* --- content pieces ----------------------------------------------------- */
+.hero h1{font-size:2.1rem;margin:0 0 .5rem}
+.hero .lede{font-size:1.1rem;color:var(--ink2);max-width:64ch}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:650;
+  letter-spacing:.05em;text-transform:uppercase;padding:3px 10px;border-radius:999px;
+  border:1px solid var(--line);background:var(--surface2);color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);
+  padding:16px 18px;margin:16px 0;box-shadow:var(--shadow)}
+.callout{border:1px solid var(--line3);border-left-width:3px;border-radius:var(--r);
+  padding:12px 15px;margin:14px 0;background:var(--surface2);font-size:.95rem}
+.callout b:first-child{display:block;margin-bottom:2px}
+.callout.info{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.ok{border-left-color:var(--green);background:var(--green-soft)}
+.callout.warn{border-left-color:var(--amber);background:var(--amber-soft)}
+.callout.danger{border-left-color:var(--red);background:var(--red-soft)}
+table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0;font-size:.9rem;
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+th{text-align:left;font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;
+  color:var(--faint);background:var(--surface2);padding:9px 12px;border-bottom:1px solid var(--line)}
+td{padding:9px 12px;border-bottom:1px solid var(--line2);color:var(--ink2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--surface2)}
+.mono{font-family:var(--mono);font-size:.85em}
+.pill{display:inline-block;font:600 .7rem/1.6 var(--sans);letter-spacing:.04em;text-transform:uppercase;
+  padding:2px 9px;border-radius:999px;border:1px solid var(--line3);color:var(--muted)}
+.pill.ok{color:var(--green);border-color:var(--green-line);background:var(--green-soft)}
+.pill.warn{color:var(--amber);border-color:var(--amber-line);background:var(--amber-soft)}
+.pill.bad{color:var(--red);border-color:var(--red-line);background:var(--red-soft)}
+.pill.teal{color:var(--teal);border-color:var(--teal-line);background:var(--teal-soft)}
+.pill.violet{color:var(--violet);border-color:var(--violet-line);background:var(--violet-soft)}
+
+.codeblock{position:relative;margin:14px 0}
+.codeblock pre{margin:0;background:#080c12;border:1px solid var(--line2);border-radius:var(--r);
+  padding:13px 15px;overflow-x:auto;font-family:var(--mono);font-size:.82rem;line-height:1.6;color:#cdd9e8}
+html[data-theme="light"] .codeblock pre{background:#0f1725;color:#dbe6f5}
+.codeblock .cap{font-size:.72rem;color:var(--faint);margin:0 0 5px;letter-spacing:.04em;text-transform:uppercase}
+.codeblock .copy{position:absolute;top:8px;right:8px;font:inherit;font-size:.7rem;padding:4px 9px;
+  cursor:pointer;color:var(--muted);background:rgb(0 0 0/.35);border:1px solid var(--line3);border-radius:7px}
+.codeblock .copy:hover{color:var(--accent);border-color:var(--accent-line)}
+html[data-theme="light"] .copy{background:rgb(255 255 255/.12)}
+pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.5;color:var(--ink2)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:16px 0}
+.steps>li{counter-increment:s;position:relative;padding:2px 0 14px 46px;border-left:1px solid var(--line2);
+  margin-left:14px}
+.steps>li:last-child{border-left-color:transparent}
+.steps>li::before{content:counter(s);position:absolute;left:-15px;top:0;width:28px;height:28px;
+  border-radius:999px;display:grid;place-items:center;font:700 .8rem/1 var(--sans);
+  color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line)}
+.steps>li b{color:var(--ink)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:16px 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:14px 16px}
+.tile h4{margin:0 0 6px;color:var(--ink)}
+.tile p{margin:0;font-size:.9rem;color:var(--muted)}
+.kv{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.kv span{font-size:.78rem;padding:3px 10px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface2);color:var(--ink2)}
+.kv span b{color:var(--ink)}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line2);color:var(--faint);font-size:.85rem}
+.totop{position:fixed;right:18px;bottom:18px;font:inherit;font-size:.78rem;padding:9px 13px;cursor:pointer;
+  color:var(--ink2);background:var(--surface2);border:1px solid var(--line3);border-radius:999px;
+  box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+.totop.show{opacity:1;pointer-events:auto}
+.mark{background:linear-gradient(180deg,transparent 62%,rgb(143 180 255/.25) 0)}
+@media print{aside,.tools,.filter,.totop,.codeblock .copy,.progress{display:none}
+  .wrap{display:block} main{max-width:none;padding:0}
+  .codeblock pre{background:#f4f6fb;color:#101826;border-color:#ccd6e6}}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="wrap">
+<aside>
+  <div class="brandline">
+    <span class="mark" aria-hidden="true">AI</span>
+    <div><b>Agent Identity Platform</b><span>the whole thing, explained</span></div>
+  </div>
+  <div class="tools">
+    <button id="theme" type="button" title="Switch between the dark and light palettes">Light</button>
+    <button id="expand" type="button" title="Open every section so the whole document prints or searches as one">Expand all</button>
+  </div>
+  <input class="filter" id="filter" type="search" placeholder="Filter sections…" aria-label="Filter sections" />
+  <nav aria-label="Contents">
+    <div class="group">
+      <div class="gtitle">Start here</div>
+      <ol>
+        <li><a href="#what">What this is</a></li>
+        <li><a href="#problem">The problem it removes</a></li>
+        <li><a href="#picture">The big picture</a></li>
+        <li><a href="#journey">One request, end to end</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">How it works</div>
+      <ol>
+        <li><a href="#identity">Workload identity</a></li>
+        <li><a href="#delegation">Delegation, explained</a></li>
+        <li><a href="#policy">Policy as code</a></li>
+        <li><a href="#approval">The human in the loop</a></li>
+        <li><a href="#tools">The tool boundary</a></li>
+        <li><a href="#gateway">The LLM gateway</a></li>
+        <li><a href="#transport">Transport security</a></li>
+        <li><a href="#tenancy">Multi-tenancy</a></li>
+        <li><a href="#data">Data and durability</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">Running it</div>
+      <ol>
+        <li><a href="#deploy">Deployment</a></li>
+        <li><a href="#ci">CI/CD and supply chain</a></li>
+        <li><a href="#ops">Operations</a></li>
+        <li><a href="#verified">What is verified, and how</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">The record</div>
+      <ol>
+        <li><a href="#built">How this was built</a></li>
+        <li><a href="#limits">Limits and non-goals</a></li>
+        <li><a href="#appendix">Appendix</a></li>
+      </ol>
+    </div>
+  </nav>
+</aside>
+
+<main>
+<section class="hero" id="what">
+  <span class="tag">Explained in plain language</span>
+  <h1>Agent Identity Platform</h1>
+  <p class="lede">
+    An <b>identity and authorization layer for AI agents</b>. Agents here hold no API keys
+    and no passwords. They prove <i>who they are</i> with a short-lived cryptographically
+    issued identity, act <i>on behalf of</i> a specific person with a scoped token, and every
+    action passes a policy check and, when it matters, a human decision — all of it recorded
+    against the identity that did it.
+  </p>
+  <div class="kv">
+    <span><b>SPIFFE</b> workload identity</span>
+    <span><b>OAuth 2.0</b> token exchange</span>
+    <span><b>OPA</b> policy as code</span>
+    <span><b>Human</b> approval</span>
+    <span><b>Audit</b> on identity</span>
+    <span><b>Kubernetes</b></span>
+  </div>
+  <div class="callout info">
+    <b>How to read this document</b>
+    It is written for a developer who has never seen the project: every acronym is defined
+    where it first appears, and there is a glossary at the end. Sections 1–4 are the story;
+    5–13 are how each part works, with the real code; 14–18 are running, verifying and the
+    project's own history, including its mistakes. Everything quoted here is from the
+    repository itself — file paths are given so you can check.
+  </div>
+</section>
+
+<section id="problem">
+  <h2>The problem it removes</h2>
+  <p>
+    An agent that can act on a company's systems needs credentials to those systems. The
+    usual answer is a long-lived secret — an API key in an environment variable, a password
+    in a config file, a service-account JSON on disk. That answer has four problems, and
+    they compound:
+  </p>
+  <ol class="steps">
+    <li><b>A secret is a password, not an identity.</b> It says "someone holds the key",
+      not who is acting or on whose behalf. It cannot be scoped to one person, so anything
+      the key can do, anyone who steals it can do.</li>
+    <li><b>It never expires in practice.</b> Rotating it means touching every place it is
+      used, so it stays. A credential that might leak tomorrow is a credential that leaked
+      yesterday.</li>
+    <li><b>It is copied to wherever the work happens</b> — a pod, a laptop, a CI runner,
+      a log line in a stack trace. Each copy is another way to leak it.</li>
+    <li><b>Nothing links actions back to a person.</b> When the audit trail says "a refund
+      was issued", the useful question — <i>by whom, for whom, and was it allowed</i> —
+      has no answer.</li>
+  </ol>
+  <p>
+    This platform replaces the secret with <b>identity</b>: a workload receives a
+    certificate that says what it is, usable only inside the cluster, expiring in an hour,
+    never stored on disk. It acts with a token that names the user it is acting for and the
+    audience it is meant for, valid for minutes. Policy decides what that combination may
+    do, a human decides the risky cases, and the audit trail records the whole chain.
+  </p>
+  <div class="callout ok">
+    <b>The claim, stated so it can be checked</b>
+    There is no static credential between the components of this platform. Not between the
+    agent and the tools, not between the API and Keycloak, not between the services and the
+    database. <code>docs/threat-model.md</code> lists ten threats and names the test that
+    addresses each; <a href="#verified">§17</a> shows how to run them.
+  </div>
+
+  <h3>The ten threats it is designed against</h3>
+  <p>These come from the project's own threat model, and they are the yardstick every
+    design decision is measured against.</p>
+  <table>
+    <thead><tr><th>Threat</th><th>What it means</th><th>Answered by</th></tr></thead>
+    <tbody>
+      <tr><td><b>T1</b> Stolen credential impersonates a workload</td><td>A key copied out of a pod</td><td>Short-lived SVIDs fetched from the Workload API, never on disk (<a href="#identity">§5</a>)</td></tr>
+      <tr><td><b>T2</b> Token forwarding</td><td>Passing a token on to something it was not meant for</td><td>Audience-bound exchange, and a named caller on machine hops (<a href="#delegation">§6</a>)</td></tr>
+      <tr><td><b>T3</b> Prompt injection</td><td>The model being talked into something</td><td>The model never authorizes; policy does, and the agent only offers permitted tools (<a href="#policy">§7</a>)</td></tr>
+      <tr><td><b>T4</b> Approval bypass</td><td>Doing the held action another way</td><td>The tool server refuses the action without a verified approval (<a href="#approval">§8</a>)</td></tr>
+      <tr><td><b>T5</b> Privilege escalation</td><td>Reaching beyond your role</td><td>Deny-by-default policy, server-side role checks, separation of duties</td></tr>
+      <tr><td><b>T6</b> Secret leakage into git</td><td>A secret committed</td><td>Generated secrets, a pre-commit hook, gitleaks in CI over the full history</td></tr>
+      <tr><td><b>T7</b> Secret/PII leakage into logs and traces</td><td>A token or personal data recorded</td><td>Redaction before anything is written (<a href="#data">§13</a>)</td></tr>
+      <tr><td><b>T8</b> PII exposure via the model</td><td>Personal data reaching the provider</td><td>The gateway is the only thing holding the model credential; PII needs its own role and approval (<a href="#gateway">§10</a>)</td></tr>
+      <tr><td><b>T9</b> Cross-tenant leakage</td><td>One customer seeing another's data</td><td>The tenant is an identity claim, scoped at every layer (<a href="#tenancy">§12</a>)</td></tr>
+      <tr><td><b>T10</b> Supply chain</td><td>A tampered image or policy</td><td>Keyless signing and an admission policy (<a href="#ci">§15</a>)</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="picture">
+  <h2>The big picture</h2>
+  <p>
+    One pod per job, a shared identity system underneath, and two security regimes with a
+    deliberate line between them: <b>our own workloads prove who they are with SPIFFE</b>,
+    and <b>third-party software we did not write is wrapped by a service mesh</b>. The
+    diagram is the whole architecture; the rest of this document explains each box.
+  </p>
+
+  <svg viewBox="0 0 940 470" width="100%" role="img" aria-label="Architecture: a browser reaches an ingress which fronts the API; the API, agent, tools, gateway and sandbox are connected by SPIFFE mTLS; Keycloak, OPA, Postgres, the sandbox and the observability stack are covered by the service mesh; SPIRE issues identities to all of it.">
+    <defs>
+      <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+      </marker>
+      <marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/>
+      </marker>
+    </defs>
+
+    <!-- zones -->
+    <rect x="8" y="8" width="924" height="454" rx="14" fill="none" stroke="var(--line)"/>
+    <rect x="22" y="52" width="196" height="150" rx="12" fill="var(--surface2)" stroke="var(--line)"/>
+    <text x="34" y="74" fill="var(--faint)" font-size="11" font-weight="700" letter-spacing="1.2">HOST / OUTSIDE</text>
+    <rect x="238" y="52" width="470" height="390" rx="12" fill="var(--violet-soft)" stroke="var(--violet-line)"/>
+    <text x="250" y="74" fill="var(--violet)" font-size="11" font-weight="700" letter-spacing="1.2">OUR WORKLOADS — SPIFFE mTLS, CALLER NAMED</text>
+    <rect x="726" y="52" width="192" height="390" rx="12" fill="var(--teal-soft)" stroke="var(--teal-line)"/>
+    <text x="738" y="74" fill="var(--teal)" font-size="11" font-weight="700" letter-spacing="1.2">THIRD-PARTY — MESH mTLS</text>
+
+    <!-- host side -->
+    <rect x="38" y="90" width="164" height="42" rx="9" fill="var(--surface)" stroke="var(--line3)"/>
+    <text x="120" y="108" fill="var(--ink)" font-size="13" text-anchor="middle">browser</text>
+    <text x="120" y="123" fill="var(--muted)" font-size="10.5" text-anchor="middle">a person, no SVID</text>
+    <rect x="38" y="148" width="164" height="42" rx="9" fill="var(--surface)" stroke="var(--line3)"/>
+    <text x="120" y="166" fill="var(--ink)" font-size="13" text-anchor="middle">ingress (nginx)</text>
+    <text x="120" y="181" fill="var(--muted)" font-size="10.5" text-anchor="middle">terminates the TLS</text>
+    <line x1="120" y1="132" x2="120" y2="146" stroke="var(--muted)" marker-end="url(#a)"/>
+    <text x="128" y="143" fill="var(--muted)" font-size="10">https</text>
+
+    <!-- our workloads -->
+    <rect x="262" y="96" width="150" height="44" rx="9" fill="var(--surface)" stroke="var(--accent-line)"/>
+    <text x="337" y="115" fill="var(--ink)" font-size="13" text-anchor="middle">api</text>
+    <text x="337" y="130" fill="var(--muted)" font-size="10.5" text-anchor="middle">login · tasks · audit</text>
+    <rect x="262" y="182" width="150" height="44" rx="9" fill="var(--surface)" stroke="var(--accent-line)"/>
+    <text x="337" y="201" fill="var(--ink)" font-size="13" text-anchor="middle">agent</text>
+    <text x="337" y="216" fill="var(--muted)" font-size="10.5" text-anchor="middle">LangGraph + approvals</text>
+    <rect x="262" y="268" width="150" height="44" rx="9" fill="var(--surface)" stroke="var(--accent-line)"/>
+    <text x="337" y="287" fill="var(--ink)" font-size="13" text-anchor="middle">tools</text>
+    <text x="337" y="302" fill="var(--muted)" font-size="10.5" text-anchor="middle">the enforcement point</text>
+    <rect x="470" y="182" width="150" height="44" rx="9" fill="var(--surface)" stroke="var(--accent-line)"/>
+    <text x="545" y="201" fill="var(--ink)" font-size="13" text-anchor="middle">gateway</text>
+    <text x="545" y="216" fill="var(--muted)" font-size="10.5" text-anchor="middle">the only model credential</text>
+    <rect x="470" y="300" width="150" height="44" rx="9" fill="var(--surface)" stroke="var(--line3)"/>
+    <text x="545" y="319" fill="var(--ink)" font-size="13" text-anchor="middle">sandbox</text>
+    <text x="545" y="334" fill="var(--muted)" font-size="10.5" text-anchor="middle">a fake vendor system</text>
+
+    <!-- arrows: ingress -> api, and our hops -->
+    <line x1="202" y1="169" x2="258" y2="130" stroke="var(--muted)" marker-end="url(#a)"/>
+    <text x="206" y="150" fill="var(--muted)" font-size="10">https → http (in-cluster)</text>
+    <line x1="337" y1="140" x2="337" y2="180" stroke="var(--violet)" marker-end="url(#b)"/>
+    <line x1="337" y1="226" x2="337" y2="266" stroke="var(--violet)" marker-end="url(#b)"/>
+    <line x1="412" y1="204" x2="468" y2="204" stroke="var(--violet)" marker-end="url(#b)"/>
+    <line x1="412" y1="290" x2="500" y2="302" stroke="var(--violet)" marker-end="url(#b)"/>
+    <text x="420" y="196" fill="var(--violet)" font-size="10">SVID both sides</text>
+    <text x="420" y="320" fill="var(--violet)" font-size="10">SVID both sides</text>
+
+    <!-- third-party column -->
+    <rect x="742" y="96" width="160" height="44" rx="9" fill="var(--surface)" stroke="var(--teal-line)"/>
+    <text x="822" y="115" fill="var(--ink)" font-size="13" text-anchor="middle">keycloak</text>
+    <text x="822" y="130" fill="var(--muted)" font-size="10.5" text-anchor="middle">logins, token exchange</text>
+    <rect x="742" y="160" width="160" height="44" rx="9" fill="var(--surface)" stroke="var(--teal-line)"/>
+    <text x="822" y="179" fill="var(--ink)" font-size="13" text-anchor="middle">OPA</text>
+    <text x="822" y="194" fill="var(--muted)" font-size="10.5" text-anchor="middle">the policy decisions</text>
+    <rect x="742" y="224" width="160" height="44" rx="9" fill="var(--surface)" stroke="var(--teal-line)"/>
+    <text x="822" y="243" fill="var(--ink)" font-size="13" text-anchor="middle">postgres</text>
+    <text x="822" y="258" fill="var(--muted)" font-size="10.5" text-anchor="middle">approvals, audit, state</text>
+    <rect x="742" y="288" width="160" height="44" rx="9" fill="var(--surface)" stroke="var(--teal-line)"/>
+    <text x="822" y="307" fill="var(--ink)" font-size="13" text-anchor="middle">otel → jaeger</text>
+    <text x="822" y="322" fill="var(--muted)" font-size="10.5" text-anchor="middle">traces (+ prometheus)</text>
+    <line x1="690" y1="112" x2="740" y2="112" stroke="var(--teal)" marker-end="url(#a)"/>
+    <line x1="690" y1="182" x2="740" y2="182" stroke="var(--teal)" marker-end="url(#a)"/>
+    <line x1="690" y1="300" x2="740" y2="300" stroke="var(--teal)" marker-end="url(#a)"/>
+    <line x1="412" y1="118" x2="560" y2="112" stroke="var(--teal)" marker-end="url(#a)"/>
+
+    <!-- spire -->
+    <rect x="262" y="366" width="446" height="58" rx="10" fill="var(--surface)" stroke="var(--accent-line)"/>
+    <text x="286" y="390" fill="var(--ink)" font-size="13">SPIRE server + agent</text>
+    <text x="286" y="408" fill="var(--muted)" font-size="11">issues every SVID in this picture — 1h for X.509, 5m for JWT — and rotates the CA itself</text>
+    <line x1="337" y1="366" x2="337" y2="330" stroke="var(--accent)" stroke-dasharray="3 3"/>
+    <line x1="545" y1="366" x2="545" y2="346" stroke="var(--accent)" stroke-dasharray="3 3"/>
+    <text x="348" y="352" fill="var(--accent)" font-size="10">workload API</text>
+  </svg>
+
+  <div class="grid2">
+    <div class="tile">
+      <h4>The two regimes, and why</h4>
+      <p>
+        Our services are our code, so they can fetch a certificate, present it, and check the
+        peer's name. Keycloak, OPA, Postgres and the sandbox are software we did not write:
+        they have no idea what SPIFFE is, and bolting identity into them would be fiction.
+        The mesh encrypts those hops instead. The reasoning is recorded as
+        <span class="mono">ADR-0012</span>.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Where the line falls</h4>
+      <p>
+        The violet box is <b>encrypted by us and checked by us</b> — both sides present an
+        SVID, and on the machine routes the caller also has to be <i>named</i>. The teal box
+        is <b>encrypted by the mesh</b>, whose identity is the pod's, not the application's.
+        The browser sits outside both: a person cannot hold a certificate, so TLS terminates
+        at an ingress.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="journey">
+  <h2>One request, end to end</h2>
+  <p>
+    Nothing explains a system like following a single action through it. This is the demo's
+    central scenario: a support agent is asked to refund an order. Each step shows the real
+    request and the real response, trimmed to the interesting fields.
+  </p>
+
+  <ol class="steps">
+    <li>
+      <b>A person signs in.</b> The browser posts credentials to the API, which exchanges
+      them at Keycloak and returns a token the UI keeps in <code>sessionStorage</code> for
+      the tab's lifetime. Note what comes back with it — the roles the platform will act on,
+      and the tools those roles permit, resolved from policy:
+      <div class="codeblock"><div class="cap">POST /auth/login → the session</div><pre>{
+  "user": "alice",
+  "roles": ["support_rep"],
+  "tenant": "acme",
+  "tools": ["crm.customer.read","crm.orders.list","refunds.issue",
+            "refunds.quote","tickets.read","tickets.reply.draft"],
+  "expires_at": 1789954090        // 300 seconds later (the realm's lifespan)
+}</pre></div>
+      The token is a bearer credential and lives five minutes. When it expires the UI says
+      so and returns you to the sign-in screen rather than emptying its lists
+      (<a href="#built">§18</a> explains why that sentence is in a document like this).
+    </li>
+    <li>
+      <b>The task is sent.</b> The browser calls <code>POST /tasks</code> with the token and
+      a sentence: <i>"Issue a refund of 200 dollars for order o-1001"</i>. The API does not
+      do the work — it forwards the task to the agent, and that hop is a SPIFFE hop: the API
+      presents its own certificate and a JWT that names it, so the agent knows <i>which</i>
+      workload is calling (<a href="#transport">§11</a>).
+    </li>
+    <li>
+      <b>The agent exchanges the token.</b> It cannot use Alice's token directly: that token
+      is for the API's audience. It asks Keycloak to exchange it
+      (<a href="#delegation">§6</a>) for a token scoped to the tool server, carrying
+      Alice's identity, her tenant and her roles, plus proof that the agent is acting on
+      her behalf.
+      <div class="codeblock"><div class="cap">the delegated token's claims (decoded)</div><pre>{
+  "azp": "portal",
+  "sub": "alice",
+  "aud": ["mcp-tools", "spiffe://acme.com/ns/agent-platform/sa/agent"],
+  "realm_access": { "roles": ["support_rep"] }
+}</pre></div>
+    </li>
+    <li>
+      <b>Policy decides.</b> The agent asks the policy engine what this role may do, and
+      offers the model only those tools. When the model chooses <code>refunds.issue</code>
+      with <code>amount: 200</code>, policy answers <b>require approval</b> — the demo's
+      threshold is $50 outright, $500 with a manager, above that refused. The agent stops
+      and records the reason in plain words:
+      <div class="codeblock"><div class="cap">POST /tasks → held</div><pre>{
+  "thread_id": "t-021609b2",
+  "status": "approval_required",
+  "tool": "refunds.issue",
+  "args": { "order_id": "o-1001", "amount": 200.0 },
+  "reason": "requires manager approval: refund of 200 is above the
+             auto-approval limit of 50",
+  "approval_id": "ap-100238f73f47"
+}</pre></div>
+    </li>
+    <li>
+      <b>A human decides.</b> The approval is a real row in Postgres, tenant-scoped, with
+      the reason, the requester and the agent's SPIFFE ID. A manager sees it in the
+      Approvals tab, may add a note, and approves or denies. The tool server will later
+      check the decision itself — the UI is not the control (<a href="#approval">§8</a>).
+    </li>
+    <li>
+      <b>The run resumes and the tool executes.</b> The agent completes the run. The tool
+      server accepts it only because a verified approval exists for exactly this tool,
+      these arguments, this user and this agent:
+      <div class="codeblock"><div class="cap">POST /tasks/resume → the result</div><pre>{
+  "thread_id": "t-021609b2",
+  "status": "ok",
+  "tool": "refunds.issue",
+  "result": { "id": "r-0014", "order_id": "o-1002", "tenant": "acme",
+              "amount": 200.0, "status": "issued" }
+}</pre></div>
+    </li>
+    <li>
+      <b>Everything is recorded.</b> Each stage forwarded an audit event to the API, which
+      stores them in Postgres after redaction. One record names the agent's SPIFFE ID, the
+      user, the tool, the policy's decision, the policy revision that decided it, and when:
+      <div class="codeblock"><div class="cap">GET /audit → one event</div><pre>{
+  "ts": 1789953138.152,
+  "event": "tool.allowed",
+  "sub": "alice",
+  "tool": "refunds.issue",
+  "decision": "require_approval",
+  "reason": "requires manager approval: refund of 200 is above the
+             auto-approval limit of 50",
+  "tenant": "acme",
+  "spiffe_id": "spiffe://acme.com/ns/agent-platform/sa/agent",
+  "policy_version": "a1e7b93"
+}</pre></div>
+      That last field is why policy is versioned: a decision recorded six months ago can be
+      read next to the exact rule that produced it.
+    </li>
+  </ol>
+
+  <div class="callout info">
+    <b>The shape to notice</b>
+    No component along that path holds a long-lived credential. The person has a password
+    (theirs to protect). Every machine-to-machine hop is a certificate that expires within
+    the hour or a token that expires within minutes. The one secret that does exist — the
+    model provider's key — lives in a single service, the gateway, and never leaves it.
+  </div>
+</section>
+<section id="identity">
+  <h2>Workload identity</h2>
+  <p>
+    The foundation is a standard called <b>SPIFFE</b> (Secure Production Identity Framework
+    for Everyone) and an implementation of it called <b>SPIRE</b>. The idea is simple: a
+    piece of software running in your infrastructure should be able to prove <i>what it
+    is</i> without being given a secret to prove it with.
+  </p>
+
+  <h3>The words, defined once</h3>
+  <table>
+    <thead><tr><th>Term</th><th>What it actually is</th></tr></thead>
+    <tbody>
+      <tr><td><b>Workload</b></td><td>Any program with an identity — here, a pod's main container. The agent, the API, the tool server are workloads.</td></tr>
+      <tr><td><b>Trust domain</b></td><td>The namespace identities are issued in. This platform's is <code>acme.com</code>, and it is documentation, not a secret.</td></tr>
+      <tr><td><b>SPIFFE ID</b></td><td>A URI naming one workload: <code>spiffe://acme.com/ns/agent-platform/sa/agent</code>. Read it right to left: service account <code>agent</code>, in namespace <code>agent-platform</code>, in trust domain <code>acme.com</code>.</td></tr>
+      <tr><td><b>SVID</b></td><td>The credential behind that ID. Two forms are used here: an <b>X.509-SVID</b> (a certificate, for TLS) and a <b>JWT-SVID</b> (a short signed token, for saying <i>who is calling</i> in a header).</td></tr>
+      <tr><td><b>Workload API</b></td><td>A Unix socket inside the pod. A workload asks it for its identity; it is not handed a password to use with it.</td></tr>
+      <tr><td><b>Attestation</b></td><td>How SPIRE decides a node and a pod are genuine before issuing anything — here, the Kubernetes projected service-account token, checked with the API server.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How a pod gets an identity</h3>
+  <ol class="steps">
+    <li>The <b>SPIRE agent</b> runs on each node (a DaemonSet) and proves to the SPIRE server
+      that it is a real agent on a real node, by presenting a Kubernetes service-account
+      token the server checks with the API server. That is <code>k8s_psat</code> attestation.</li>
+    <li>The server decides what that node's agent may vouch for, from <b>registration
+      entries</b>: "a pod in namespace <code>agent-platform</code> using service account
+      <code>agent</code> may be issued <code>spiffe://acme.com/ns/agent-platform/sa/agent</code>".
+      <code>scripts/setup.sh</code> creates one entry per attested agent — because with more
+      than one node, each node has its own agent, and an entry parented to a single agent
+      leaves pods on every other node with <i>"no identity issued"</i>.</li>
+    <li>The pod's container asks the Workload API socket for its identity. It never presents
+      a password to obtain it; the node's attestation is the root.</li>
+    <li>What comes back expires — an hour for a certificate, five minutes for the JWT form —
+      and the process fetches a new one when needed. Nothing is stored in a Kubernetes
+      Secret, a config file, or an image.</li>
+  </ol>
+
+  <div class="codeblock"><div class="cap">app/common/server.py — every service starts by fetching its identity</div><pre>def svid_files(socket: str) -> tuple[str, str]:
+    """Fetch the X.509-SVID, retrying while SPIRE finishes attesting this pod."""
+    last: Exception | None = None
+    for _ in range(30):
+        try:
+            return write_mtls_files(socket)
+        except Exception as exc:  # the Workload API may not be ready yet
+            last = exc
+            time.sleep(2)
+    raise SystemExit(f"could not obtain an X.509-SVID: {last}")</pre></div>
+
+  <h3>Two details that came from incidents, not from the standard</h3>
+  <p>
+    Both of these are worth reading if you have ever trusted a certificate to keep working:
+  </p>
+  <div class="grid2">
+    <div class="tile">
+      <h4>A server must restart before its certificate expires</h4>
+      <p>
+        The services do not merely <i>fetch</i> an SVID; they exit 120 seconds before the
+        certificate they are serving expires, and the pod restarts with a fresh one. The
+        deadline is read from the certificate's own <code>notAfter</code>, not assumed from
+        its lifetime — the Workload API can hand back a certificate that is already half
+        spent. A TLS server holding an expired certificate fails every handshake, which looks
+        like an outage rather than a rotated credential (<code>app/common/server.py</code>,
+        slice S15).
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Keycloak needs a <code>jti</code> that SPIRE does not mint</h4>
+      <p>
+        The agent authenticates to Keycloak with a JWT-SVID as its client assertion
+        (<b>private_key_jwt</b>, RFC 7523). That flow requires a unique <code>jti</code>
+        claim per assertion so a replay is detectable — and SPIRE does not add one. The
+        project builds a small <b>CredentialComposer</b> plugin (source in
+        <code>spire-plugin/</code>, compiled into its own SPIRE server image) whose only job
+        is to add it.
+      </p>
+    </div>
+  </div>
+  <div class="callout warn">
+    <b>The agent image disables JWT-SVID caching on purpose</b>
+    SPIRE ships with an in-memory cache for JWT-SVIDs. This project builds its agent image
+    without it, so a token is minted per use: revocation is a decision within five minutes,
+    not a cache's lifetime. ADR-0002 records the trade — slightly more signing, a much
+    smaller window of doubt.
+  </div>
+</section>
+
+<section id="delegation">
+  <h2>Delegation, explained</h2>
+  <p>
+    Identity answers "who are you?". Delegation answers "who are you acting <i>for</i>, and
+    what were you allowed to do?" The mechanism is <b>OAuth 2.0 Token Exchange</b>
+    (<a href="https://www.rfc-editor.org/rfc/rfc8693">RFC 8693</a>): a token is traded for a
+    different token.
+  </p>
+  <p>
+    Why trade at all? Because a token that works everywhere is a token worth stealing. The
+    platform's rule is that every token names an <b>audience</b> — the service it is for —
+    and only that service accepts it.
+  </p>
+
+  <div class="codeblock"><div class="cap">sdk/agentnhi/tokens.py — three checks, in order</div><pre>1. **Signature and issuer** — it really came from our authorization server.
+2. **Audience (`aud`)** — it was minted for *this* service. This is what makes a
+   token stolen from one hop useless on the next.
+3. **Issued-to (`azp`)** — it was issued to the workload we expect. Defense in
+   depth: even with a matching audience, a token issued to someone else is
+   refused.</pre></div>
+
+  <div class="flow">
+    <h4>The same delegation, traced (browser path)</h4>
+    <pre class="ascii">browser ──token(aud=api)──▶ api
+                              │  exchanges at Keycloak: "give me a token for mcp-tools,
+                              │  for this user, issued to me (the agent)"
+                              ▼
+                           token(aud=mcp-tools, sub=alice, tenant=acme, roles=[support_rep],
+                                 azp=portal, act={sub: spiffe://…/sa/agent})
+                              │
+                              ▼
+                            tools   ← verifies signature, aud, azp, roles… then policy… then approval</pre>
+  </div>
+
+  <h3>The two questions every hop answers</h3>
+  <p>
+    A well-designed system asks both, and this one does, from different mechanisms:
+  </p>
+  <table>
+    <thead><tr><th>Question</th><th>Answered by</th><th>Failure looks like</th></tr></thead>
+    <tbody>
+      <tr><td><b>Is the transport peer genuine?</b> (a real workload, not something that copied a token)</td><td>The SVID on both ends of the TLS connection (<a href="#transport">§11</a>)</td><td>The handshake never completes — there is no application-level "please authenticate" step to attack</td></tr>
+      <tr><td><b>Is it allowed to do this?</b></td><td>Token claims (<code>aud</code>, <code>azp</code>, roles, tenant) plus policy, plus a verified approval where required</td><td>A refusal naming the reason: <code>your role may not call refunds.issue</code></td></tr>
+    </tbody>
+  </table>
+
+  <h3>And on machine hops, a name</h3>
+  <p>
+    A certificate proves a workload holds an SVID issued by the right authority; it does not
+    say <i>which</i> workload. So the hops between the API, agent and tool server carry the
+    caller's SPIFFE ID in a JWT-SVID, checked against SPIRE's public keys and an allow-list:
+  </p>
+  <div class="codeblock"><div class="cap">app/api/authz.py — the dependency that names a machine caller</div><pre>def require_workload(*allowed: str):
+    """Dependency factory: a **machine** caller must be one of these workloads.
+
+    For the routes a workload calls rather than a browser (creating an approval,
+    verifying one, ingesting audit). The name is the caller's JWT-SVID, verified
+    against SPIRE's JWKS — the same check the gateway makes, shared via
+    `app/common/workload.py`.
+    """</pre></div>
+  <div class="callout info">
+    <b>Why that mattered</b>
+    Before this, <code>POST /audit/events</code> took no credential at all: any pod inside
+    the mesh could write an audit record. The handshake was encrypted, which felt like
+    enough, and said nothing about who was on the other end. Now only the agent and the tool
+    server may ingest audit, and they have to prove it.
+  </div>
+
+  <h3>Everything expires, on purpose</h3>
+  <table>
+    <thead><tr><th>Credential</th><th>Lifetime</th><th>Consequence</th></tr></thead>
+    <tbody>
+      <tr><td>Your sign-in token</td><td>300 s</td><td>The UI revalidates the session and asks you to sign in again</td></tr>
+      <tr><td>JWT-SVID (a machine hop)</td><td>5 min</td><td>A machine call is refused if it presents none</td></tr>
+      <tr><td>Delegated token (a tool call)</td><td>minutes</td><td>The agent refunds one tool call, not a week of them</td></tr>
+      <tr><td>X.509-SVID (TLS)</td><td>1 h</td><td>The process restarts shortly before it expires, by design</td></tr>
+      <tr><td>The CA that signs SVIDs</td><td>24 h (<code>ca_ttl</code>)</td><td>SPIRE rotates it around halfway, keeping the old one in the trust bundle while its SVIDs are still valid</td></tr>
+    </tbody>
+  </table>
+  <p class="muted">
+    These are the demo's numbers, chosen short so that rotation is visible during a
+    demonstration. Production would use longer ones — the mechanism is the same.
+  </p>
+</section>
+
+<section id="policy">
+  <h2>Policy as code</h2>
+  <p>
+    Authorization is not scattered through the services as <code>if user.is_admin</code>.
+    It is a policy written in <b>Rego</b> and evaluated by <b>OPA</b> (Open Policy Agent), so
+    that the rules can be read, tested and versioned on their own (<code>policy/authz.rego</code>,
+    ADR-0003).
+  </p>
+
+  <h3>Deny by default, three outcomes</h3>
+  <p>Every tool call resolves to exactly one of: <b>allow</b>, <b>deny</b>, or
+    <b>require approval</b>. Nothing needs a rule to be forbidden.</p>
+
+  <h3>The matrix, and who may call what</h3>
+  <p>
+    The heart of the policy is a role → tool table. This is the demo's, verbatim from
+    <code>policy/authz.rego</code>:
+  </p>
+  <table>
+    <thead><tr><th>Role</th><th>Tools it may call</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill">support_rep</span></td><td class="mono">crm.customer.read, crm.orders.list, tickets.read, tickets.reply.draft, refunds.quote, refunds.issue</td></tr>
+      <tr><td><span class="pill teal">billing</span></td><td class="mono">crm.orders.list, refunds.quote, refunds.issue</td></tr>
+      <tr><td><span class="pill">read_only</span></td><td class="mono">crm.customer.read, crm.orders.list, tickets.read</td></tr>
+      <tr><td><span class="pill violet">privacy</span></td><td class="mono">privacy.pii.read, crm.customer.read, crm.orders.list, tickets.read</td></tr>
+      <tr><td><span class="pill warn">manager</span></td><td class="mono">crm.customer.read, crm.orders.list, tickets.read, refunds.quote <span class="muted">(and approving — not a tool)</span></td></tr>
+      <tr><td><span class="pill bad">platform_admin</span></td><td class="mono">— deliberately none: it administers users, and administers nothing else</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Two further rules make it more than a table. A tool can require approval rather than
+    permission, and a tenant can <b>replace</b> a role's row with its own (slice S8) — so
+    "billing" at one customer need not mean what it means at another. The API asks for the
+    caller's tenant when it asks what is permitted, which is what keeps the offered set equal
+    to the allowed set.
+  </p>
+
+  <h3>Rules that are numbers</h3>
+  <div class="codeblock"><div class="cap">policy/authz.rego — the refund rules, in full</div><pre>auto_refund_limit := 50        # <= this: allowed outright
+approval_refund_limit := 500   # <= this (and > auto): needs approval; above: denied</pre></div>
+  <p>
+    This is the mechanism the whole demo turns on. A $25 refund is allowed. A $200 refund is
+    <i>held</i> for a manager. A $1000 refund is refused outright. The agent cannot talk its
+    way past any of it: it does not evaluate the policy, it asks it — and the tool server
+    asks again on the way through.
+  </p>
+
+  <h3>Where it is enforced — one choke point</h3>
+  <p>
+    Both transports (HTTP and MCP) pass through the same function, which is why a second
+    transport cannot be a way around the first:
+  </p>
+  <div class="codeblock"><div class="cap">app/tools/enforcement.py — the enforcement point</div><pre>1. **Verifies the token** — signature, issuer, audience, and the workload it was
+   issued to.
+2. **Asks OPA** — allow / deny / require-approval, deny by default.
+3. **Requires a real approval** when policy demands one — confirmed by the
+   approvals service, not asserted by the caller.</pre></div>
+  <div class="callout ok">
+    <b>"The LLM proposes, policy disposes"</b>
+    The model is only ever <i>offered</i> the tools the caller's roles permit, so
+    prompt-injection has nothing to aim at — and even if the model asked for something else,
+    the tool server evaluates policy itself. The offer is a courtesy; the check is the
+    control.
+  </div>
+
+  <h3>Versions and signatures</h3>
+  <p>
+    Every decision records <code>policy_version</code> — the revision the bundle was built
+    from — so an old decision can be read next to the rule that produced it
+    (<code>docs/policy-lifecycle.md</code>). The bundle is a build artifact: stamped by
+    <code>scripts/build-bundle.sh</code>, signed with cosign, and mounted into OPA. Because
+    the files are mounted with <code>subPath</code> (which does not update in place) the
+    deployment restarts OPA when the revision changes — a small operational detail that is
+    easy to get wrong, and is why the setup script does it explicitly.
+  </p>
+</section>
+<section id="approval">
+  <h2>The human in the loop</h2>
+  <p>
+    Policy can say "not without a person". That is the interesting case, because it is where
+    a system most often cheats: it asks a UI for confirmation and treats the answer as
+    authority. Here the approval is a <b>fact recorded in the database</b>, and the tool
+    server checks the fact itself.
+  </p>
+
+  <h3>The shape of a held action</h3>
+  <ol class="steps">
+    <li><b>The policy decision is <i>require approval</i>.</b> The agent does not proceed and
+      does not silently substitute another tool. It stops, with a reason written for a person
+      to read: <i>"requires manager approval: refund of 200 is above the auto-approval limit
+      of 50"</i>.</li>
+    <li><b>The run is checkpointed.</b> The agent is a state machine (LangGraph, ADR-0004)
+      whose state is persisted in Postgres — so the pause survives a restart of the agent
+      itself, and resuming is not a matter of hoping the process is still alive.</li>
+    <li><b>An approval record is created</b> by the agent calling the API over a SPIFFE hop,
+      with its own identity attached. The record names the tool, the exact arguments, the
+      requesting user, and the agent's SPIFFE ID.</li>
+    <li><b>A person decides</b> — in the Approvals tab, or by API — optionally adding a note
+      that becomes part of the record. The demo enforces <b>separation of duties</b>: you
+      cannot approve your own request, and the <code>platform_admin</code> role cannot
+      approve anything, because administering users is a different job from deciding
+      business actions.</li>
+    <li><b>The run resumes, and the tool server verifies.</b> Not "the caller says it was
+      approved" — the tool server asks the approvals service whether an approval exists for
+      <i>precisely this</i> tool, these arguments, this user and this agent. A copy of a
+      legitimate approval for something else is useless (threat T4).</li>
+  </ol>
+
+  <div class="callout ok">
+    <b>Why "verify, don't trust" is the whole design</b>
+    The agent could lie; it is software, and software with a model in it can be talked into
+    things. So no component downstream of the model is asked to believe anything the model
+    influenced. The approval is checked against the database of approvals, and the identity
+    of the checker is checked by the certificate it presented to get there.
+  </div>
+
+  <h3>What an approver sees</h3>
+  <p>
+    The UI shows each held action as a card: the tool, the arguments, the delegation chain
+    (agent → user → tool), the reason policy gave, and a decision form with an optional note.
+    Once decided, the card states the outcome prominently — approved in green, denied in red
+    — for everyone looking at the run, including the approver who decided it.
+  </p>
+  <p class="muted">
+    One detail from the project's own history: that denial message used to be grey prose,
+    rendered only for people who <i>were not</i> approvers — so the one person who could not
+    see the denial was the manager who had just denied it, who fell through to a live
+    Approve/Deny form and could decide the same run twice. <a href="#built">§18</a>.
+  </p>
+
+  <h3>The same gate for privacy</h3>
+  <p>
+    Reading a customer's personal data is a <i>read</i>, and a read cannot be undone. The
+    <code>privacy.pii.read</code> tool therefore requires the <code>privacy</code> role
+    <b>and</b> an approval, and every attempt — allowed or not — is written to the audit
+    trail with the reason. <code>docs/privacy.md</code> walks the whole path, and the
+    Privacy tab shows it as a timeline plus its own approvals.
+  </p>
+</section>
+
+<section id="tools">
+  <h2>The tool boundary</h2>
+  <p>
+    Every action an agent can take ends at one service. The tool server is where "the LLM
+    proposes, policy disposes" is actually enforced (<code>app/tools/</code>) — and the only
+    place it needs to be.
+  </p>
+
+  <h3>One implementation, two transports</h3>
+  <table>
+    <thead><tr><th>Transport</th><th>Used by</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><b>HTTP</b></td><td>The agent's direct tool calls</td><td>Simple, inspectable, and easy to call from a test</td></tr>
+      <tr><td><b>MCP</b> (Model Context Protocol)</td><td>The agent, when it is given tools as an MCP server</td><td>An open standard for exposing tools to models (ADR-0005) — adding it must not add a second way around policy</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Both funnel through the same function, <code>ToolEnforcer.call(...)</code>, which is the
+    single place that verifies the token, names the calling workload, asks policy, and
+    requires a verified approval. One choke point is why the MCP path cannot be a loophole.
+  </p>
+
+  <h3>The tools themselves are deliberately dull</h3>
+  <p>
+    Seven tools: read a customer, list orders, issue or quote a refund, read a ticket, draft
+    a reply, and read personal data. They live in <code>app/tools/catalog.py</code> and call
+    into <code>app/simulators/</code> — synthetic CRM, orders, payments and ticketing data,
+    which is all this platform ever touches (ADR-0006).
+  </p>
+  <div class="grid2">
+    <div class="tile">
+      <h4>The sandbox stands in for a vendor</h4>
+      <p>
+        A real integration is a system you do not control, which may be slow, unavailable, or
+        stateful in ways you have to remember. The sandbox is a small service with its own
+        database and its own volume, and the tools reach it through a seam
+        (<code>simulator</code> | <code>http</code>) that a real backend can replace without
+        touching the rest of the platform (<code>docs/integrations.md</code>, slice S9).
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Refusals, denials and errors are different things</h4>
+      <p>
+        A <b>denial</b> is policy saying no. A <b>refusal</b> is the agent reporting that it
+        could not act — and it says <i>why</i>: an unreachable model, an unparseable reply and
+        a disallowed tool are three different messages, not one. A <b>tool error</b> is
+        neither: asking to refund an order that does not exist answers
+        <code>unknown order</code>, because the platform was allowed to try and the vendor
+        said no (slice S13).
+      </p>
+    </div>
+  </div>
+  <div class="callout info">
+    <b>Why this distinction earns its own slice</b>
+    "The agent didn't do it" is the least useful sentence an agent platform can produce.
+    Every one of those cases has a different fix — a policy change, a network change, a
+    prompt change — and telling them apart is the difference between a system you can operate
+    and one you have to guess about.
+  </div>
+</section>
+
+<section id="gateway">
+  <h2>The LLM gateway</h2>
+  <p>
+    The agent needs a model. The model provider needs a credential. If the agent held that
+    credential, a prompt-injected agent — or a curious engineer with <code>kubectl exec</code>
+    — could spend the company's model budget, and the key would have to be rotated wherever
+    the agent runs. So the credential lives in exactly one service, and the agent is only
+    allowed to ask that service for text (ADR-0009, <code>docs/llm-gateway.md</code>).
+  </p>
+
+  <h3>How the gateway decides who is asking</h3>
+  <ol class="steps">
+    <li>The gateway listens <b>only</b> over mTLS with an SVID — there is no plain listener at
+      all. A caller must complete a handshake with a certificate from the trust domain, so
+      "who is calling" is never a matter of opinion.</li>
+    <li>On top of that, the caller presents a <b>JWT-SVID</b> for the gateway's audience,
+      verified against SPIRE's public keys. That is what makes the accounting exact: limits
+      are keyed on the caller's <b>SPIFFE ID</b>, not on an API key shared by everything that
+      can reach it.</li>
+    <li>Rate and cost limits are applied per agent — a rate per minute and a token budget per
+      day — and they are <b>stored in Postgres</b>, so a restart of the gateway does not
+      reset them to zero.</li>
+  </ol>
+
+  <h3>Provider-agnostic by construction</h3>
+  <p>
+    The gateway speaks an OpenAI-compatible API and a local Ollama endpoint. The default is
+    local: <code>./start.sh</code> needs no model key at all, which is why the platform runs
+    end to end on a laptop with nothing in the cloud. If you set a provider key, it is
+    consumed by the gateway and by nothing else.
+  </p>
+  <div class="callout warn">
+    <b>The gateway is not on the internet</b>
+    It is deliberately absent from the ingress: only the agent should reach it, and only over
+    mTLS. Push a conversation through the UI and the path is browser → ingress → api → agent
+    → gateway; the provider credential never comes near a browser or the agent's own
+    environment.
+  </div>
+</section>
+<section id="transport">
+  <h2>Transport security</h2>
+  <p>
+    Every hop is encrypted, but not by the same thing — and the line between the two
+    mechanisms is deliberate, recorded in <b>ADR-0012</b>. Getting this wrong is easy in a
+    way that looks right: a service mesh encrypts everything, so it is tempting to leave it
+    at that. The catch is that the mesh proves the identity of <i>the mesh</i>. The
+    application never learns which workload is on the other end, and a hop can be encrypted
+    while a pod that copied a token walks straight through it.
+  </p>
+
+  <table>
+    <thead><tr><th>Layer</th><th>Covers</th><th>The identity it proves</th></tr></thead>
+    <tbody>
+      <tr><td><b>SPIFFE mTLS</b> (ours)</td><td>Every hop between workloads we wrote: <span class="mono">agent ⇄ gateway</span>, <span class="mono">agent ⇄ tools</span>, <span class="mono">agent ⇄ api</span></td><td>The workloads' own SVIDs — and on machine routes, the caller's <b>name</b></td></tr>
+      <tr><td><b>Service mesh</b> (Linkerd)</td><td>Everything else: Keycloak, OPA, Postgres, the sandbox, the observability stack, and the <span class="mono">/metrics</span> scrape</td><td>The mesh's workload identity — good encryption, no name the application can use</td></tr>
+      <tr><td><b>TLS at the ingress</b></td><td>The browser's hop to the API</td><td>A certificate from a CA this project generates, with the hostname the browser types in it</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Why the third-party hops stay on the mesh</h3>
+  <p>
+    Keycloak, OPA and Postgres are products we did not write: they do not speak SPIFFE and
+    cannot present an SVID. Requiring one would be fiction. The sandbox stands in for a
+    vendor's system, and a real vendor has no SVID either — so putting it with the
+    third-party software models the right thing. For those, the mesh is the honest answer:
+    no TLS code in the products, no certificates of ours to distribute, and it covers the
+    hops you would forget, including telemetry.
+  </p>
+
+  <h3>One mechanical detail that matters</h3>
+  <div class="callout warn">
+    <b>Our SPIFFE ports skip the mesh proxy</b>
+    The pods carry <code>config.linkerd.io/skip-inbound-ports: "8443"</code> (and the
+    outbound equivalent). Without it, Linkerd terminates the connection — proving <i>its</i>
+    identity and hiding the peer's SVID from our server, so the application's check has
+    nothing to check. The fix is this project's own lesson, applied to itself, and
+    <code>tls-check.sh</code> asserts the consequence: a client with no SVID cannot complete
+    a handshake on a hop we own.
+  </div>
+  <div class="callout danger">
+    <b>The alternative was measured and rejected</b>
+    The obvious way to keep the two identity systems from overlapping is to take our pods
+    <i>out</i> of the mesh. Before doing that, the project measured it: with the API pod
+    uninjected, a login <b>still worked</b> against a meshed Keycloak — in plaintext. A client
+    without a proxy loses encryption on <b>all</b> of its outbound hops, not just the ones
+    being retired. That measurement is why the pods stay injected and only the port is
+    skipped.
+  </div>
+
+  <h3>How this is verified, rather than asserted</h3>
+  <p><code>./scripts/tls-check.sh</code> reports three things, each from where it can
+    actually be seen:</p>
+  <div class="codeblock"><div class="cap">./scripts/tls-check.sh</div><pre>MESH EDGES (SECURED = mTLS)          every edge the mesh carries must be √
+
+HOPS WE OWN (SPIFFE, caller named)   asked from inside a pod that holds an SVID:
+  agent → tools   mTLS required ✓    ✓ refused unnamed; admitted named (403)
+  agent → api     mTLS required ✓    ✓ refused unnamed; admitted named (200)
+
+BROWSER EDGE (TLS at the ingress)
+  certificate chains to  our CA ✓
+  our CA                 CA:TRUE + keyCertSign ✓ (strict clients accept it)
+  names                  localhost ✓ (SAN)
+  https://localhost/healthz  200 ✓ (certificate verified)</pre></div>
+  <p class="muted">
+    The edge section deliberately uses the CA and never <code>-k</code>. A certificate nobody
+    verified is not evidence, and "it answered over https" means nothing if we skipped the
+    part that says who answered.
+  </p>
+
+  <h3>What this does not give you</h3>
+  <table>
+    <thead><tr><th>Residual</th><th>Why, and what to do about it</th></tr></thead>
+    <tbody>
+      <tr><td>The ingress → api leg is plaintext <i>in-cluster</i></td><td>The ingress controller carries no mesh sidecar, so the mesh cannot encrypt a connection it did not originate. Name it, and close it by meshing the controller (<span class="mono">linkerd.io/inject: ingress</span>) or terminating inside the mesh.</td></tr>
+      <tr><td>A machine caller's <b>name</b> rides a token, not the certificate</td><td>Our ASGI server does not expose the peer certificate to the application, so the name travels as a JWT-SVID in a header: audience-bound, five minutes, never logged. The strongest form would be an X.509 SAN assertion, and that needs a different server.</td></tr>
+      <tr><td>The mesh remains load-bearing for third-party hops</td><td>Losing Linkerd removes their <i>encryption</i>, not their authorization — policy, tokens and tenancy are unaffected. This is a boundary, not a claim that there is only one identity system.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="tenancy">
+  <h2>Multi-tenancy</h2>
+  <p>
+    Two customers use this platform. Neither may see the other's anything. The design
+    decision that makes that enforceable is small and easy to miss:
+    <b>the tenant is part of the caller's identity, not a parameter they pass</b>.
+  </p>
+  <div class="grid2">
+    <div class="tile">
+      <h4>It comes from the token</h4>
+      <p>
+        A user's tenant is set when their account exists and travels in the token they
+        present. There is no <code>?tenant=</code> anywhere — which is what stops the oldest
+        trick in the book, asking for someone else's data politely.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>It is enforced everywhere it matters</h4>
+      <p>
+        Policy resolves a role's tools <i>for that tenant</i> (a tenant may replace a role's
+        row entirely). Approvals are stored and queried per tenant. The audit trail is scoped
+        to the caller's tenant. Every data accessor checks it.
+      </p>
+    </div>
+  </div>
+  <p>
+    The demo signs in <code>grace</code> — a support representative at a second tenant,
+    <code>globex</code> — and <code>./scripts/tenancy-tests.sh</code> walks the layers one at a
+    time: the claim, the policy, the approval store, and the data itself:
+  </p>
+  <div class="codeblock"><div class="cap">./scripts/tenancy-tests.sh</div><pre>tenant from the token…  policy resolves globex's own matrix…  an approval made in
+acme is invisible in globex…  and the same customer id reads differently in each
+tenant.                                            A second tenant's data is unreachable from the first.</pre></div>
+  <p class="muted">
+    Threat T9, and the reason the platform is "multi-tenant" rather than "multi-user with
+    good intentions".
+  </p>
+</section>
+
+<section id="data">
+  <h2>Data and durability</h2>
+  <p>
+    Nothing in this platform is stateful in memory, and that is a design position rather than
+    an accident: a service can only be replicated — and therefore survive a node dying — if
+    its state lives somewhere that outlives it (<code>docs/ha.md</code>).
+  </p>
+
+  <table>
+    <thead><tr><th>What</th><th>Where it lives</th><th>What it survives</th></tr></thead>
+    <tbody>
+      <tr><td>Approvals, and their decisions and notes</td><td>Postgres, tenant-scoped</td><td>A restart of the API, the agent, or the database itself</td></tr>
+      <tr><td>Agent run checkpoints</td><td>Postgres</td><td>The agent restarting mid-run — a held action resumes where it stopped</td></tr>
+      <tr><td>The audit trail</td><td>Postgres, redacted on the way in</td><td>Anything, including a full re-run of the setup script</td></tr>
+      <tr><td>SPIRE's registry (which pod may be which identity)</td><td>Postgres, in its own <span class="mono">spire</span> role</td><td>A SPIRE restart: no workload loses its identity</td></tr>
+      <tr><td>SPIRE's signing keys</td><td>A PersistentVolume</td><td>A SPIRE restart keeping the <b>same CA</b> — so no SVID anywhere needs reissuing</td></tr>
+      <tr><td>Keycloak's realm and accounts</td><td>Postgres, its own <span class="mono">keycloak</span> role</td><td>Restarts, and re-running setup: an account enrolled today exists tomorrow</td></tr>
+      <tr><td>The sandbox's synthetic vendor data</td><td>Its own volume</td><td>The pod being rescheduled (slice S9)</td></tr>
+      <tr><td>Model rate and token budgets</td><td>Postgres</td><td>A gateway restart — otherwise a deploy would be a way to reset your limits</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Redaction happens before anything is written</h3>
+  <p>
+    Audit events are the one place where "we logged everything" becomes a liability: logs
+    outlive the data they describe and travel to places with weaker access control. The
+    platform redacts tokens and personal data <i>before</i> the record is stored, so the
+    trail can name what happened and who did it without carrying the secret or the person's
+    data with it (threat T7). The Audit tab states this on the page, because a reader
+    deserves to know what they are looking at.
+  </p>
+
+  <div class="callout warn">
+    <b>The honest limits of the demo's storage</b>
+    One Postgres instance, on a volume that is node-local (kind's <code>local-path</code>
+    provisioner) — so it cannot follow its pod to another node, and deleting the cluster
+    deletes it. That is fine for a demonstration and wrong for production, which is why the
+    Helm chart takes a <code>database.url</code> pointing at a managed, replicated database.
+    The distinction is documented rather than glossed: <code>docs/data-stores.md</code>.
+  </div>
+</section>
+<section id="deploy">
+  <h2>Deployment</h2>
+  <p>
+    The whole platform runs on a laptop. <code>./start.sh</code> creates a Kubernetes cluster
+    (kind), builds the images, deploys everything, and prints a URL; the first run takes
+    ten to fifteen minutes, and every run after it resumes in seconds. That is not a
+    toy convenience — it is how the project stays honest, because a system you cannot bring
+    up from scratch is a system whose instructions have quietly rotted.
+  </p>
+
+  <h3>What <code>setup.sh</code> does, and why each step is gated</h3>
+  <p>
+    The bring-up is twelve numbered steps, and it refuses to report success until each one
+    has actually been observed to work. Several of those gates exist because the project was
+    burned by not having them:
+  </p>
+  <table>
+    <thead><tr><th>#</th><th>Step</th><th>The gate before moving on</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>kind cluster</td><td>It exists, and the pinned context is reachable</td></tr>
+      <tr><td>2</td><td>Build and load images</td><td>Every image is stamped with the revision it came from</td></tr>
+      <tr><td>3</td><td>Namespace, mesh, secrets</td><td>Linkerd is up and the namespace is injected</td></tr>
+      <tr><td>4</td><td>Postgres</td><td>Ready, with a least-privilege role per consumer</td></tr>
+      <tr><td>5</td><td>SPIRE</td><td>Agents attested, entries registered, and <b>every replica serving the same trust bundle</b></td></tr>
+      <tr><td>6</td><td>Keycloak</td><td>The realm was imported by a job, against the database</td></tr>
+      <tr><td>7</td><td>OPA</td><td>Serving the policy bundle, and it prints the revision</td></tr>
+      <tr><td>8</td><td>Observability</td><td>Collector, Jaeger, Prometheus and Grafana ready</td></tr>
+      <tr><td>9</td><td>The services</td><td>api, tools, agent, gateway and sandbox rolled out</td></tr>
+      <tr><td>10</td><td>The browser edge</td><td>An https fetch with the generated CA — never <code>-k</code></td></tr>
+      <tr><td>11</td><td>Autoscaling</td><td>The metric APIs answer, including the custom ones</td></tr>
+      <tr><td>12</td><td>Identity, live</td><td>A real pod fetches a real SVID from the Workload API</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Then it asks the question that catches the most mistakes of all: <b>are the pods running
+    what we just built?</b> <code>check-images.sh</code> compares the revision stamped into
+    each running image against the current commit, and marks a dirty tree as dirty — because
+    "the image matches HEAD" is a claim worth checking, and a lie if you edited anything
+    afterwards.
+  </p>
+
+  <h3>Two faces of the same platform</h3>
+  <div class="grid2">
+    <div class="tile">
+      <h4>kind — the whole thing, locally</h4>
+      <p>
+        One control plane and two workers, so replication and spreading are real rather than
+        theoretical. No host ports are published on purpose, which is why the demo reaches
+        the platform through a port-forward (and why that port-forward goes to the
+        <i>ingress</i>, not the API).
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Helm — the same services anywhere</h4>
+      <p>
+        A values-driven chart (<code>deploy/helm/agent-platform</code>) for the parts that are
+        yours to configure: replicas, environment, the LLM provider, the Postgres DSN, mesh
+        injection, ingress and TLS, autoscaling, observability. SPIRE, Keycloak, the realm and
+        the signed policy bundle are prerequisites it expects you to provide.
+      </p>
+    </div>
+  </div>
+
+  <h3>The identity tier can be a failover pair</h3>
+  <p>
+    SPIRE's registration registry has lived in Postgres since the first hardening slice, but
+    its CA key was a file on a volume — so two SPIRE replicas would each mint their own CA
+    and hand out different trust bundles, which is worse than having one. The KeyManager is
+    now <b>switchable</b>:
+  </p>
+  <div class="codeblock"><div class="cap">.env — the switch, and its default</div><pre>SPIRE_KEY_MANAGER=disk      # default: no credentials, one replica, CA on a volume
+# SPIRE_KEY_MANAGER=aws_kms # keys created, rotated and used inside AWS KMS
+# SPIRE_KMS_ROLE_ARN=arn:aws:iam::…:role/spire-kms
+# SPIRE_KMS_SERVER_ID=acme-com   # identical on every replica, or they mint separate CAs</pre></div>
+  <p>
+    With the key manager shared, the server scales to two replicas — and the setup gate
+    refuses to pass unless they present the <b>same trust bundle</b>. The AWS side is a
+    script (<code>scripts/setup-aws-kms-role.sh</code>) that creates a role holding the KMS
+    permissions and a user whose only power is to assume it, with a self-test that makes the
+    same call SPIRE makes first. The demo stays on <code>disk</code>: an unattended demo
+    should not depend on credentials that expire.
+  </p>
+</section>
+
+<section id="ci">
+  <h2>CI/CD and supply chain</h2>
+  <p>
+    Ten checks run on every pull request, and all ten are required: a red one blocks the
+    merge. They are chosen so that each covers a different way to be wrong.
+  </p>
+  <table>
+    <thead><tr><th>Check</th><th>What it would catch</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill">app-tests</span></td><td>The application's behaviour, including the tests born from real failures (<a href="#built">§18</a>)</td></tr>
+      <tr><td><span class="pill">sdk-tests</span></td><td>The identity and token code the services share</td></tr>
+      <tr><td><span class="pill">opa-tests</span></td><td>The policy: 45 Rego tests, including the allow/deny/approval boundaries</td></tr>
+      <tr><td><span class="pill">helm</span></td><td>The chart lints and renders, with the toggles on and off</td></tr>
+      <tr><td><span class="pill">web-build</span></td><td>The UI still typechecks and compiles</td></tr>
+      <tr><td><span class="pill">repo-checks</span></td><td>Shell syntax, the config files, the pre-commit hook, and the self-tests that scripts carry</td></tr>
+      <tr><td><span class="pill">secrets</span></td><td>gitleaks over the working tree and the <b>full history</b></td></tr>
+      <tr><td><span class="pill">sast</span></td><td>Static analysis of the source</td></tr>
+      <tr><td><span class="pill">dependencies</span></td><td>Known vulnerabilities in what the project pulls in</td></tr>
+      <tr><td><span class="pill">supply-chain</span></td><td>Trivy over images and manifests — a misconfiguration or a leaked secret in a file</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Signing, and deploying behind a human</h3>
+  <p>
+    Releases sign the images and the policy bundle with <b>keyless cosign</b> (Sigstore): the
+    signature is tied to the workflow that produced it and recorded in a transparency log,
+    so there is no signing key to store, rotate, or leak (ADR-0010,
+    <code>docs/supply-chain.md</code>). The deploy workflow then reverses the direction of
+    trust: it <b>verifies</b> those signatures before applying anything, and the apply sits
+    behind a GitHub Environment approval — a human gate on deployment, which is the same
+    idea as the product's own approval gate, one level up.
+  </p>
+  <div class="callout info">
+    <b>Exceptions are meant to be temporary</b>
+    Trivy's ignore file currently has <b>no entries</b>, and the file says so along with the
+    history: Keycloak once needed an exception for a read-only root filesystem because its
+    development mode wrote into the image at startup. When the platform moved to production
+    mode (slice S4), the cause went away — so the exception did too. A list of exceptions is
+    a list of things you intend to fix.
+  </div>
+</section>
+
+<section id="ops">
+  <h2>Operations</h2>
+  <p>
+    Everything an operator does is a script, because a runbook that is not executable rots.
+    These are the ones worth knowing:
+  </p>
+  <table>
+    <thead><tr><th>Command</th><th>What it is for</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">./start.sh</td><td>Bring it up (or resume it) and print the URL</td></tr>
+      <tr><td class="mono">./status.sh</td><td>Is it up, how many pods are ready, what URL</td></tr>
+      <tr><td class="mono">./stop.sh [--delete]</td><td>Stop it (keeping data) or remove the cluster entirely</td></tr>
+      <tr><td class="mono">./scripts/setup.sh</td><td>The gated bring-up; idempotent, and safe to re-run</td></tr>
+      <tr><td class="mono">./scripts/demo.sh</td><td>The happy path, including the approval</td></tr>
+      <tr><td class="mono">./scripts/attack-tests.sh</td><td>Six attacks, each of which must fail</td></tr>
+      <tr><td class="mono">./scripts/tenancy-tests.sh</td><td>One tenant's data unreachable from another</td></tr>
+      <tr><td class="mono">./scripts/role-tools.sh</td><td>Who may call which tool — deterministic, no model involved</td></tr>
+      <tr><td class="mono">./scripts/demo-roles.sh</td><td>Enrolment, a role grant, and enforcement server-side</td></tr>
+      <tr><td class="mono">./scripts/tls-check.sh</td><td>Every hop authenticated, and by which mechanism (<a href="#transport">§11</a>)</td></tr>
+      <tr><td class="mono">./scripts/ha-check.sh</td><td>Replicas spread, and an eviction is survivable</td></tr>
+      <tr><td class="mono">./scripts/check-images.sh</td><td>Are the running pods the revision you built?</td></tr>
+      <tr><td class="mono">./scripts/show-trace.sh</td><td>The latest trace, with the identity attributes on its spans</td></tr>
+      <tr><td class="mono">./scripts/build-bundle.sh · sign-bundle.sh · verify-bundle.sh</td><td>Build, sign and verify the policy artifact</td></tr>
+      <tr><td class="mono">./logs.sh</td><td>A readable tail across the services</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Observability: the question the platform exists to answer</h3>
+  <p>
+    Traces and metrics are not decoration here. The interesting question is
+    <i>"which agent, acting for which user, asked for what, and what did policy decide?"</i>
+    — and that question spans services. Spans carry identity attributes, the API exports
+    platform counters at <code>/metrics</code>, Prometheus scrapes them, and Grafana draws
+    the dashboard:
+  </p>
+  <div class="kv">
+    <span><b>agent_platform_logins_total</b> result</span>
+    <span><b>agent_platform_audit_events_total</b> event</span>
+    <span><b>agent_platform_approvals_pending</b></span>
+    <span><b>agent_platform_http_requests_total</b> method · route · status</span>
+  </div>
+  <p class="muted">
+    The platform counters are derived from the <b>audit stream</b>, deliberately: every
+    service forwards audit events to the API, so one ingest point yields policy decisions,
+    approvals, logins and admin actions. The dashboard and the audit log cannot drift apart,
+    because they are the same data.
+  </p>
+
+  <h3>Scaling and redundancy</h3>
+  <table>
+    <thead><tr><th>Service</th><th>Replicas</th><th>Scales on</th></tr></thead>
+    <tbody>
+      <tr><td>api</td><td>2 → 5</td><td>CPU 70%, <b>the approval backlog</b> (keep it at 5), and per-pod request rate (20/s)</td></tr>
+      <tr><td>tools · agent · gateway · opa</td><td>2 → 5</td><td>CPU 70%</td></tr>
+      <tr><td>spire-server</td><td>1 (or 2 with a shared KeyManager)</td><td>Not autoscaled — identity is a small, steady load</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The floor of two is not arbitrary: it matches the HA replica count, so autoscaling can
+    never quietly take you below the redundancy you asked for, and scale-down is slowed so a
+    short burst does not immediately drop capacity.
+  </p>
+
+  <h3>Self-healing, and the limit of a probe</h3>
+  <p>
+    Every container carries a <b>liveness</b> probe, not just a readiness one — because a
+    readiness probe is a signal, and only liveness restarts a process. That distinction cost
+    this project a day and a half of a broken bring-up (<a href="#built">§18</a>), and it is
+    why the gateway serves a health-only plaintext listener: an mTLS-only service cannot be
+    probed by a kubelet, which has no SVID to present.
+  </p>
+
+  <div class="callout warn">
+    <b>The traps worth knowing before you operate it</b>
+    Rotating a Keycloak client secret in <code>.env</code> does <b>not</b> reach an existing
+    realm (the realm is imported once and preserved, which is what keeps enrolled accounts) —
+    delete the realm or the database and re-run. OPA reads its bundle at startup and the
+    files are mounted with <code>subPath</code>, so a new revision needs a restart, which
+    <code>setup.sh</code> does. And the browser session lives five minutes by design: when it
+    expires the UI says so and returns you to sign-in rather than showing you empty tables.
+  </div>
+</section>
+<section id="verified">
+  <h2>What is verified, and how</h2>
+  <p>
+    Every claim in this document is checkable from a checkout of the repository. Verification
+    happens at three levels, and they are useful for different reasons.
+  </p>
+
+  <table>
+    <thead><tr><th>Level</th><th>Runs</th><th>Proves</th></tr></thead>
+    <tbody>
+      <tr><td><b>Gates</b></td><td>During <code>setup.sh</code></td><td>That this deployment, right now, actually works — an https fetch with the real CA, a real pod fetching a real SVID, two SPIRE replicas agreeing on a trust bundle</td></tr>
+      <tr><td><b>Tests</b></td><td>In CI on every change</td><td>Behaviour, offline and deterministic: application logic, the token and identity code, the policy rules, the chart, the UI build</td></tr>
+      <tr><td><b>Suites</b></td><td>Against a running cluster</td><td>The things only a live system can answer: who may call which tool, what an attack gets, whether a second tenant is truly unreachable</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The numbers, as of this writing</h3>
+  <div class="kv">
+    <span><b>215</b> application tests passed</span>
+    <span><b>23</b> skipped (need a database)</span>
+    <span><b>45/45</b> policy tests</span>
+    <span><b>34</b> SDK tests</span>
+    <span><b>10</b> required CI checks</span>
+    <span><b>9</b> end-to-end suites</span>
+  </div>
+  <p>
+    The skips are the Postgres-backed tests: they need a database, so CI provides one and a
+    local run skips them. To run them locally, start a throwaway Postgres and point the tests
+    at it:
+  </p>
+  <div class="codeblock"><div class="cap">running the tests that need a database</div><pre>docker run -d --rm --name ap-test-pg -e POSTGRES_DB=agent_platform \
+  -e POSTGRES_USER=agent -e POSTGRES_PASSWORD=agent -p 55432:5432 postgres:17-alpine
+
+PGHOST=localhost PGPORT=55432 PGUSER=agent PGPASSWORD=agent PGDATABASE=agent_platform \
+  .venv/bin/python -m pytest -q</pre></div>
+
+  <h3>Prove it yourself</h3>
+  <div class="codeblock"><div class="cap">the whole thing, from a checkout</div><pre>./start.sh                      # build, deploy, print the URL (10–15 min the first time)
+./status.sh                     # pods ready, and the URL
+
+./scripts/demo.sh               # read → refund → approval → issued
+./scripts/attack-tests.sh       # six attacks, every one of which must fail
+./scripts/tenancy-tests.sh      # one tenant's data unreachable from another
+./scripts/role-tools.sh         # who may call which tool (no model involved)
+./scripts/demo-roles.sh         # enrolment grants nothing; a role is enforced server-side
+./scripts/tls-check.sh          # every hop authenticated, and by which mechanism
+./scripts/ha-check.sh           # replicas spread; an eviction is survivable
+./scripts/check-images.sh       # are the running pods the revision you built?
+
+.venv/bin/python -m pytest -q                                  # 215 passed, 23 skipped
+docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/   # 45/45
+helm lint deploy/helm/agent-platform</pre></div>
+
+  <h3>What is <i>not</i> verified here, said plainly</h3>
+  <ul>
+    <li><b>The browser interactions.</b> There is no headless browser in this environment, so
+      the UI's behaviour is verified by hand — the API calls it makes are all covered, but
+      "does the card look right when you click Deny" is a human's job. Several UI fixes in
+      <a href="#built">§18</a> were found exactly this way, by a person looking at the page.</li>
+    <li><b>The AWS KMS path</b> was exercised once against a real account: two SPIRE replicas
+      sharing one CA, a replica deleted mid-flight with a workload still receiving a fresh
+      SVID and no workload restarting. It is not exercised in CI, because it needs
+      credentials — so treat it as verified-and-not-regression-tested.</li>
+    <li><b>The mesh is required</b> for the third-party hops' encryption. Without the Linkerd
+      CLI, setup skips it and says so: the platform still runs, and those hops are plaintext.
+      The SPIFFE hops are unaffected, because they do not depend on it.</li>
+  </ul>
+</section>
+
+<section id="built">
+  <h2>How this was built</h2>
+  <p>
+    This section is unusual in product documentation, and it is here deliberately. This
+    project's distinguishing quality is not that it worked the first time — it is that its
+    failures are <b>recorded, explained, and turned into checks</b>. If you are evaluating it,
+    this is the part worth reading: everything below is a claim about how the project behaves
+    when something goes wrong, and every one ends with the test that now catches it.
+  </p>
+
+  <h3>1 · A process hung for 31 hours and nothing restarted it</h3>
+  <p>
+    Jaeger — the trace viewer — stopped responding and stopped logging. The container stayed
+    <span class="pill ok">Running</span> and its readiness probe went on reporting failure,
+    forever. Nothing looked at the failure, because a readiness probe is a signal, not a
+    restart: only a <b>liveness</b> probe tells Kubernetes to do something about it. The
+    bring-up script, which waits for rollouts, could not finish — so the first-run path was
+    broken for a day and a half and only a human could clear it.
+  </p>
+  <p>
+    <b>Now:</b> every container carries a liveness probe, with thresholds chosen per component
+    — about a minute of silence for a stateless service, two minutes for Postgres, where a
+    restart is the most expensive thing Kubernetes can do to it. The gateway also needed
+    <i>code</i>, not a probe: its only listener is mTLS, and a kubelet has no SVID, so it
+    serves <code>/healthz</code> and nothing else on a plaintext port.
+  </p>
+  <p class="muted">
+    <b>And the verification taught its own lesson.</b> The first attempt reported "not
+    restarted" for four services, which looked like a finding about probes. It was a finding
+    about the test: signals sent to a PID-namespace init process from inside the namespace are
+    discarded — <code>kubectl exec … kill -STOP 1</code> is a no-op, and the process stays in
+    state <code>S</code>. It has to be signalled from the node, matched by cgroup. Fifteen
+    containers were then hung and watched to recover.
+  </p>
+
+  <h3>2 · A TLS server served an expired certificate</h3>
+  <p>
+    The gateway fetches its identity at startup. Keycloak hands back its cached SVID, which
+    may already be half spent, so a process that restarts on a fixed interval can find itself
+    serving an expired certificate — every handshake fails, and the symptom names the wrong
+    component: "the model could not be reached".
+  </p>
+  <p>
+    <b>Now:</b> the restart deadline is derived from the certificate's own
+    <code>notAfter</code> (exit 120 seconds early), and <code>gateway.svid_loaded</code>
+    reports <code>expires_in_seconds</code> at startup so the condition is visible before it
+    bites.
+  </p>
+
+  <h3>3 · The identity registry lived in a file beside the server</h3>
+  <p>
+    SPIRE's registry was a SQLite file, so a restarted server forgot every agent and every
+    entry — and the demo's script deleted Keycloak every run, so accounts did not survive
+    either. Identity was durable in principle and ephemeral in practice.
+  </p>
+  <p>
+    <b>Now:</b> the registry, the realm and the application's own state live in Postgres,
+    each with its own least-privilege role; SPIRE's signing keys are on a volume, so a
+    restart keeps the same CA and no workload needs reissuing. This also inverted the demo's
+    critical path — identity now needs the database — which is exactly why production points
+    at a managed, replicated one.
+  </p>
+
+  <h3>4 · Two identity systems, and no hop that named its peer</h3>
+  <p>
+    The mesh encrypted everything, which felt like security and was not identity. No hop told
+    the application <i>who</i> was calling, and <code>POST /audit/events</code> accepted no
+    credential at all: any pod in the mesh could forge an audit record.
+  </p>
+  <p>
+    <b>Now:</b> every hop between workloads we own is SPIFFE on both sides, and the machine
+    routes require the caller to be <b>named</b>. And the alternative was measured before it
+    was rejected: taking our pods out of the mesh would have left <i>all</i> of their outbound
+    hops unencrypted — a login through an uninjected API against a meshed Keycloak still
+    returned 200, in plaintext. So the pods stay injected and only the SPIFFE port skips the
+    proxy.
+  </p>
+
+  <h3>5 · The five-minute token expiry looked like data loss</h3>
+  <p>
+    The demo's sign-in tokens live 300 seconds, and the UI polls every five. When the token
+    expired, the audit timeline's failed refresh set an empty array — so the page rendered
+    <i>"No events yet"</i>, which reads as the audit trail having been <b>lost</b>.
+  </p>
+  <p>
+    <b>Finding the fix took measuring the API rather than assuming it.</b> A missing token
+    returns 401, but an <b>expired</b> one returns 403 — the same status a caller gets for
+    lacking a role, so "sign out on 403" would have ejected people for lacking permission.
+    The UI now expires the session from the token's own <code>expires_at</code>, with a
+    narrow backstop that matches the API's token messages. And the audit page keeps its last
+    good view and says it is stale.
+  </p>
+  <p class="muted">
+    <b>Then it looked like the fix hadn't shipped.</b> It had — the server sent no
+    <code>Cache-Control</code> at all, so the browser applied heuristic caching and kept
+    running a build several deploys old. The shell is now <code>no-cache</code> (revalidate,
+    which the ETag makes cheap) and the hashed bundles are <code>immutable</code>.
+  </p>
+
+  <h3>6 · A user with a role, shown as having none</h3>
+  <p>
+    A demo user signed in with "no roles" — and then successfully issued a refund. Her token
+    carried <code>billing</code> and policy honoured it; the API's list of platform roles was
+    simply missing <code>billing</code> and <code>read_only</code>, so the display dropped
+    them. Capability and display disagreed, and the display is what a person believes.
+  </p>
+  <p>
+    <b>Now:</b> the API serves the role list and the UI renders what it is given — one source
+    instead of four — and two tests compare that source against the <b>policy</b> and against
+    the <b>realm seed</b>, so either direction of drift fails the build. Restoring the old list
+    makes both tests fail with the reason in the message; that was verified by doing it.
+  </p>
+
+  <h3>7 · Markup generated by a script that rendered the script</h3>
+  <p>
+    A facts row was added to a result card by generating JSX from a script, and the regex
+    quantifier meant to <i>match</i> whitespace was written into the output as literal text.
+    It compiled, it typechecked, and the class-coverage check passed — and it put
+    <code>[ ]*</code> on the screen between every value. (An earlier version of the same
+    mistake rendered <code>{at(a.at)}</code> as text, for the same reason.)
+  </p>
+  <p>
+    <b>Now:</b> markup is written by hand, regexes are used only to <i>find</i> code, and a
+    test fails if any web source contains a whitespace regex fragment — the exact signature of
+    the mistake. The deploy path also reads the built bundle for the same fragments.
+  </p>
+
+  <h3>8 · Claims that were not checks</h3>
+  <p>
+    Two example, both found while fixing something else. The roles suite printed
+    <i>"must be refused"</i> and then whatever status came back — a <b>200 would have
+    passed</b>; it now asserts 403. And a probe of my own reported "not restarted" for every
+    service, because the command it used to hang a process is silently discarded
+    (see §1). An assertion is the difference between a claim and a check.
+  </p>
+
+  <h3>What the project settled on</h3>
+  <div class="grid2">
+    <div class="tile"><h4>Every claim gets a check</h4><p>If it is written down as behaviour, it has a test, a gate, or a suite.</p></div>
+    <div class="tile"><h4>A check must be able to fail</h4><p>The new tests were validated by reverting the fix and watching them fail — with the reason in the message.</p></div>
+    <div class="tile"><h4>Do not test only what you just wrote</h4><p>A deployment script's authenticated path was never exercised, and that is exactly where its bug lived.</p></div>
+    <div class="tile"><h4>Stubs must fail like the real thing</h4><p>A stand-in that accepts anything proves only that the code runs. The test double now enforces required arguments, the way the real CLI does.</p></div>
+    <div class="tile"><h4>Regexes find, never generate</h4><p>Two visible bugs came from generating markup with patterns instead of writing it.</p></div>
+    <div class="tile"><h4>When the page looks wrong, read the headers</h4><p>A correct server and a stale browser are indistinguishable from the inside.</p></div>
+  </div>
+</section>
+<section id="limits">
+  <h2>Limits and non-goals</h2>
+  <p>
+    Every system is honest only about the boundaries it states. These are the ones this
+    platform names in its own documentation, rather than leaving to be discovered.
+  </p>
+
+  <h3>What it deliberately is not</h3>
+  <div class="grid2">
+    <div class="tile">
+      <h4>Not an agent framework</h4>
+      <p>
+        It is the identity and authorization layer <i>around</i> an agent. The agent is
+        LangGraph, the tool boundary is MCP, the policy engine is OPA — the project's
+        contribution is the layer that makes those three accountable to a person's identity.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Not production infrastructure</h4>
+      <p>
+        One Postgres, on a node-local volume, is a demonstration choice. SPIRE can run two
+        replicas with a shared KeyManager, but the database remains the shared dependency —
+        which is why the chart takes a managed DSN.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Not a claim that one identity system sufficed</h4>
+      <p>
+        Two remain, and the boundary between them is the design (ADR-0012). The mesh is
+        load-bearing for the software we did not write.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Not real data, ever</h4>
+      <p>
+        Everything is synthetic: customers, orders, refunds, personal data. The PCI-aware
+        scoping is real in shape and fictional in content (ADR-0006,
+        <code>docs/data-handling.md</code>).
+      </p>
+    </div>
+  </div>
+
+  <h3>The residuals, repeated on purpose</h3>
+  <p>
+    These are stated in the transport section and in the ADR, and they are repeated here
+    because a limit you have to find is a limit you will miss:
+  </p>
+  <table>
+    <thead><tr><th>Residual</th><th>Consequence</th></tr></thead>
+    <tbody>
+      <tr><td>The ingress → api hop is plaintext <i>in-cluster</i></td><td>The browser's hop is encrypted; the last leg inside the cluster is not, because the controller carries no sidecar. Meshing the controller closes it.</td></tr>
+      <tr><td>A machine caller's name rides a JWT-SVID, not the certificate</td><td>Our ASGI server does not expose the peer certificate. The name is audience-bound, five minutes, never logged — but it is a bearer token, not a SAN assertion.</td></tr>
+      <tr><td>The mesh must be present for third-party encryption</td><td>Without it, those hops are plaintext — and setup says so rather than pretending.</td></tr>
+      <tr><td>Cross-tenant isolation is enforced in the application and the policy</td><td>Not by separate databases or clusters. For a shared deployment of this shape that is the right trade; for stricter isolation you would go further.</td></tr>
+      <tr><td>The threat model covers ten threats</td><td>It does not claim to cover categories outside it — availability under deliberate attack, or the security of the model provider's own systems, are out of scope and named as such.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="appendix">
+  <h2>Appendix</h2>
+
+  <h3>Ports, as deployed</h3>
+  <table>
+    <thead><tr><th>Service</th><th>Ports</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>api</td><td class="mono">8080 · 8443</td><td>8080 is the listener for the browser and tooling; 8443 is the SPIFFE listener</td></tr>
+      <tr><td>tools</td><td class="mono">8000 · 8443</td><td>The tool server: 8000 for verification clients, 8443 for the agent</td></tr>
+      <tr><td>agent</td><td class="mono">8081 · 8443</td><td>8443 is SPIFFE; 8081 carries the user→agent path</td></tr>
+      <tr><td>gateway</td><td class="mono">8443 · 8081</td><td>8443 is SPIFFE <b>only</b>; 8081 serves <code>/healthz</code> and nothing else, for the kubelet</td></tr>
+      <tr><td>sandbox</td><td class="mono">8090</td><td>The simulated vendor system, with its own state on a volume</td></tr>
+      <tr><td>keycloak</td><td class="mono">8080 · 9000</td><td>9000 is the management port the health probes use</td></tr>
+      <tr><td>opa</td><td class="mono">8181</td><td>Policy decisions and its own health</td></tr>
+      <tr><td>postgres</td><td class="mono">5432</td><td>Approvals, checkpoints, audit, SPIRE's registry, Keycloak's realm</td></tr>
+      <tr><td>otel-collector</td><td class="mono">4317 · 4318 · 8888 · 13133</td><td>OTLP gRPC and HTTP, the collector's own metrics, and its health endpoint</td></tr>
+      <tr><td>jaeger</td><td class="mono">16686</td><td>The trace viewer</td></tr>
+      <tr><td>prometheus · grafana</td><td class="mono">9090 · 3000</td><td>Scrape and queries; the provisioned dashboard</td></tr>
+      <tr><td>spire-server · agent</td><td class="mono">8081 · socket</td><td>The server's API; workloads use the Unix socket, not a port</td></tr>
+      <tr><td>spire oidc-discovery</td><td class="mono">11080</td><td>Serves the JWKS the gateway and Keycloak use to verify JWT-SVIDs</td></tr>
+      <tr><td>metrics-server · adapter</td><td class="mono">10250 · 6443</td><td>Resource metrics and the custom/external metric APIs</td></tr>
+      <tr><td>ingress-nginx</td><td class="mono">80 · 443</td><td>In-cluster; the demo reaches it through a port-forward on 8443</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Environment variables worth knowing</h3>
+  <p class="muted">
+    The manifests and the chart are the reference; these are the ones that shape behaviour.
+  </p>
+  <table>
+    <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">SPIFFE_SOCKET · SPIFFE_BUNDLE</td><td>Where the Workload API socket and the trust bundle are</td></tr>
+      <tr><td class="mono">SPIFFE_RESTART_MARGIN_SECONDS</td><td>How early a service exits before its certificate expires (default 120 s)</td></tr>
+      <tr><td class="mono">WORKLOAD_AUDIENCE</td><td>The audience this service requires of a machine caller's JWT-SVID. Unset means the check is skipped — which the manifests never leave unset</td></tr>
+      <tr><td class="mono">TOKEN_AUDIENCE · KC_ISSUER</td><td>The audience and issuer expected of delegated tokens</td></tr>
+      <tr><td class="mono">AGENT_URL · TOOLS_URL · GATEWAY_URL</td><td>Where each service calls its peers — over the SPIFFE listener</td></tr>
+      <tr><td class="mono">OPA_URL · DATABASE_URL / PG*</td><td>Policy decisions, and durable state (empty means in-memory)</td></tr>
+      <tr><td class="mono">LLM_PROVIDER · LLM_BASE_URL · LLM_MODEL · LLM_API_KEY</td><td>The gateway's provider; the key is consumed only there</td></tr>
+      <tr><td class="mono">LLM_RATE_LIMIT_PER_MINUTE · LLM_TOKEN_BUDGET_PER_DAY</td><td>Per-agent limits, keyed on the caller's SPIFFE ID, stored in Postgres</td></tr>
+      <tr><td class="mono">LLM_GATEWAY_AUDIENCE · SPIRE_JWKS_URL</td><td>How the gateway decides which workload is asking</td></tr>
+      <tr><td class="mono">SIGNUP_ENABLED</td><td>Whether the self-service enrollment page is offered</td></tr>
+      <tr><td class="mono">SPIRE_KEY_MANAGER (+ SPIRE_KMS_*)</td><td>Which key manager SPIRE uses, and the AWS settings when it is <code>aws_kms</code></td></tr>
+      <tr><td class="mono">WEB_DIR</td><td>Where the API finds the built UI to serve</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Metrics</h3>
+  <div class="kv">
+    <span><b>agent_platform_logins_total</b>{result}</span>
+    <span><b>agent_platform_audit_events_total</b>{event}</span>
+    <span><b>agent_platform_approvals_pending</b></span>
+    <span><b>agent_platform_http_requests_total</b>{method,route,status}</span>
+    <span>exposed for the HPA: <b>approvals_pending</b> · <b>http_requests_per_second</b></span>
+  </div>
+
+  <h3>The decisions, as records</h3>
+  <table>
+    <thead><tr><th>ADR</th><th>Decision</th></tr></thead>
+    <tbody>
+      <tr><td>0001</td><td>SPIFFE/SPIRE for workload identity</td></tr>
+      <tr><td>0002</td><td>Keycloak Standard Token Exchange V2, plus a <code>jti</code> plugin and a no-cache agent</td></tr>
+      <tr><td>0003</td><td>OPA policy with allow / deny / require-approval</td></tr>
+      <tr><td>0004</td><td>LangGraph for the stateful agent and human-in-the-loop</td></tr>
+      <tr><td>0005</td><td>MCP as the tool boundary</td></tr>
+      <tr><td>0006</td><td>Synthetic data only, with PCI-aware scoping</td></tr>
+      <tr><td>0007</td><td>Security baseline and repository governance</td></tr>
+      <tr><td>0008</td><td>Documentation and handoff strategy</td></tr>
+      <tr><td>0009</td><td>Provider-agnostic LLM behind an identity-authenticated gateway</td></tr>
+      <tr><td>0010</td><td>Supply-chain signing with cosign (keyless, Sigstore)</td></tr>
+      <tr><td>0011</td><td>Self-service enrollment and role administration</td></tr>
+      <tr><td>0012</td><td>Transport identity: SPIFFE for our workloads, the mesh for the rest</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The slices — the project's own work log</h3>
+  <p class="muted">
+    Each is a bounded piece of work with a "what, why, where it lands and how to verify it".
+    Every one on the board is done; what remains is the documented limits above.
+  </p>
+  <table>
+    <thead><tr><th>#</th><th>Slice</th></tr></thead>
+    <tbody>
+      <tr><td>S1</td><td>SPIRE's registry durable in Postgres, keys on a volume — and a switchable shared KeyManager, so the identity tier can be a failover pair</td></tr>
+      <tr><td>S2</td><td>Keycloak replicated against a real database, so accounts survive</td></tr>
+      <tr><td>S3</td><td>Persistent Postgres for approvals, checkpoints and audit</td></tr>
+      <tr><td>S4</td><td>Keycloak hardened into production mode (no <code>start-dev</code>, read-only root filesystem)</td></tr>
+      <tr><td>S5</td><td>Agent guardrails, and an evaluation suite</td></tr>
+      <tr><td>S6</td><td>Custom-metric autoscaling: the API scales on its approval backlog and request rate</td></tr>
+      <tr><td>S7</td><td>SPIFFE on every hop we own, with the caller named</td></tr>
+      <tr><td>S7b</td><td>TLS for the browser edge — an ingress with a certificate that is verified</td></tr>
+      <tr><td>S8</td><td>Per-tenant role → tool maps</td></tr>
+      <tr><td>S9</td><td>The sandbox keeps its own state, so a restart continues the demo</td></tr>
+      <tr><td>S10</td><td>The privacy use case end to end: the PII tool, its approval gate, and a purpose-built view</td></tr>
+      <tr><td>S11</td><td>SPIRE survives an API-server blip: publishing, not notifying</td></tr>
+      <tr><td>S12</td><td>The agent survives a Postgres restart</td></tr>
+      <tr><td>S13</td><td>Stop blaming the model for infrastructure faults</td></tr>
+      <tr><td>S14</td><td>The scripts pin their cluster, so setup cannot target the wrong one</td></tr>
+      <tr><td>S15</td><td>The gateway must not serve an expired SVID</td></tr>
+      <tr><td>S16</td><td>Liveness probes: a hung process must heal itself</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Glossary</h3>
+  <table>
+    <thead><tr><th>Term</th><th>Plain meaning here</th></tr></thead>
+    <tbody>
+      <tr><td><b>audience (<code>aud</code>)</b></td><td>Which service a token is for. A token minted for the tool server is useless at the API.</td></tr>
+      <tr><td><b>attestation</b></td><td>How SPIRE satisfies itself that a node and pod are genuine before issuing an identity.</td></tr>
+      <tr><td><b>audit trail</b></td><td>The append-only record of what happened, keyed on identity, with secrets and personal data redacted before storage.</td></tr>
+      <tr><td><b><code>azp</code></b></td><td>The workload a token was issued <i>to</i> — the agent, typically. Checked as defence in depth.</td></tr>
+      <tr><td><b>bearer token</b></td><td>A credential that works for whoever holds it. Short lifetimes and audience binding are how that risk is managed.</td></tr>
+      <tr><td><b>CA (certificate authority)</b></td><td>The thing that signs certificates. Here, SPIRE's, rotated daily in the demo.</td></tr>
+      <tr><td><b>checkpoint</b></td><td>A saved agent state, in Postgres, so a paused run can resume.</td></tr>
+      <tr><td><b>cosign / Sigstore</b></td><td>Signing artifacts without a stored key: the signature is tied to the CI workflow and logged publicly.</td></tr>
+      <tr><td><b>delegation</b></td><td>Acting on someone's behalf with a token that says so — never with their password.</td></tr>
+      <tr><td><b>deny by default</b></td><td>Nothing is permitted unless a rule permits it.</td></tr>
+      <tr><td><b>JWT · JWT-SVID</b></td><td>A signed JSON token; here, the form of an SVID used to say <i>who is calling</i> in a header.</td></tr>
+      <tr><td><b>JWKS</b></td><td>The published public keys a verifier uses to check a JWT's signature.</td></tr>
+      <tr><td><b>Keycloak</b></td><td>The identity provider: logins, tokens, and the token exchange.</td></tr>
+      <tr><td><b>kind</b></td><td>Kubernetes in Docker — the local cluster the demo runs on.</td></tr>
+      <tr><td><b>LangGraph</b></td><td>The library the agent is built with; its state machine is what makes pausing for approval natural.</td></tr>
+      <tr><td><b>Linkerd</b></td><td>The service mesh: mutual TLS for the hops we do not control the code of.</td></tr>
+      <tr><td><b>liveness vs readiness</b></td><td>Readiness decides whether traffic is sent; liveness decides whether the process is restarted. Only liveness recovers a hang.</td></tr>
+      <tr><td><b>MCP</b></td><td>Model Context Protocol — one of the two ways tools are exposed, funnelling through the same enforcement.</td></tr>
+      <tr><td><b>mTLS</b></td><td>TLS where both sides present certificates, so each knows who the other is.</td></tr>
+      <tr><td><b>OPA · Rego</b></td><td>The policy engine and the language its rules are written in.</td></tr>
+      <tr><td><b>PEP</b></td><td>Policy enforcement point — the one place decisions are applied: the tool server.</td></tr>
+      <tr><td><b>RBAC</b></td><td>Roles bound to permissions; here, the role → tool matrix, per tenant.</td></tr>
+      <tr><td><b>RFC 8693</b></td><td>The OAuth 2.0 Token Exchange standard: trading one token for another.</td></tr>
+      <tr><td><b>SPIFFE · SPIRE</b></td><td>The standard for workload identity, and the implementation that issues it.</td></tr>
+      <tr><td><b>SVID</b></td><td>A workload's credential — an X.509 certificate or a signed JWT, both short-lived, both fetched rather than stored.</td></tr>
+      <tr><td><b>sub</b></td><td>The subject a token is about: the user whose authority is being exercised.</td></tr>
+      <tr><td><b>tenant</b></td><td>A customer of the platform. An identity attribute, not a parameter.</td></tr>
+      <tr><td><b>trust bundle</b></td><td>The set of CA certificates a verifier accepts. Its identity across replicas is what proves a shared key manager.</td></tr>
+      <tr><td><b>trust domain</b></td><td>The namespace identities are issued in — <code>acme.com</code> here, and documentation rather than a secret.</td></tr>
+      <tr><td><b>workload</b></td><td>Any program with an identity. In this platform, a pod's main container.</td></tr>
+      <tr><td><b>Workload API</b></td><td>The in-pod socket a workload asks for its identity. No password is presented to it.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Where to read more</h3>
+  <p class="muted">Each of these lives in <code>docs/</code> and goes deeper than this page.</p>
+  <table>
+    <thead><tr><th>Read</th><th>For</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">threat-model.md</td><td>The ten threats, the mitigation, and the test for each</td></tr>
+      <tr><td class="mono">decisions/ADR-0012-transport-identity.md</td><td>Why SPIFFE here and the mesh there, and what the boundary costs</td></tr>
+      <tr><td class="mono">tls.md</td><td>Transport security, the verification output, and the residuals</td></tr>
+      <tr><td class="mono">policy-lifecycle.md</td><td>How policy is written, versioned, signed and shipped</td></tr>
+      <tr><td class="mono">roles-and-tools.md</td><td>The matrix, per tenant</td></tr>
+      <tr><td class="mono">privacy.md</td><td>The PII path end to end, including its approval gate</td></tr>
+      <tr><td class="mono">tenancy.md · data-stores.md · ha.md · autoscaling.md</td><td>Isolation, durability, redundancy and scaling in detail</td></tr>
+      <tr><td class="mono">operator-guide.md</td><td>The runbook, including the traps</td></tr>
+      <tr><td class="mono">backlog.md</td><td>Every slice, what it was for, and how it was verified</td></tr>
+      <tr><td class="mono">glossary.md</td><td>The repository's own glossary, longer than this one</td></tr>
+      <tr><td class="mono">HANDOFF.md</td><td>The resume-here document: current state, and the gotchas</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<div class="foot">
+  <p>
+    <b>Agent Identity Platform</b> — an identity and authorization layer for AI agents.
+    This page is a single self-contained file in the repository
+    (<code>docs/site/index.html</code>): no build step, no dependencies, and it works
+    offline. Everything quoted in it comes from the code it describes.
+  </p>
+  <p>
+    Security reports go through the repository's private advisory process
+    (<code>SECURITY.md</code>), never a public issue. Contributions follow
+    <code>CONTRIBUTING.md</code>.
+  </p>
+</div>
+
+</main>
+</div>
+<button class="totop" id="totop" type="button">↑ Top</button>
+<script>
+/* Nothing here needs a network or a framework. */
+(function(){
+  var root=document.documentElement;
+  var tbtn=document.getElementById('theme');
+  var saved=null; try{saved=localStorage.getItem('docs-theme')}catch(e){}
+  if(saved) root.setAttribute('data-theme',saved);
+  function syncTheme(){ tbtn.textContent = root.getAttribute('data-theme')==='light' ? 'Dark' : 'Light'; }
+  syncTheme();
+  tbtn.addEventListener('click',function(){
+    var next = root.getAttribute('data-theme')==='light' ? 'dark' : 'light';
+    root.setAttribute('data-theme',next);
+    try{localStorage.setItem('docs-theme',next)}catch(e){}
+    syncTheme();
+  });
+
+  /* Copy buttons, added to every block rather than written into the markup */
+  document.querySelectorAll('.codeblock').forEach(function(block){
+    var pre=block.querySelector('pre'); if(!pre) return;
+    var b=document.createElement('button');
+    b.type='button'; b.className='copy'; b.textContent='copy';
+    b.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        b.textContent='copied'; setTimeout(function(){b.textContent='copy'},1200);
+      },function(){ b.textContent='press ⌘C'; });
+    });
+    block.appendChild(b);
+  });
+
+  /* Sidebar filter: narrows the contents list, not the document */
+  var filter=document.getElementById('filter');
+  filter.addEventListener('input',function(){
+    var q=filter.value.trim().toLowerCase();
+    document.querySelectorAll('nav ol').forEach(function(list){
+      var shown=0;
+      list.querySelectorAll('a').forEach(function(a){
+        var hit = !q || a.textContent.toLowerCase().indexOf(q)>=0;
+        a.classList.toggle('hidden',!hit);
+        if(hit) shown++;
+      });
+      list.parentElement.style.display = shown ? '' : 'none';
+    });
+  });
+
+  /* Which section am I in? */
+  var links=Array.prototype.slice.call(document.querySelectorAll('nav a'));
+  var sections=links.map(function(a){return document.querySelector(a.getAttribute('href'))});
+  var progress=document.getElementById('progress');
+  function onScroll(){
+    var y=window.scrollY+140, current=null;
+    sections.forEach(function(s,i){ if(s && s.offsetTop<=y) current=i; });
+    links.forEach(function(a,i){ a.classList.toggle('active', i===current); });
+    var h=document.body.scrollHeight-window.innerHeight;
+    progress.style.width = (h>0 ? (window.scrollY/h)*100 : 0)+'%';
+    document.getElementById('totop').classList.toggle('show', window.scrollY>600);
+  }
+  window.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('resize',onScroll);
+  onScroll();
+
+  document.getElementById('totop').addEventListener('click',function(){
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+  document.getElementById('expand').addEventListener('click',function(){
+    /* Every section is already in the document; this is for printing and for the
+       browser's own find-in-page, which only sees what is rendered. */
+    document.querySelectorAll('details').forEach(function(d){d.open=true});
+    this.textContent='Expanded'; setTimeout(()=>{this.textContent='Expand all'},1200);
+  });
+})();
+</script>
+</body>
+</html>
