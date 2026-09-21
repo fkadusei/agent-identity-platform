@@ -483,6 +483,18 @@ kubectl -n $NS rollout status deploy/grafana --timeout=180s >/dev/null
 ok "otel-collector, jaeger, prometheus + grafana ready (traces, metrics, dashboard)"
 
 say "9. platform services"
+# Which model the gateway uses, taken from .env so that swapping one does not mean
+# editing a manifest (scripts/use-model.sh does this for you). The default is the
+# portable local model; set OLLAMA_MODEL in .env to use anything else you have.
+LLM_PROVIDER="${LLM_PROVIDER:-ollama}"
+OLLAMA_URL="${OLLAMA_URL:-http://host.docker.internal:11434}"
+OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
+kubectl -n $NS create configmap llm-config \
+  --from-literal=LLM_PROVIDER="$LLM_PROVIDER" \
+  --from-literal=OLLAMA_URL="$OLLAMA_URL" \
+  --from-literal=OLLAMA_MODEL="$OLLAMA_MODEL" \
+  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+ok "gateway will use $OLLAMA_MODEL via $LLM_PROVIDER at $OLLAMA_URL"
 # The optional provider key: only the gateway consumes it.
 if [ -n "${LLM_API_KEY:-}" ]; then
   kubectl -n $NS create secret generic llm-api-key \

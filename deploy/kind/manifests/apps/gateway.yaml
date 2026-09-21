@@ -63,6 +63,14 @@ spec:
         - name: gateway
           image: agent-platform/gateway:demo
           imagePullPolicy: IfNotPresent
+          # Which model, and where it runs. Rendered by setup.sh from .env into this
+          # ConfigMap, so swapping a model does not mean editing a manifest. Nothing
+          # below may also appear under `env`: an explicit entry wins over `envFrom`,
+          # and then a swap would silently do nothing.
+          envFrom:
+            - configMapRef:
+                name: llm-config
+                optional: true
           env:
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: http://otel-collector:4318
@@ -72,12 +80,6 @@ spec:
               value: /run/spire/bundle/bundle.crt
             - name: PORT
               value: "8443"
-            - name: LLM_PROVIDER
-              value: ollama
-            - name: OLLAMA_URL
-              value: http://host.docker.internal:11434
-            - name: OLLAMA_MODEL
-              value: llama3.2:3b
             # Callers present a JWT-SVID; the gateway verifies it against SPIRE's
             # JWKS and keys the limits below on the resulting SPIFFE ID.
             - name: SPIRE_JWKS_URL

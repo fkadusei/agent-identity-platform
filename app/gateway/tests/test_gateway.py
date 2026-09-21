@@ -40,12 +40,14 @@ def test_missing_workload_token_is_401():
 
 def test_ollama_translation(monkeypatch):
     calls: dict = {}
+    audited: dict = {}
 
     def fake_post(url, json=None, **kwargs):  # noqa: A002 - mirrors httpx
         calls["url"], calls["json"] = url, json
         return _Response({"response": '{"tool": "crm.customer.read"}'})
 
     _as_caller(monkeypatch)
+    monkeypatch.setattr(gw, "audit", lambda event, **kw: audited.update(kw))
     monkeypatch.setattr(gw.httpx, "post", fake_post)
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
 
@@ -60,6 +62,38 @@ def test_ollama_translation(monkeypatch):
     assert resp.json()["choices"][0]["message"]["content"] == '{"tool": "crm.customer.read"}'
     assert calls["url"].endswith("/api/generate")
     assert calls["json"]["format"] == "json"  # json_object is translated for Ollama
+    # The audit names the model that ran, not the empty string a caller may send.
+    assert audited["model"] == calls["json"]["model"]
+
+
+def test_a_thinking_model_does_not_lose_its_answer(monkeypatch):
+    """A Qwen3-style model with `format: json` puts the JSON in `thinking`.
+
+    Found by swapping models: `response` came back empty, so the caller received "" and
+    the agent reported an unparseable reply — the model had answered correctly. The
+    gateway asks for `think: false`, and falls back to `thinking` for a model that skips
+    the request anyway.
+    """
+    calls: dict = {}
+
+    def fake_post(url, json=None, **kwargs):  # noqa: A002 - mirrors httpx
+        calls["json"] = json
+        return _Response({"response": "", "thinking": '{"tool": "refunds.quote"}'})
+
+    _as_caller(monkeypatch)
+    monkeypatch.setattr(gw.httpx, "post", fake_post)
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+
+    resp = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "quote a refund"}],
+            "response_format": {"type": "json_object"},
+        },
+    )
+    assert resp.status_code == 200
+    assert calls["json"]["think"] is False
+    assert resp.json()["choices"][0]["message"]["content"] == '{"tool": "refunds.quote"}'
 
 
 def test_hosted_provider_forwards_the_key(monkeypatch):
