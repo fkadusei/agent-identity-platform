@@ -381,23 +381,29 @@ if [ "$REPLICAS" != "1" ]; then
   kubectl -n $NS rollout status statefulset/spire-server --timeout=300s >/dev/null
 fi
 
-# GATE: every replica must present the *same* CA. That is the entire point of the
+# GATE: every replica must present the same *bundle*. That is the entire point of the
 # switch — two servers signing with different CAs would hand out different trust
 # bundles, and a fleet silently alternating between them is worse than one server.
+#
+# Compare the whole bundle, not one certificate: a bundle carries its rotation
+# history (this demo rotates every 12h, so several CAs are in flight), and the first
+# certificate in it is the *oldest*. Fingerprinting that would keep matching after a
+# KeyManager change while the two replicas disagreed about the current CA — passing
+# the check that exists to catch exactly that.
 SEEN=""
 for pod in $(kubectl -n $NS get pod -l app=spire-server -o name | sed 's|pod/||' | sort); do
-  fp=$(kubectl -n $NS exec "$pod" -c spire-server -- /opt/spire/bin/spire-server bundle show \
-        -socketPath "$SOCKET" 2>/dev/null \
-      | openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/.*=//')
-  [ -n "$fp" ] || die "could not read the trust bundle from $pod"
-  SEEN="$SEEN$fp
+  bundle=$(kubectl -n $NS exec "$pod" -c spire-server -- /opt/spire/bin/spire-server bundle show \
+             -socketPath "$SOCKET" 2>/dev/null)
+  [ -n "$bundle" ] || die "could not read the trust bundle from $pod"
+  digest=$(printf '%s' "$bundle" | openssl dgst -sha256 -r | cut -d' ' -f1)
+  SEEN="$SEEN$digest
 "
-  info "$pod CA sha256 ${fp:0:24}…"
+  info "$pod trust bundle sha256 ${digest:0:24}… ($(printf '%s' "$bundle" | grep -c 'BEGIN CERTIFICATE') CAs)"
 done
 DISTINCT=$(printf '%s' "$SEEN" | sort -u | grep -c . || true)
 [ "$DISTINCT" = "1" ] \
-  || die "SPIRE replicas are signing with different CAs ($DISTINCT distinct) — the KeyManager is not shared"
-ok "spire-server: $KEY_MANAGER KeyManager, $REPLICAS replica(s), one CA across all of them"
+  || die "SPIRE replicas are serving different trust bundles ($DISTINCT distinct) — the KeyManager is not shared"
+ok "spire-server: $KEY_MANAGER KeyManager, $REPLICAS replica(s), one bundle across all of them"
 
 say "6. Keycloak"
 RENDERED=$(mktemp)

@@ -99,9 +99,29 @@ naming `SPIRE_KMS_PRINCIPAL_ARN`. On kind, credentials arrive as a Kubernetes
 Secret; in production, use workload identity (IRSA/EKS Pod Identity, GKE, Azure)
 and no key material at all.
 
-**Cost and latency:** every CA signature becomes a KMS API call, and each SVID
-issuance needs one. Fine at demo scale; at production volume it is a real line item
-and worth measuring before you commit to it.
+**What switching does to the CA — it changes it.** A KMS-backed server starts with a
+new CA (the disk one is a different key), and SPIRE keeps the old CAs in the bundle
+while existing SVIDs are still valid, so the bundle grows a certificate rather than
+losing one. That makes switching a maintenance-window operation, not a zero-downtime
+flip: workloads holding SVIDs signed by the old CA are rejected once peers refresh
+their bundle, so they have to fetch new identities. `setup.sh`'s ordering is what
+covers it — SPIRE first, then the app tier restarts — and the suite passes
+immediately afterwards.
+
+Related, and worth knowing before reading a bundle: the demo sets `ca_ttl = 24h`, and
+SPIRE rotates at roughly the halfway point, so **the CA rotates every ~12 hours** and
+a live bundle carries several. The setup gate therefore compares the *whole* bundle
+across replicas: fingerprinting one certificate (the first, which is the oldest) keeps
+matching across a KeyManager change, which is precisely the condition the gate exists
+to catch.
+
+**Cost and latency, measured with AWS KMS in `us-east-1`:** every SVID issuance is one
+KMS `Sign`. From inside the cluster, fetching an identity took **5 ms (X.509-SVID, p50)
+and 18 ms (JWT-SVID, p50)** — the agent's own view, which is what matters. (Timing
+`aws kms sign` from a laptop measures CLI startup and credential resolution, not the
+signature: it came out ~467 ms, which is a fact about the CLI.) Each issuance is one
+request, so the running cost is that request count against your region's KMS request
+price — look it up rather than assume a figure.
 
 ## Multi-node: the SPIRE registration fix
 

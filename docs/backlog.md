@@ -96,12 +96,22 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   conditionals unit-tested; and the `aws_kms` plugin **loading in our own image** —
   a probe with no credentials fails at `KMS:ListAliases` with `no EC2 IMDS role
   found`, which proves the plugin is compiled in and that the wiring reaches AWS.
-- **Still open, precisely:** the AWS path is implemented and gated but has not been
-  exercised against a live key, because that needs credentials. The 2-replica
-  one-CA assertion is the thing to watch when they arrive. Also unchanged: a second
-  replica would use the `sql` datastore's `read_only` connection string for reads,
-  and SPIRE now needs Postgres reachable — which is why production points
-  `database.url` at a managed, HA database.
+- **Exercised against a live key** (AWS KMS, `us-east-1`, role-based access through
+  `scripts/setup-aws-kms-role.sh`): the plugin created its own `ECC_NIST_P256`
+  `SIGN_VERIFY` keys (`x509-CA-A`, `JWT-Signer-A`) under
+  `alias/SPIRE_SERVER/acme_com/acme-com/`, both replicas served a **byte-identical
+  trust bundle**, and deleting a replica left the survivor issuing SVIDs with an
+  unchanged bundle — a workload fetched a fresh JWT-SVID **during** the failover and
+  **no workload restarted**. The full suite passed on the KMS-backed CA afterwards.
+  The base credential behaved as designed, too: a `kms:ListAliases` with it was
+  denied, because it may only assume the role.
+- **Two things the live run established that are worth keeping:** switching the
+  KeyManager **changes the CA** (a maintenance-window operation, not a flip), and the
+  demo rotates CAs every ~12h — so the gate compares the whole bundle, not one
+  certificate. Latency and cost are in `docs/ha.md`.
+- **Unchanged:** a second replica would use the `sql` datastore's `read_only`
+  connection string for reads, and SPIRE needs Postgres reachable — which is why
+  production points `database.url` at a managed, HA database.
 
 ## S2 — HA: Keycloak — **done**
 
