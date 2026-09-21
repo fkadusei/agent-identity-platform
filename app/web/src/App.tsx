@@ -585,18 +585,20 @@ function ResultCard({
 
       {held && (
         <div className="approval">
-          {decided === "approved" && !canApprove ? (
+          {decided === "approved" ? (
             <>
-              <p>
-                Approved by a manager. <b>Resume</b> to let the agent finish.
+              <p className="decided ok">
+                <b>Approved by a manager</b> — the agent may perform this action.
               </p>
-              <button className="primary" disabled={busy} onClick={onResume}>
-                Resume now
-              </button>
+              {!canApprove && (
+                <button className="primary" disabled={busy} onClick={onResume}>
+                  Resume now
+                </button>
+              )}
             </>
-          ) : decided === "denied" && !canApprove ? (
-            <p className="reason">
-              Denied by a manager — the agent will not perform this action.
+          ) : decided === "denied" ? (
+            <p className="decided denied">
+              <b>Denied by a manager</b> — the agent will not perform this action.
             </p>
           ) : canApprove ? (
             <div className="row">

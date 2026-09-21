@@ -527,3 +527,17 @@ main h2::before {
   background: var(--surface); font-size: 12px;
 }
 .users .role:hover { border-color: var(--accent-line); }
+
+/* --- a decision, not a footnote ---------------------------------------------
+   The outcome of a held action used to be grey prose, shown only to the person who
+   was *not* allowed to decide it. Both outcomes are now callouts, on every screen
+   that shows the run, and a denial is red: it is the answer the requester is waiting
+   for, and the manager who gave it should not be left looking at live buttons. */
+.decided {
+  border-radius: var(--r-md); border: 1px solid; padding: 12px 15px;
+  margin: 4px 0 0; font-size: 14.5px; box-shadow: var(--shadow-sm);
+}
+.decided.denied { color: #ffc7c0; background: var(--red-soft); border-color: var(--red); }
+.decided.denied b { color: var(--red); }
+.decided.ok { color: #b7f0d3; background: var(--green-soft); border-color: var(--green-line); }
+.decided.ok b { color: var(--green); }
