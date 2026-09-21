@@ -480,8 +480,31 @@ main h2::before {
   letter-spacing: 0.07em; color: var(--hue-tool);
 }
 .tools { display: flex; flex-wrap: wrap; gap: 6px; }
-code.tool {
-  font-size: 12px; font-weight: 550; padding: 3px 9px;
+.tool {
+  font-family: var(--mono); font-size: 12px; font-weight: 550; padding: 4px 10px;
   color: var(--hue-tool); background: var(--surface);
   border: 1px solid var(--hue-tool-line); border-radius: 999px;
+  box-shadow: none;
 }
+.tool:hover:not(:disabled) {
+  color: #a9f4e6; border-color: var(--hue-tool); background: var(--hue-tool-soft);
+}
+.tool:disabled { opacity: 0.55; cursor: default; }
+
+/* --- audit filters ---------------------------------------------------------- */
+.filters {
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+  margin: 4px 0 14px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface);
+}
+.filters label { display: flex; flex-direction: column; gap: 5px; }
+.filters label > span {
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.06em;
+  text-transform: uppercase; color: var(--faint);
+}
+.filters select { min-width: 11rem; padding: 7px 10px; }
+.filters .muted { margin-left: auto; align-self: center; font-size: 12.5px; }
+
+/* the field where an approver says why */
+.notefield { margin-top: 10px; }
+.notefield:disabled { opacity: 0.5; }

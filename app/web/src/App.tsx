@@ -437,11 +437,23 @@ function Console({
         <div className="toolbelt">
           <span className="toolbelt-label">Tools your role may call</span>
           <span className="tools">
-            {session.tools.map((t) => (
-              <code className="tool" key={t} title="a tool this role may invoke">
-                {t}
-              </code>
-            ))}
+            {session.tools.map((t) => {
+              // Clicking a tool loads the example that uses it, because "these are
+              // callable" is easier to show than to say. Tools without an example
+              // stay listed, just not clickable.
+              const example = EXAMPLES.find((e) => e.tool === t);
+              return (
+                <button
+                  className="tool"
+                  key={t}
+                  disabled={!example}
+                  title={example ? `Try it: ${example.task}` : "a tool this role may call"}
+                  onClick={() => example && setTask(example.task)}
+                >
+                  {t}
+                </button>
+              );
+            })}
           </span>
         </div>
       )}
@@ -629,6 +641,10 @@ function Approvals({
 }) {
   const [items, setItems] = useState<any[]>([]);
   const [error, setError] = useState("");
+  // A decision is a judgement, and the API records a note with it. Without a field
+  // here, "why was this approved?" could only be answered from the reason someone
+  // else wrote when the run was held.
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -646,7 +662,7 @@ function Approvals({
 
   const decide = async (id: string, approved: boolean) => {
     try {
-      await decideApproval(id, approved, session.token);
+      await decideApproval(id, approved, session.token, notes[id] ?? "");
       refresh();
     } catch (e) {
       setError(String(e));
@@ -692,6 +708,13 @@ function Approvals({
           </div>
           <p className="reason">{a.reason}</p>
           <pre>{JSON.stringify(a.args, null, 2)}</pre>
+          <input
+            className="notefield"
+            placeholder="Add a note — recorded with the decision in the audit trail"
+            value={notes[a.id] ?? ""}
+            onChange={(e) => setNotes({ ...notes, [a.id]: e.target.value })}
+            disabled={!canApprove}
+          />
           <div className="row">
             <span className="muted">requested by {a.user}</span>
             <div>
@@ -878,6 +901,15 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
 function Audit({ session }: { session: Session }) {
   const [events, setEvents] = useState<any[]>([]);
   const [stale, setStale] = useState(false);
+  // The API matches filters *exactly*, so these are selects rather than search
+  // boxes: a substring would silently return nothing. Options come from an
+  // unfiltered read — deriving them from a filtered page would hide the values you
+  // might want to switch to.
+  const [filters, setFilters] = useState<{ event?: string; tool?: string; sub?: string }>({});
+  const [options, setOptions] = useState<{ event: string[]; tool: string[]; sub: string[] }>({
+    event: [], tool: [], sub: [],
+  });
+  const filterKey = JSON.stringify(filters);
   useEffect(() => {
     // Keep the last good timeline when a refresh fails, and say it is stale. The
     // previous version caught the failure and set an empty array, so a dropped
@@ -885,8 +917,14 @@ function Audit({ session }: { session: Session }) {
     // audit trail having been lost, rather than as not having been re-read.
     const load = async () => {
       try {
-        setEvents(await getAudit(session.token));
+        const data = await getAudit(session.token, filters);
+        setEvents(data);
         setStale(false);
+        if (!filters.event && !filters.tool && !filters.sub) {
+          const pick = (k: string): string[] =>
+            [...new Set<string>(data.map((e: any) => String(e[k] ?? "")).filter(Boolean))].sort();
+          setOptions({ event: pick("event"), tool: pick("tool"), sub: pick("sub") });
+        }
       } catch {
         setStale(true);
       }
@@ -894,7 +932,9 @@ function Audit({ session }: { session: Session }) {
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, [session.token]);
+    // re-read when the filters change; the string keeps the effect from looping on a
+    // fresh object identity every render
+  }, [session.token, filterKey]);
 
   return (
     <section>
@@ -904,6 +944,26 @@ function Audit({ session }: { session: Session }) {
         redacted before anything is written.
         {stale && <> <b className="stale">Not updating — the last good view is below.</b></>}
       </p>
+      <div className="filters">
+        {(["event", "tool", "sub"] as const).map((k) => (
+          <label key={k}>
+            <span>{k === "sub" ? "user" : k}</span>
+            <select
+              value={filters[k] ?? ""}
+              onChange={(e) => setFilters({ ...filters, [k]: e.target.value || undefined })}
+            >
+              <option value="">any</option>
+              {options[k].map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+        {(filters.event || filters.tool || filters.sub) && (
+          <button className="ghost" onClick={() => setFilters({})}>Clear</button>
+        )}
+        <span className="muted">{events.length} shown</span>
+      </div>
       <div className="timeline">
         {events.map((e, i) => (
           <div className="event" key={i}>
