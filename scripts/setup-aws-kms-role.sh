@@ -79,6 +79,11 @@ command -v python3 >/dev/null 2>&1 || die "python3 is not on PATH"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# The file the settings are written to. Overridable so the self-test
+# (scripts/test-aws-kms-role.sh) can exercise the write path without touching
+# the repository's real .env.
+ENV_FILE="${ENV_FILE:-.env}"
+
 # Who is running this. A browser console sign-in is not a CLI credential, and an
 # expired one is the most common reason this fails — so show AWS's own words rather
 # than replacing them with a guess.
@@ -170,7 +175,8 @@ if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
   # Only add a version when the document actually changed. IAM keeps five versions
   # per managed policy, so "always create a version" turns a re-runnable script into
   # one that fails on its sixth run with LimitExceeded.
-  CURRENT="$(aws iam get-policy "$POLICY_ARN" --query 'Policy.DefaultVersionId' --output text)"
+  CURRENT="$(aws iam get-policy --policy-arn "$POLICY_ARN" \
+    --query 'Policy.DefaultVersionId' --output text)"
   HAVE="$(aws iam get-policy-version --policy-arn "$POLICY_ARN" --version-id "$CURRENT" \
     --query 'PolicyVersion.Document' --output json 2>/dev/null \
     | python3 -c 'import json,sys; print(json.dumps(json.load(sys.stdin), sort_keys=True))' 2>/dev/null || echo "")"
@@ -252,7 +258,7 @@ say "4. the credential for .env"
 umask 077
 KEY_ID=""
 SECRET=""
-if grep -q '^AWS_ACCESS_KEY_ID=' .env 2>/dev/null; then
+if grep -q '^AWS_ACCESS_KEY_ID=' "$ENV_FILE" 2>/dev/null; then
   ok ".env already holds an access key — leaving it alone"
   info "(delete the line and re-run if you want a fresh key)"
 else
@@ -281,13 +287,13 @@ fi
 say "5. .env (gitignored; single-quoted so the shell cannot mangle a value)"
 set_env() { # set_env <KEY> <VALUE> — replace in place, or append
   local key="$1" value="$2" tmp
-  if [ -f .env ] && grep -q "^${key}=" .env; then
+  if [ -f "$ENV_FILE" ] && grep -q "^${key}=" "$ENV_FILE"; then
     tmp="$(mktemp)"
-    grep -v "^${key}=" .env > "$tmp"
+    grep -v "^${key}=" "$ENV_FILE" > "$tmp"
     printf "%s='%s'\n" "$key" "$value" >> "$tmp"
-    mv "$tmp" .env
+    mv "$tmp" "$ENV_FILE"
   else
-    printf "%s='%s'\n" "$key" "$value" >> .env
+    printf "%s='%s'\n" "$key" "$value" >> "$ENV_FILE"
   fi
 }
 if [ -n "$DRY_RUN" ]; then
@@ -311,7 +317,7 @@ else
     set_env AWS_SECRET_ACCESS_KEY "$SECRET"
   fi
   [ -n "$EXTERNAL_ID" ] && set_env SPIRE_KMS_EXTERNAL_ID "$EXTERNAL_ID"
-  chmod 600 .env 2>/dev/null || true
+  chmod 600 "$ENV_FILE" 2>/dev/null || true
   ok "written (mode 0600). setup.sh will add its own demo secrets if .env is new."
 fi
 
@@ -319,7 +325,10 @@ say "6. self-test: the credential can assume the role (what SPIRE does first)"
 if [ -n "$DRY_RUN" ]; then
   info "dry run: skipped"
 else
-  if ( set -a; . ./.env; set +a
+  # Source the file we just wrote — not a hardcoded `.env`, which is the same file
+  # only until someone points the write somewhere else and then wonders why the
+  # self-test says the credentials are broken.
+  if ( set -a; . "$ENV_FILE"; set +a
        aws sts assume-role --role-arn "$SPIRE_KMS_ROLE_ARN" \
          --role-session-name spire-setup-check \
          --query 'AssumedRoleUser.Arn' --output text >/dev/null 2>&1 ); then
