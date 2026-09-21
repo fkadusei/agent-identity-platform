@@ -538,6 +538,12 @@ function ResultCard({
         {STATUS_LABEL[outcome.status] ?? outcome.status}
       </div>
 
+    [ 	]*<div className="facts resultfacts">
+    [ 	]*{outcome.tool && FACT("tool", outcome.tool, "tool")}
+    [ 	]*{outcome.approval_id && FACT("approval", outcome.approval_id, "decision")}
+    [ 	]*{outcome.thread_id && FACT("thread", outcome.thread_id, "when")}
+    [ 	]*</div>
+
       <h3>What just happened</h3>
       <ol className="steps">
         <li>
@@ -759,6 +765,17 @@ function Admin({ token, self }: { token: string; self: string }) {
   };
 
   const toggleEnabled = async (u: any) => {
+    // Disabling your own account is permitted — it was asked for explicitly — but here
+    // there is one platform admin, so the way back is not in this UI.
+    if (u.enabled && u.username === self) {
+      const sure = window.confirm(
+        `Disable your own account?\n\n` +
+          `You will not be able to sign in again, and nothing in the UI can undo it: ` +
+          `re-enabling needs another platform admin, or the operator's Keycloak route. ` +
+          `Continue?`,
+      );
+      if (!sure) return;
+    }
     try {
       await setUserEnabled(u.id, !u.enabled, token);
       refresh();
@@ -817,6 +834,7 @@ function Admin({ token, self }: { token: string; self: string }) {
             <tr key={u.id}>
               <td>
                 <b>{u.username}</b>
+                {u.username === self && <span className="you">you</span>}
                 <br />
                 <span className="muted">{u.email}</span>
               </td>
@@ -832,7 +850,11 @@ function Admin({ token, self }: { token: string; self: string }) {
                   </label>
                 ))}
               </td>
-              <td>{u.enabled ? "enabled" : <span className="muted">disabled</span>}</td>
+              <td>
+                <span className={`status ${u.enabled ? "ok" : ""}`}>
+                  {u.enabled ? "enabled" : "disabled"}
+                </span>
+              </td>
               <td className="actions">
                 <button onClick={() => toggleEnabled(u)}>{u.enabled ? "Disable" : "Enable"}</button>
                 <button onClick={() => reset(u)}>Reset password</button>

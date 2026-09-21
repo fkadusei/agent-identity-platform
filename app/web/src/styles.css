@@ -508,3 +508,22 @@ main h2::before {
 /* the field where an approver says why */
 .notefield { margin-top: 10px; }
 .notefield:disabled { opacity: 0.5; }
+
+/* --- result facts, the "you" marker, and a column of actions ----------------- */
+.resultfacts { margin: 10px 0 2px; }
+.you {
+  margin-left: 8px; padding: 1px 8px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 650; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-line);
+}
+.users td.actions { text-align: right; }
+.users td.actions .actions, .users td.actions {
+  white-space: nowrap;
+}
+.users td.actions button { vertical-align: middle; }
+/* roles read as pills rather than as a list with boxes in it */
+.users .role {
+  padding: 3px 10px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--surface); font-size: 12px;
+}
+.users .role:hover { border-color: var(--accent-line); }
