@@ -12,6 +12,7 @@ import {
   grantRole,
   listApprovals,
   clearSession,
+  SESSION_EXPIRED,
   listUsers,
   loadSession,
   login,
@@ -45,6 +46,30 @@ const EXAMPLES: { label: string; task: string; tool: string }[] = [
 ];
 
 // "spiffe://acme.com/ns/agent-platform/sa/agent" -> "sa/agent" (title has the rest).
+/** Every timestamp in the UI goes through this, so they read the same everywhere. */
+const at = (ts: number | undefined) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
+
+/** One labelled chip: the caption is a micro-label, the value carries the emphasis. */
+type Kind = "agent" | "user" | "tool" | "policy" | "when" | "tenant" | "decision" | "";
+
+/** One labelled chip. `kind` is what gives it a colour: the colour says which sort of
+    fact it is (who, which tool, which policy), not decoration. */
+const FACT = (k: string, v: any, kind: Kind = "") => (
+  <span className={kind ? `fact ${kind}` : "fact"}>
+    <span className="k">{k}</span>
+    <span className="v">{v}</span>
+  </span>
+);
+
+/** Colour by outcome, so a trail can be scanned rather than read. */
+const tone = (s: any) => {
+  const v = String(s ?? "").toLowerCase();
+  if (/deny|denied|refus|error|fail/.test(v)) return "bad";
+  if (/approval|held|require|pending|limit/.test(v)) return "warn";
+  if (/allow|ok|issued|approved|success/.test(v)) return "ok";
+  return "";
+};
+
 const shortId = (id: string) => id.split("/").filter(Boolean).slice(-2).join("/");
 
 const STATUS_LABEL: Record<string, string> = {
@@ -67,6 +92,35 @@ export default function App() {
   const [signupEnabled, setSignupEnabled] = useState(false);
   const [agentId, setAgentId] = useState("");
   const [mode, setMode] = useState<"login" | "enroll">("login");
+  // Set when the token expires under a tab that is already open. The tab is kept
+  // (unlike an explicit sign-out) so signing back in returns you to what you were
+  // doing, rather than to the console.
+  const [notice, setNotice] = useState("");
+
+  const expire = useCallback(() => {
+    setSessionState(null);
+    setMode("login");
+    setNotice(
+      "Your session expired (tokens last 5 minutes). Sign in again and you will come " +
+        "back to this tab — the page was left open, nothing was lost.",
+    );
+  }, []);
+
+  // React to a token the API rejects...
+  useEffect(() => {
+    window.addEventListener(SESSION_EXPIRED, expire);
+    return () => window.removeEventListener(SESSION_EXPIRED, expire);
+  }, [expire]);
+
+  // ...and expire on time from the session's own deadline, which the API supplies
+  // (`expires_at`). That way the UI does not have to infer an expired session from a
+  // status code at all — the 403 above is a backstop for the token being rejected
+  // before this fires.
+  useEffect(() => {
+    if (!session) return;
+    const t = setTimeout(expire, Math.max(session.expiresAt * 1000 - Date.now() - 5000, 0));
+    return () => clearTimeout(t);
+  }, [session, expire]);
 
   useEffect(() => {
     authConfig()
@@ -98,8 +152,36 @@ export default function App() {
   };
 
   return (
-    <div className="app">
-      <header>
+    <>
+      {/*
+        A full-width bar, not a row inside the centred column: "top left" should mean
+        the corner of the page, and the column's left edge sits far from it on a wide
+        screen. Sign out is flush left, the session it ends is flush right, and the bar
+        stays put while the page scrolls so the control is always where it was.
+      */}
+      {session && (
+        <header className="topbar" data-tab={tab}>
+          <span className="facts">
+            {FACT("signed in", session.user, "user")}
+            {session.tenant && FACT("tenant", session.tenant, "tenant")}
+            {session.roles.length ? (
+              session.roles.map((r) => (
+                <span className={`fact role-${r}`} key={r}>
+                  <span className="k">role</span>
+                  <span className="v">{r}</span>
+                </span>
+              ))
+            ) : (
+              FACT("roles", "none")
+            )}
+          </span>
+          <button className="ghost" onClick={signOut}>Sign out</button>
+        </header>
+      )}
+
+      <div className="app" data-tab={tab}>
+        <div className="brand">
+        <span className="mark" aria-hidden="true">AI</span>
         <div>
           <h1>Agent Identity Platform</h1>
           <p className="sub">
@@ -107,26 +189,17 @@ export default function App() {
             on every action, human approval for high-risk ones.
           </p>
         </div>
-        <div className="who">
-          {session ? (
-            <>
-              <span>
-                signed in as <b>{session.user}</b>
-                {session.tenant && <> · tenant {session.tenant}</>}
-                {session.roles.length ? <> · {session.roles.join(", ")}</> : <> · no roles</>}
-              </span>
-              <button onClick={signOut}>Sign out</button>
-            </>
-          ) : (
-            <span>{mode === "login" ? "sign in to continue" : "create an account"}</span>
-          )}
-        </div>
-      </header>
+      </div>
+
+      {!session && notice && <p className="notice">{notice}</p>}
 
       {!session &&
         (mode === "login" ? (
           <Login
-            onLogin={setSession}
+            onLogin={(s) => {
+              setNotice("");
+              setSession(s);
+            }}
             onEnroll={() => setMode("enroll")}
             signupEnabled={signupEnabled}
           />
@@ -158,7 +231,8 @@ export default function App() {
           </main>
         </>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 
@@ -206,7 +280,7 @@ function Login({
           onChange={(e) => setPassword(e.target.value)}
           autoComplete="current-password"
         />
-        <button disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+        <button className="primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </form>
       {error && <div className="error">{error}</div>}
       <p className="hint">
@@ -258,7 +332,7 @@ function Enroll({ onDone, onCancel }: { onDone: () => void; onCancel: () => void
         <p className="hint">
           Your account has <b>no roles</b> yet. Ask an admin to grant you access, then sign in.
         </p>
-        <button onClick={onDone}>Back to sign in</button>
+        <button className="ghost" onClick={onDone}>Back to sign in</button>
       </section>
     );
   }
@@ -277,7 +351,7 @@ function Enroll({ onDone, onCancel }: { onDone: () => void; onCancel: () => void
           value={form.password}
           onChange={set("password")}
         />
-        <button>Create account</button>
+        <button className="primary">Create account</button>
       </form>
       {error && <div className="error">{error}</div>}
       <p className="hint">
@@ -360,10 +434,16 @@ function Console({
         </p>
       )}
       {canRun && (
-        <p className="hint">
-          Your role may call: {session.tools.map((t) => <code key={t}>{t}</code>).reduce(
-            (acc, el) => (acc === null ? el : [acc, " ", el]), null as any)}
-        </p>
+        <div className="toolbelt">
+          <span className="toolbelt-label">Tools your role may call</span>
+          <span className="tools">
+            {session.tools.map((t) => (
+              <code className="tool" key={t} title="a tool this role may invoke">
+                {t}
+              </code>
+            ))}
+          </span>
+        </div>
       )}
       {canApprove && (
         <p className="hint">
@@ -381,7 +461,7 @@ function Console({
         </div>
       )}
       <textarea value={task} onChange={(e) => setTask(e.target.value)} rows={2} />
-      <button disabled={!canRun || busy} onClick={run}>
+      <button className="primary" disabled={!canRun || busy} onClick={run}>
         {busy ? "Running…" : "Run"}
       </button>
       {error && <div className="error">{error}</div>}
@@ -474,13 +554,13 @@ function ResultCard({
       </ol>
 
       <div className="chain" title={agentId}>
-        <span className="node">agent {shortId(agentId) || "agent"}</span>
+        <span className="node agent">agent {shortId(agentId) || "agent"}</span>
         <span className="arrow">→</span>
-        <span className="node">user {session.user}</span>
+        <span className="node user">user {session.user}</span>
         {outcome.tool && (
           <>
             <span className="arrow">→</span>
-            <span className="node">tool {outcome.tool}</span>
+            <span className="node tool">tool {outcome.tool}</span>
           </>
         )}
       </div>
@@ -492,7 +572,7 @@ function ResultCard({
               <p>
                 Approved by a manager. <b>Resume</b> to let the agent finish.
               </p>
-              <button disabled={busy} onClick={onResume}>
+              <button className="primary" disabled={busy} onClick={onResume}>
                 Resume now
               </button>
             </>
@@ -506,10 +586,10 @@ function ResultCard({
                 Held for approval <code>{outcome.approval_id}</code> — you can decide it.
               </span>
               <div>
-                <button disabled={busy} onClick={() => onDecide(true)}>
+                <button className="ok" disabled={busy} onClick={() => onDecide(true)}>
                   Approve
                 </button>
-                <button disabled={busy} onClick={() => onDecide(false)}>
+                <button className="danger" disabled={busy} onClick={() => onDecide(false)}>
                   Deny
                 </button>
               </div>
@@ -520,7 +600,7 @@ function ResultCard({
                 Held for approval <code>{outcome.approval_id}</code> — a manager must
                 decide it in the Approvals tab.
               </span>
-              <button disabled={busy} onClick={onResume}>
+              <button className="primary" disabled={busy} onClick={onResume}>
                 Resume when approved
               </button>
             </div>
@@ -604,21 +684,21 @@ function Approvals({
             <code>{a.id}</code>
           </div>
           <div className="chain" title={a.agent}>
-            <span className="node">agent {shortId(a.agent || agentId) || "agent"}</span>
+            <span className="node agent">agent {shortId(a.agent || agentId) || "agent"}</span>
             <span className="arrow">→</span>
-            <span className="node">user {a.user}</span>
+            <span className="node user">user {a.user}</span>
             <span className="arrow">→</span>
-            <span className="node">tool {a.tool}</span>
+            <span className="node tool">tool {a.tool}</span>
           </div>
           <p className="reason">{a.reason}</p>
           <pre>{JSON.stringify(a.args, null, 2)}</pre>
           <div className="row">
             <span className="muted">requested by {a.user}</span>
             <div>
-              <button disabled={!canApprove} onClick={() => decide(a.id, true)}>
+              <button className="ok" disabled={!canApprove} onClick={() => decide(a.id, true)}>
                 Approve
               </button>
-              <button disabled={!canApprove} onClick={() => decide(a.id, false)}>
+              <button className="danger" disabled={!canApprove} onClick={() => decide(a.id, false)}>
                 Deny
               </button>
             </div>
@@ -733,7 +813,7 @@ function Admin({ token, self }: { token: string; self: string }) {
               <td className="actions">
                 <button onClick={() => toggleEnabled(u)}>{u.enabled ? "Disable" : "Enable"}</button>
                 <button onClick={() => reset(u)}>Reset password</button>
-                <button disabled={u.username === self} onClick={() => remove(u)}>
+                <button className="danger" disabled={u.username === self} onClick={() => remove(u)}>
                   Delete
                 </button>
               </td>
@@ -789,7 +869,7 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
           </label>
         ))}
       </div>
-      <button>Create</button>
+      <button className="primary">Create</button>
       {error && <div className="error">{error}</div>}
     </form>
   );
@@ -797,8 +877,20 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
 
 function Audit({ session }: { session: Session }) {
   const [events, setEvents] = useState<any[]>([]);
+  const [stale, setStale] = useState(false);
   useEffect(() => {
-    const load = async () => setEvents(await getAudit(session.token).catch(() => []));
+    // Keep the last good timeline when a refresh fails, and say it is stale. The
+    // previous version caught the failure and set an empty array, so a dropped
+    // port-forward or an expired token rendered "No events yet" — which reads as the
+    // audit trail having been lost, rather than as not having been re-read.
+    const load = async () => {
+      try {
+        setEvents(await getAudit(session.token));
+        setStale(false);
+      } catch {
+        setStale(true);
+      }
+    };
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
@@ -810,16 +902,19 @@ function Audit({ session }: { session: Session }) {
       <p className="hint">
         One record per event, keyed by identity. Tokens and personal data are
         redacted before anything is written.
+        {stale && <> <b className="stale">Not updating — the last good view is below.</b></>}
       </p>
       <div className="timeline">
         {events.map((e, i) => (
           <div className="event" key={i}>
-            <code className="ev">{e.event}</code>
-            <span className="meta">
-              {e.spiffe_id && <>agent <b>{shortId(e.spiffe_id)}</b> · </>}
-              {e.sub && <>user <b>{e.sub}</b> · </>}
-              {e.tool && <>tool <code>{e.tool}</code> · </>}
-              {e.decision && <>decision <b>{e.decision}</b></>}
+            <code className={`ev ${tone(e.event)}`}>{e.event}</code>
+            <span className="facts">
+              {e.spiffe_id && FACT("agent", shortId(e.spiffe_id), "agent")}
+              {e.sub && FACT("user", e.sub, "user")}
+              {e.tool && FACT("tool", e.tool, "tool")}
+              {e.decision && FACT("decision", e.decision, "decision")}
+              {e.ts && FACT("when", at(e.ts), "when")}
+              {e.policy_version && FACT("policy", e.policy_version, "policy")}
             </span>
           </div>
         ))}
@@ -863,8 +958,6 @@ function Privacy({ session }: { session: Session }) {
         <p className="hint">Loading…</p>
       </section>
     );
-
-  const at = (ts: number) => (ts ? new Date(ts * 1000).toLocaleString() : "—");
   const outcome = (a: any) => STATUS_LABEL[a.decision] ?? a.decision ?? a.event;
 
   return (
@@ -882,12 +975,14 @@ function Privacy({ session }: { session: Session }) {
       <div className="timeline">
         {data.access.map((a: any, i: number) => (
           <div className="event" key={i}>
-            <code className="ev">{outcome(a)}</code>
-            <span className="meta">
-              user <b>{a.user}</b> · tool <code>{a.tool}</code>
-              {a.reason && <> · {a.reason}</>} · {at(a.at)}
-              {a.policy_version && <> · policy <b>{a.policy_version}</b></>}
+            <code className={`ev ${tone(outcome(a))}`}>{outcome(a)}</code>
+            <span className="facts">
+              {FACT("user", a.user, "user")}
+              {FACT("tool", a.tool, "tool")}
+              {FACT("when", at(a.at), "when")}
+              {a.policy_version && FACT("policy", a.policy_version, "policy")}
             </span>
+            {a.reason && <p className="reason">{a.reason}</p>}
           </div>
         ))}
         {data.access.length === 0 && (
@@ -900,22 +995,14 @@ function Privacy({ session }: { session: Session }) {
         {data.approvals.map((a: any) => (
           <div className="event" key={a.id}>
             <code className="ev">{a.status}</code>
-            <span className="meta">
-              {a.args?.customer_id && (
-                <>
-                  customer <b>{a.args.customer_id}</b> ·{" "}
-                </>
-              )}
-              asked by <b>{a.user}</b>
-              {a.reason && <> · {a.reason}</>} · {at(a.created_at)}
-              {a.approver && (
-                <>
-                  {" "}
-                  · decided by <b>{a.approver}</b> {at(a.decided_at)}
-                </>
-              )}
-              {a.note && <> — “{a.note}”</>}
+            <span className="facts">
+              {a.args?.customer_id && FACT("customer", a.args.customer_id, "tool")}
+              {FACT("asked by", a.user, "user")}
+              {FACT("when", at(a.created_at), "when")}
+              {a.approver && FACT("decided by", a.approver, "decision")}
             </span>
+            {a.reason && <p className="reason">{a.reason}</p>}
+            {a.note && <p className="reason">“{a.note}”</p>}
           </div>
         ))}
         {data.approvals.length === 0 && (
