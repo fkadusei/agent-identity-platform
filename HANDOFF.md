@@ -145,6 +145,12 @@ End-to-end, on the cluster:
 - **Durable identity and data** — SPIRE's registry lives in Postgres with its keys
   on a PVC (S1), and the demo database is on a PVC (S3), so restarting either pod
   no longer resets the platform ([`docs/data-stores.md`](docs/data-stores.md)).
+- **The identity tier can be a failover pair (S1, completed)** — the KeyManager is
+  switchable: `disk` by default, `aws_kms` when a shared CA is needed, with the
+  credential passed as a profile that assumes a role whose only power is the KMS
+  actions it needs. Exercised against a live AWS KMS: two replicas serving one trust
+  bundle, and after deleting a replica a workload fetched a fresh SVID with no
+  workload restarted (`docs/ha.md`).
 - **Self-healing** — every container has a liveness probe (S16), so a *hung*
   process is restarted rather than reported forever. Verified by hanging fifteen of
   them and watching each recover; the gateway needed a health-only listener, because
@@ -156,13 +162,15 @@ Phases 1–3 are complete and every threat is addressed. Next, pick from the ope
 backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S16) — each slice has a stable
 ID with what it is, why, where it lands and how we would verify it:
 
-- **Nothing.** Every slice on the board is done but one: **S1**'s shared KeyManager
-  half, which needs a cloud KMS (two SPIRE replicas cannot share a disk KeyManager).
-  The other open threads are documented limits, not slices — see the end of
-  [`docs/backlog.md`](docs/backlog.md).
+- **Nothing.** Every slice on the board is done, including **S1**'s shared-KeyManager
+  half, which was verified against a live AWS KMS (role-based access, two replicas, a
+  replica deleted mid-flight, an unchanged trust bundle, no workload restarts). The
+  demo stays on the `disk` KeyManager by default: KMS mode is one `.env` line away but
+  makes identity depend on short-lived credentials. What remains are documented limits,
+  not slices — see the end of [`docs/backlog.md`](docs/backlog.md).
 
-Done, kept for the record: **S1** (SPIRE's registry is durable — the shared
-KeyManager half still needs a cloud KMS), **S2** (Keycloak replicated against
+Done, kept for the record: **S1** (SPIRE's registry is durable, and the KeyManager is
+switchable with the KMS path verified against a live account), **S2** (Keycloak replicated against
 Postgres), **S3** (a persistent Postgres volume), **S4** (Keycloak hardened —
 no `start-dev`, no Trivy exception), **S5** (guardrails + evals,
 `docs/guardrails-and-evals.md`), **S6** (custom-metric autoscaling), **S7** (SPIFFE
