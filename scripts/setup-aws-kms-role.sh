@@ -357,16 +357,43 @@ say "6. self-test: the credential can assume the role (what SPIRE does first)"
 if [ -n "$DRY_RUN" ]; then
   info "dry run: skipped"
 else
-  # Source the file we just wrote — not a hardcoded `.env`, which is the same file
-  # only until someone points the write somewhere else and then wonders why the
-  # self-test says the credentials are broken.
-  if ( set -a; . "$ENV_FILE"; set +a
-       aws sts assume-role --role-arn "$SPIRE_KMS_ROLE_ARN" \
-         --role-session-name spire-setup-check \
-         --query 'AssumedRoleUser.Arn' --output text >/dev/null 2>&1 ); then
-    ok "sts:AssumeRole succeeded"
-  else
-    die "sts:AssumeRole failed — check the trust policy (and, if you used it, the external ID)"
+  # Show AWS's error, not a summary of it: "AccessDenied" here means either
+  # propagation or an explicit deny, and only AWS's message tells them apart. This
+  # step used to swallow both and print a sentence of my own, which cost a round trip.
+  ERR=""
+  for attempt in 1 2 3 4; do
+    # Source the file we just wrote — not a hardcoded `.env`, which is the same file
+    # only until someone points the write somewhere else and then wonders why the
+    # self-test says the credentials are broken.
+    if ERR="$( set -a; . "$ENV_FILE"; set +a
+               aws sts assume-role --role-arn "$SPIRE_KMS_ROLE_ARN" \
+                 --role-session-name spire-setup-check \
+                 --query 'AssumedRoleUser.Arn' --output text 2>&1 )"; then
+      ERR=""
+      ok "sts:AssumeRole succeeded"
+      break
+    fi
+    # The role and the access key were created seconds ago, and IAM is eventually
+    # consistent about those too — not only about the user inside the trust policy.
+    info "not yet (attempt $attempt) — IAM may still be propagating the new role"
+    sleep $((attempt * 2))
+  done
+  if [ -n "$ERR" ]; then
+    printf '\033[1;31m   ✗ sts:AssumeRole failed. AWS said:\033[0m\n' >&2
+    printf '%s\n' "$ERR" | sed 's/^/     /' >&2
+    cat >&2 <<HELP
+
+     Two things to check, in order:
+       1. propagation — everything here was created moments ago, and a role is not
+          always assumable the instant it exists. Re-running is safe: it reuses the
+          existing policy, user, role and key.
+       2. an explicit deny — the trust policy must name exactly
+          arn:aws:iam::${ACCOUNT}:user/${USER}, and no SCP, permissions boundary or
+          MFA condition above the account may deny sts:AssumeRole.
+
+     The settings are in $ENV_FILE; nothing needs recreating.
+HELP
+    exit 1
   fi
 fi
 

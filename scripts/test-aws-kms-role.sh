@@ -39,6 +39,11 @@ case "$sub" in
     echo '{"UserId":"AIDAEXAMPLE","Account":"111122223333","Arn":"arn:aws:iam::111122223333:user/admin-example"}' ;;
   "sts assume-role")
     need --role-arn "$@"; need --role-session-name "$@"
+    if [ "${STUB_ASSUME_RACE:-}" = "1" ] && [ ! -f "${STUB_DIR:-/tmp}/assume-attempted" ]; then
+      : > "${STUB_DIR:-/tmp}/assume-attempted"
+      printf 'aws: [ERROR]: An error occurred (AccessDenied) when calling the AssumeRole operation: User: arn:aws:iam::111122223333:user/spire-kms-base is not authorized to perform: sts:AssumeRole on resource: arn:aws:iam::111122223333:role/spire-kms\n' >&2
+      exit 254
+    fi
     echo "arn:aws:sts::111122223333:assumed-role/spire-kms/spire-setup-check" ;;
   "iam get-policy")
     need --policy-arn "$@"
@@ -172,6 +177,33 @@ STUB_DIR="$STUB_DIR" run_script "$WORK/run6.log" STUB_ROLE_RACE=1 STUB_POLICY_EX
 check "retries the role instead of failing" test $? -eq 0
 check "and says why it is waiting" grep -q "cannot see the new user yet" "$WORK/run6.log"
 check "created the role in the end" heard "iam create-role"
+
+printf '\n\033[1;34m== the role is not assumable the instant it exists\033[0m\n'
+rm -f "$STUB_DIR/assume-attempted"
+STUB_DIR="$STUB_DIR" run_script "$WORK/run7.log" STUB_ASSUME_RACE=1 STUB_POLICY_EXISTS=0 \
+  STUB_ROLE_EXISTS=0 STUB_USER_EXISTS=0 -- --region us-east-1
+check "retries the self-test instead of failing" test $? -eq 0
+check "and says it may still be propagating" grep -q "may still be propagating" "$WORK/run7.log"
+
+printf '\n\033[1;34m== a real deny is shown, not summarised\033[0m\n'
+cat > "$STUB_DIR/aws-deny" <<'DENY'
+#!/bin/bash
+if [ "$1 $2" = "sts assume-role" ]; then
+  echo "aws: [ERROR]: An error occurred (AccessDenied) when calling the AssumeRole operation: explicit deny in a service control policy" >&2
+  exit 254
+fi
+exec "$STUB_REAL" "$@"
+DENY
+chmod +x "$STUB_DIR/aws-deny"
+STUB_REAL="$STUB_DIR/aws" PATH="$STUB_DIR:$PATH" \
+  bash -c 'mkdir -p /tmp/deny-bin && cp "$0" /tmp/deny-bin/aws && chmod +x /tmp/deny-bin/aws' "$STUB_DIR/aws-deny"
+: > "$LOG"
+PATH="/tmp/deny-bin:$STUB_DIR:$PATH" STUB_LOG="$LOG" ENV_FILE="$WORK/env" STUB_REAL="$STUB_DIR/aws" \
+  ./scripts/setup-aws-kms-role.sh --region us-east-1 >"$WORK/run8.log" 2>&1
+check "exits non-zero on a real deny" test $? -ne 0
+check "prints AWS's own message" grep -q "explicit deny in a service control policy" "$WORK/run8.log"
+check "and does not pretend it is propagation only" grep -q "an explicit deny" "$WORK/run8.log"
+rm -rf /tmp/deny-bin
 
 printf '\n\033[1;34m== no credentials: the plan still works, and says so\033[0m\n'
 : > "$LOG"
