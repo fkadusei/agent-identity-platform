@@ -27,9 +27,6 @@ import {
 
 type Tab = "console" | "approvals" | "privacy" | "roles" | "audit" | "admin";
 
-// The roles an admin may grant. Kept in step with the API's ASSIGNABLE_ROLES.
-const ASSIGNABLE = ["support_rep", "manager", "privacy", "platform_admin"];
-
 // Example tasks, each tied to the tool it exercises, so the console offers only
 // what this user's role can actually do — a privacy user sees the PII request, a
 // support rep sees the refunds. Without this the privacy path is invisible.
@@ -91,6 +88,11 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("console");
   const [signupEnabled, setSignupEnabled] = useState(false);
   const [agentId, setAgentId] = useState("");
+  // The roles an admin may grant come from the api, which is the side that has to know
+  // them. This used to be a list here too, and the two drifted: `billing` and
+  // `read_only` existed in the policy and the realm but not in either list, so a user
+  // holding one of them signed in as "no roles".
+  const [assignable, setAssignable] = useState<string[]>([]);
   const [mode, setMode] = useState<"login" | "enroll">("login");
   // Set when the token expires under a tab that is already open. The tab is kept
   // (unlike an explicit sign-out) so signing back in returns you to what you were
@@ -127,6 +129,7 @@ export default function App() {
       .then((c) => {
         setSignupEnabled(c.signup_enabled);
         setAgentId(c.agent_id ?? "");
+        setAssignable(c.roles ?? []);
       })
       .catch(() => {});
   }, []);
@@ -227,7 +230,7 @@ export default function App() {
             {tab === "privacy" && <Privacy session={session} />}
             {tab === "roles" && <Roles session={session} />}
             {tab === "audit" && <Audit session={session} />}
-            {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} />}
+            {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} assignable={assignable} />}
           </main>
         </>
       )}
@@ -437,11 +440,23 @@ function Console({
         <div className="toolbelt">
           <span className="toolbelt-label">Tools your role may call</span>
           <span className="tools">
-            {session.tools.map((t) => (
-              <code className="tool" key={t} title="a tool this role may invoke">
-                {t}
-              </code>
-            ))}
+            {session.tools.map((t) => {
+              // Clicking a tool loads the example that uses it, because "these are
+              // callable" is easier to show than to say. Tools without an example
+              // stay listed, just not clickable.
+              const example = EXAMPLES.find((e) => e.tool === t);
+              return (
+                <button
+                  className="tool"
+                  key={t}
+                  disabled={!example}
+                  title={example ? `Try it: ${example.task}` : "a tool this role may call"}
+                  onClick={() => example && setTask(example.task)}
+                >
+                  {t}
+                </button>
+              );
+            })}
           </span>
         </div>
       )}
@@ -526,6 +541,12 @@ function ResultCard({
         {STATUS_LABEL[outcome.status] ?? outcome.status}
       </div>
 
+        <div className="facts resultfacts">
+        {outcome.tool && FACT("tool", outcome.tool, "tool")}
+        {outcome.approval_id && FACT("approval", outcome.approval_id, "decision")}
+        {outcome.thread_id && FACT("thread", outcome.thread_id, "when")}
+        </div>
+
       <h3>What just happened</h3>
       <ol className="steps">
         <li>
@@ -567,18 +588,20 @@ function ResultCard({
 
       {held && (
         <div className="approval">
-          {decided === "approved" && !canApprove ? (
+          {decided === "approved" ? (
             <>
-              <p>
-                Approved by a manager. <b>Resume</b> to let the agent finish.
+              <p className="decided ok">
+                <b>Approved by a manager</b> — the agent may perform this action.
               </p>
-              <button className="primary" disabled={busy} onClick={onResume}>
-                Resume now
-              </button>
+              {!canApprove && (
+                <button className="primary" disabled={busy} onClick={onResume}>
+                  Resume now
+                </button>
+              )}
             </>
-          ) : decided === "denied" && !canApprove ? (
-            <p className="reason">
-              Denied by a manager — the agent will not perform this action.
+          ) : decided === "denied" ? (
+            <p className="decided denied">
+              <b>Denied by a manager</b> — the agent will not perform this action.
             </p>
           ) : canApprove ? (
             <div className="row">
@@ -629,6 +652,10 @@ function Approvals({
 }) {
   const [items, setItems] = useState<any[]>([]);
   const [error, setError] = useState("");
+  // A decision is a judgement, and the API records a note with it. Without a field
+  // here, "why was this approved?" could only be answered from the reason someone
+  // else wrote when the run was held.
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -646,7 +673,7 @@ function Approvals({
 
   const decide = async (id: string, approved: boolean) => {
     try {
-      await decideApproval(id, approved, session.token);
+      await decideApproval(id, approved, session.token, notes[id] ?? "");
       refresh();
     } catch (e) {
       setError(String(e));
@@ -692,6 +719,13 @@ function Approvals({
           </div>
           <p className="reason">{a.reason}</p>
           <pre>{JSON.stringify(a.args, null, 2)}</pre>
+          <input
+            className="notefield"
+            placeholder="Add a note — recorded with the decision in the audit trail"
+            value={notes[a.id] ?? ""}
+            onChange={(e) => setNotes({ ...notes, [a.id]: e.target.value })}
+            disabled={!canApprove}
+          />
           <div className="row">
             <span className="muted">requested by {a.user}</span>
             <div>
@@ -709,7 +743,15 @@ function Approvals({
   );
 }
 
-function Admin({ token, self }: { token: string; self: string }) {
+function Admin({
+  token,
+  self,
+  assignable,
+}: {
+  token: string;
+  self: string;
+  assignable: string[];
+}) {
   const [users, setUsers] = useState<any[]>([]);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -736,6 +778,17 @@ function Admin({ token, self }: { token: string; self: string }) {
   };
 
   const toggleEnabled = async (u: any) => {
+    // Disabling your own account is permitted — it was asked for explicitly — but here
+    // there is one platform admin, so the way back is not in this UI.
+    if (u.enabled && u.username === self) {
+      const sure = window.confirm(
+        `Disable your own account?\n\n` +
+          `You will not be able to sign in again, and nothing in the UI can undo it: ` +
+          `re-enabling needs another platform admin, or the operator's Keycloak route. ` +
+          `Continue?`,
+      );
+      if (!sure) return;
+    }
     try {
       await setUserEnabled(u.id, !u.enabled, token);
       refresh();
@@ -778,6 +831,7 @@ function Admin({ token, self }: { token: string; self: string }) {
             setCreating(false);
             refresh();
           }}
+          assignable={assignable}
         />
       )}
       <table className="users">
@@ -794,11 +848,12 @@ function Admin({ token, self }: { token: string; self: string }) {
             <tr key={u.id}>
               <td>
                 <b>{u.username}</b>
+                {u.username === self && <span className="you">you</span>}
                 <br />
                 <span className="muted">{u.email}</span>
               </td>
               <td>
-                {ASSIGNABLE.map((r) => (
+                {assignable.map((r) => (
                   <label key={r} className="role">
                     <input
                       type="checkbox"
@@ -809,7 +864,11 @@ function Admin({ token, self }: { token: string; self: string }) {
                   </label>
                 ))}
               </td>
-              <td>{u.enabled ? "enabled" : <span className="muted">disabled</span>}</td>
+              <td>
+                <span className={`status ${u.enabled ? "ok" : ""}`}>
+                  {u.enabled ? "enabled" : "disabled"}
+                </span>
+              </td>
               <td className="actions">
                 <button onClick={() => toggleEnabled(u)}>{u.enabled ? "Disable" : "Enable"}</button>
                 <button onClick={() => reset(u)}>Reset password</button>
@@ -825,7 +884,15 @@ function Admin({ token, self }: { token: string; self: string }) {
   );
 }
 
-function CreateUser({ token, onCreated }: { token: string; onCreated: () => void }) {
+function CreateUser({
+  token,
+  onCreated,
+  assignable,
+}: {
+  token: string;
+  onCreated: () => void;
+  assignable: string[];
+}) {
   const [form, setForm] = useState({ username: "", email: "", password: "", tenant: "acme" });
   const [roles, setRoles] = useState<string[]>([]);
   const [error, setError] = useState("");
@@ -863,7 +930,7 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
         title="The tenant this account is scoped to"
       />
       <div>
-        {ASSIGNABLE.map((r) => (
+        {assignable.map((r) => (
           <label key={r} className="role">
             <input type="checkbox" checked={roles.includes(r)} onChange={() => toggle(r)} /> {r}
           </label>
@@ -878,6 +945,15 @@ function CreateUser({ token, onCreated }: { token: string; onCreated: () => void
 function Audit({ session }: { session: Session }) {
   const [events, setEvents] = useState<any[]>([]);
   const [stale, setStale] = useState(false);
+  // The API matches filters *exactly*, so these are selects rather than search
+  // boxes: a substring would silently return nothing. Options come from an
+  // unfiltered read — deriving them from a filtered page would hide the values you
+  // might want to switch to.
+  const [filters, setFilters] = useState<{ event?: string; tool?: string; sub?: string }>({});
+  const [options, setOptions] = useState<{ event: string[]; tool: string[]; sub: string[] }>({
+    event: [], tool: [], sub: [],
+  });
+  const filterKey = JSON.stringify(filters);
   useEffect(() => {
     // Keep the last good timeline when a refresh fails, and say it is stale. The
     // previous version caught the failure and set an empty array, so a dropped
@@ -885,8 +961,14 @@ function Audit({ session }: { session: Session }) {
     // audit trail having been lost, rather than as not having been re-read.
     const load = async () => {
       try {
-        setEvents(await getAudit(session.token));
+        const data = await getAudit(session.token, filters);
+        setEvents(data);
         setStale(false);
+        if (!filters.event && !filters.tool && !filters.sub) {
+          const pick = (k: string): string[] =>
+            [...new Set<string>(data.map((e: any) => String(e[k] ?? "")).filter(Boolean))].sort();
+          setOptions({ event: pick("event"), tool: pick("tool"), sub: pick("sub") });
+        }
       } catch {
         setStale(true);
       }
@@ -894,7 +976,9 @@ function Audit({ session }: { session: Session }) {
     load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, [session.token]);
+    // re-read when the filters change; the string keeps the effect from looping on a
+    // fresh object identity every render
+  }, [session.token, filterKey]);
 
   return (
     <section>
@@ -904,6 +988,26 @@ function Audit({ session }: { session: Session }) {
         redacted before anything is written.
         {stale && <> <b className="stale">Not updating — the last good view is below.</b></>}
       </p>
+      <div className="filters">
+        {(["event", "tool", "sub"] as const).map((k) => (
+          <label key={k}>
+            <span>{k === "sub" ? "user" : k}</span>
+            <select
+              value={filters[k] ?? ""}
+              onChange={(e) => setFilters({ ...filters, [k]: e.target.value || undefined })}
+            >
+              <option value="">any</option>
+              {options[k].map((v) => (
+                <option key={v} value={v}>{v}</option>
+              ))}
+            </select>
+          </label>
+        ))}
+        {(filters.event || filters.tool || filters.sub) && (
+          <button className="ghost" onClick={() => setFilters({})}>Clear</button>
+        )}
+        <span className="muted">{events.length} shown</span>
+      </div>
       <div className="timeline">
         {events.map((e, i) => (
           <div className="event" key={i}>

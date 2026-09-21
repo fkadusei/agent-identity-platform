@@ -85,6 +85,28 @@ async def _count_requests(request, call_next):
     return response
 
 
+@app.middleware("http")
+async def _cache_headers(request, call_next):
+    """Say how long each response may be reused, because silence is not neutral.
+
+    With only `Last-Modified`/`ETag` and no `Cache-Control`, browsers fall back to
+    *heuristic* freshness — a fraction of the time since the file changed — and will
+    happily run a build several deploys old. That is not hypothetical: a fixed UI kept
+    showing the bug it had been fixed for, because the browser had the shell and the
+    bundle from before and never asked again.
+
+    So: the shell is revalidated on every load (cheap — the ETag turns it into a 304),
+    and the bundles are content-hashed, so they can be cached forever.
+    """
+    response = await call_next(request)
+    path = request.url.path
+    if path.startswith("/assets/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path in ("/", "/index.html"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 def get_store() -> ApprovalStore:
     return _store
 

@@ -23,9 +23,22 @@ from app.common import metrics
 
 router = APIRouter()
 
-# The roles this platform knows about. Keycloak also emits built-ins
-# (default-roles-…, offline_access, uma_authorization) that are not ours.
-PLATFORM_ROLES = ("support_rep", "manager", "privacy", "platform_admin")
+# The roles this platform knows about — every role the policy has tools for, and no
+# others. Keycloak also emits built-ins (default-roles-…, offline_access,
+# uma_authorization) that are not ours, and those are dropped.
+#
+# This list is the UI's view of a user, and a role missing from it is invisible even
+# though the policy honours it: `billing` and `read_only` were absent here, so bella
+# signed in showing *no roles* while OPA — which does know `billing` — handed her three
+# tools. Capability and display disagreed, and the display is what a person believes.
+PLATFORM_ROLES = (
+    "support_rep",
+    "billing",
+    "read_only",
+    "privacy",
+    "manager",
+    "platform_admin",
+)
 
 # The agent's SPIFFE ID, surfaced so the UI can show the real delegation chain.
 AGENT_SPIFFE_ID = os.environ.get(
@@ -44,10 +57,17 @@ def platform_roles(roles) -> list[str]:
 
 @router.get("/auth/config")
 def auth_config() -> dict:
-    """Lets the UI show or hide the Enroll page, and name the acting agent."""
+    """Lets the UI show or hide the Enroll page, name the acting agent, and know which
+    roles an admin may grant.
+
+    The roles are served rather than duplicated in the UI: when both sides kept their own
+    list they drifted, and a role present in the policy but missing from either list left
+    a user looking unprivileged while their token carried the role.
+    """
     return {
         "signup_enabled": signup_enabled(),
         "agent_id": AGENT_SPIFFE_ID,
+        "roles": list(PLATFORM_ROLES),
     }
 
 
