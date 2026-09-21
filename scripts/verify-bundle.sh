@@ -14,6 +14,17 @@ if [ ! -f "$BUNDLE.sig" ]; then
   exit 1
 fi
 
+# A signature is only meaningful for the artifact it was made from. The bundle is
+# rebuilt with a new revision on every deploy, so the common failure is not a bad
+# key: it is a signature that predates the file. Say so instead of letting cosign's
+# "invalid signature ... ASN.1" stand as the explanation — that reads like a
+# corrupted key, and this cost an end-to-end run to work out.
+if [ "$BUNDLE.sig" -ot "$BUNDLE" ] 2>/dev/null || [ -n "$(find "$BUNDLE" -newer "$BUNDLE.sig" 2>/dev/null)" ]; then
+  echo "the bundle is newer than its signature: it was rebuilt after signing." >&2
+  echo "re-sign it (scripts/sign-bundle.sh) and verify again." >&2
+  exit 1
+fi
+
 if [ "${COSIGN_KEYLESS:-0}" = "1" ]; then
   : "${COSIGN_IDENTITY_REGEXP:?set COSIGN_IDENTITY_REGEXP to the expected signing identity}"
   cosign verify-blob --bundle "$BUNDLE.sig" \

@@ -446,6 +446,18 @@ ok "keycloak ready (realm imported by job; 2 replicas; Postgres-backed)"
 say "7. OPA"
 # Build the versioned bundle (revision stamped into every decision) and mount it.
 POLICY_REVISION=$(./scripts/build-bundle.sh)
+# Then sign it, because the bundle is a deploy artifact and its gate is
+# build → sign → verify (docs/supply-chain.md). Building without signing leaves the
+# previous signature attached to a different artifact, and the local verify then
+# fails in a way that looks like a broken key rather than a stale signature — which
+# is exactly how this went unnoticed until an end-to-end run.
+if command -v cosign >/dev/null 2>&1; then
+  ./scripts/sign-bundle.sh >/dev/null 2>&1 \
+    && ok "policy bundle signed (revision $POLICY_REVISION)" \
+    || info "could not sign the bundle — ./scripts/verify-bundle.sh will report the mismatch"
+else
+  info "cosign not installed — bundle left unsigned (verify-bundle.sh needs it)"
+fi
 kubectl -n $NS create configmap opa-bundle \
   --from-file=authz.rego=dist/bundle/authz.rego \
   --from-file=data.json=dist/bundle/data.json \
