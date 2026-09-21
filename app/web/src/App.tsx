@@ -73,18 +73,30 @@ export default function App() {
   // doing, rather than to the console.
   const [notice, setNotice] = useState("");
 
-  useEffect(() => {
-    const onExpired = () => {
-      setSessionState(null);
-      setMode("login");
-      setNotice(
-        "Your session expired (tokens last 5 minutes). Sign in again and you will come " +
-          "back to this tab — the page was left open, nothing was lost.",
-      );
-    };
-    window.addEventListener(SESSION_EXPIRED, onExpired);
-    return () => window.removeEventListener(SESSION_EXPIRED, onExpired);
+  const expire = useCallback(() => {
+    setSessionState(null);
+    setMode("login");
+    setNotice(
+      "Your session expired (tokens last 5 minutes). Sign in again and you will come " +
+        "back to this tab — the page was left open, nothing was lost.",
+    );
   }, []);
+
+  // React to a token the API rejects...
+  useEffect(() => {
+    window.addEventListener(SESSION_EXPIRED, expire);
+    return () => window.removeEventListener(SESSION_EXPIRED, expire);
+  }, [expire]);
+
+  // ...and expire on time from the session's own deadline, which the API supplies
+  // (`expires_at`). That way the UI does not have to infer an expired session from a
+  // status code at all — the 403 above is a backstop for the token being rejected
+  // before this fires.
+  useEffect(() => {
+    if (!session) return;
+    const t = setTimeout(expire, Math.max(session.expiresAt * 1000 - Date.now() - 5000, 0));
+    return () => clearTimeout(t);
+  }, [session, expire]);
 
   useEffect(() => {
     authConfig()

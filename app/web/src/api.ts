@@ -33,7 +33,16 @@ async function request(path: string, init: RequestInit = {}): Promise<any> {
     (init.headers as Record<string, string> | undefined)?.Authorization,
   );
   const body = await res.json().catch(() => ({}));
-  if (res.status === 401 && carriedToken) {
+  const detail = typeof body?.detail === "string" ? body.detail : "";
+  // The API answers 403 for two unrelated things: a token that is invalid or expired
+  // ("invalid token: Signature has expired", measured), and a caller who is properly
+  // authenticated but lacks the role. Only the first should sign anyone out, and the
+  // status code cannot tell them apart — so this matches the messages the API emits
+  // for token problems. (401 is handled too: the API uses it when no token arrived.)
+  const tokenTrouble =
+    res.status === 401 ||
+    (res.status === 403 && /invalid token|missing bearer token|expired|not enough segments/i.test(detail));
+  if (carriedToken && tokenTrouble) {
     clearSession();
     window.dispatchEvent(new CustomEvent(SESSION_EXPIRED));
     throw new Error("Your session expired — sign in again to continue.");
