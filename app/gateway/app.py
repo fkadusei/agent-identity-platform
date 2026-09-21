@@ -94,21 +94,35 @@ def chat(req: ChatRequest, authorization: str | None = Header(default=None)) -> 
 
     provider = os.environ.get("LLM_PROVIDER", "ollama")
     # Audit metadata only — never the prompt or its contents.
-    audit("llm.call", provider=provider, model=req.model or "", messages=len(req.messages), caller=caller)
+    # The model that will actually run, resolved *before* the audit. The caller
+    # usually names none (the agent asks for an answer, not a vendor), so auditing
+    # `req.model` recorded an empty string — and "which model decided this?" is the
+    # reason the field exists.
+    model = req.model or (OLLAMA_MODEL if provider == "ollama" else os.environ.get("LLM_MODEL", ""))
+    audit("llm.call", provider=provider, model=model, messages=len(req.messages), caller=caller)
 
     if provider == "ollama":
         prompt = "\n".join(str(m.get("content", "")) for m in req.messages)
         payload: dict = {
-            "model": req.model or OLLAMA_MODEL,
+            "model": model,
             "prompt": prompt,
             "stream": False,
+            # Ask a *thinking* model not to deliberate. With `format: json` a thinking
+            # model (Qwen3 and friends) puts its JSON in `thinking` and returns `response`
+            # empty, so the caller receives nothing at all. Found by swapping one in — see
+            # the fallback below.
+            "think": False,
         }
         if _wants_json(req):
             payload["format"] = "json"
         with span("llm.provider_call", provider="ollama", model=payload["model"]):
             resp = httpx.post(f"{OLLAMA_URL}/api/generate", json=payload, timeout=180)
         resp.raise_for_status()
-        content = resp.json()["response"]
+        body = resp.json()
+        # `response` is the answer. `thinking` is reasoning, and when a model ignores
+        # the request above the answer still lands there, so take it rather than
+        # handing the caller an empty string.
+        content = body.get("response") or body.get("thinking", "")
         LIMITER.charge(caller, estimate_tokens(prompt) + estimate_tokens(content))
         return {"choices": [{"message": {"role": "assistant", "content": content}}]}
 

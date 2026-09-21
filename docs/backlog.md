@@ -625,6 +625,34 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   - Mesh probes still fail correctly through Linkerd's proxy, which is what makes
     these probes meaningful for the injected app tier.
 
+## S17 — Provider-agnostic models (native and cloud)
+
+- **What:** make the gateway work with any OpenAI-compatible provider, not only Ollama.
+  The plumbing for this is already in place — the model is named in one place (the
+  `llm-config` ConfigMap, rendered from `.env` by `setup.sh` and swappable with
+  `scripts/use-model.sh`), and a hosted key is already staged into the `llm-api-key`
+  Secret that only the gateway mounts — but the hosted branch has two defects.
+- **Why:** "swap models in and out" should not mean "swap *local* models in and out". We
+  chose local-only deliberately, and the moment someone points this at a cloud provider
+  the first defect below is what they will hit.
+- **Two known defects, both found by reading the branch rather than by using it:**
+  - **No model reaches the provider.** The branch forwards the caller's request with
+    `req.model_dump(exclude_none=True)`, and the agent deliberately sends no model, so a
+    hosted provider receives a request with no `model` and fails. Needs a fallback to
+    `LLM_MODEL` in the gateway (the resolution added for the audit in the local slice is
+    the place for it).
+  - **`response_format` is forwarded blindly.** A strict provider may reject an unknown
+    field. Needs a way to strip it; note the agent also asks for JSON in words, so
+    stripping is survivable.
+- **Also worth deciding when it lands:** whether a cloud model may see the personal data
+  the agent can read under approval. Local-by-default keeps that data on-premises today;
+  making it a *policy* question ("this tool or tenant may only use a local model") would
+  suit this platform's approach, and is a larger piece than the two fixes.
+- **Lands in:** `app/gateway/app.py`, `scripts/use-model.sh`, `docs/llm-gateway.md`.
+- **Verified by:** a stub OpenAI-compatible provider in-cluster (so the path can be
+  exercised without anyone's cloud key), unit tests for both defects, and the live evals
+  against a real provider.
+
 ## Not slices (documented limits)
 
 - The trust domain (`acme.com`) and the demo passwords are documentation, not

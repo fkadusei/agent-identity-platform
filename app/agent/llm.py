@@ -162,7 +162,7 @@ def _chat(prompt: str) -> str:
         f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', '')}"},
         json={
-            "model": os.environ.get("LLM_MODEL", "gpt-4o-mini"),
+            "model": os.environ.get("LLM_MODEL") or os.environ.get("OLLAMA_MODEL", "llama3.2:3b"),
             "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"},
         },

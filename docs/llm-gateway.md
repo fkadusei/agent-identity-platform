@@ -75,3 +75,57 @@ stale count. Old rows are cleaned up opportunistically.
 - **A small over-shoot is possible.** The budget check reads, then the call
   charges; two calls in flight together can slightly exceed the budget. It is a
   spend guard, not an accounting ledger.
+
+## Swapping models
+
+The model is named in exactly one place, and swapping it does not touch a manifest or
+rebuild an image:
+
+```bash
+./scripts/use-model.sh qwen3:30b-a3b            # swap
+./scripts/use-model.sh llama3.2:3b              # and back
+./scripts/use-model.sh --eval qwen3:30b-a3b     # swap, then run the live evals
+```
+
+The script records the choice in `.env` (so re-running `setup.sh` keeps it), re-renders
+the `llm-config` ConfigMap from those values, and restarts the gateway — the config is
+read at startup, so a ConfigMap change on its own would leave the old model running.
+
+**Which model?** The demo's portable default is `qwen3:30b-a3b`; `llama3.2:3b` is a
+quarter of the size and much quicker if you want a snappier demo. The difference is not
+cosmetic — measured with the eval suite on one machine:
+
+| Model | Eval score | Notes |
+| --- | --- | --- |
+| `qwen3:30b-a3b` (and its local derivatives) | **6/8** | the misses are the two hardest cases |
+| `llama3.2:3b` | 4–5/8 | fails *"PII is refused for a support rep"* — a security guardrail, not a nicety |
+
+Small local models vary run to run, so treat those as indicative rather than exact.
+What matters is the class of failure: the 3B picks a plausible tool when it should
+refuse, and the guardrail suite is how you see it before your users do.
+
+### Two things a swap taught us
+
+- **A thinking model puts its answer somewhere else.** With `format: json`, a Qwen3-style
+  model returns `response` *empty* and the JSON in `thinking` — so the agent reported an
+  unparseable reply while the model had answered correctly (1/8 on the evals). The
+  gateway now asks for `think: false` and falls back to `thinking`, which took the same
+  model from 1/8 to 6/8.
+- **The audit had been naming the wrong thing.** `llm.call` recorded the model the
+  *caller* asked for, and the agent asks for none — so the field meant "which model
+  did someone request", with an empty answer, instead of *"which model decided this"*.
+  It now records the model resolved for the call, which is what makes a swap visible in
+  the trail:
+
+```
+"event": "llm.call", "provider": "ollama", "model": "qwen3-warden-ctx16k:latest",
+"caller": "spiffe://acme.com/ns/agent-platform/sa/agent"
+```
+
+Checking a swap is therefore three commands: the audit line above after any run,
+`./scripts/demo.sh` for the end-to-end path, and `use-model.sh --eval <model>` for a score.
+The suites that do not involve a model (`role-tools.sh`, `attack-tests.sh`,
+`tenancy-tests.sh`) are unaffected and should stay green.
+
+Cloud and native providers are deliberately not wired yet — see **S17** in
+[`backlog.md`](backlog.md) for the two defects that stand between here and there.
