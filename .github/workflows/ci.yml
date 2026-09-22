@@ -36,6 +36,14 @@ jobs:
       - name: AWS role-setup script self-test
         run: ./scripts/test-aws-kms-role.sh
 
+      # The pages in docs/site quote real code and link to their own sections, so
+      # they rot in ways prose cannot: a renamed function leaves a snippet that no
+      # longer exists, a deleted section leaves a nav link that goes nowhere. This
+      # checks both, and requires any block that is *not* quoted from a file to say
+      # so. Deleting the only page is also a failure, not a pass.
+      - name: docs pages stay honest
+        run: python3 scripts/check-docs-pages.py
+
       - name: validate config files
         run: |
           python3 - <<'PY'
