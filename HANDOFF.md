@@ -17,7 +17,7 @@
   beyond the original plan. The 2026-09-16 gateway outage is fixed — see S13 and
   S15 in [`docs/backlog.md`](docs/backlog.md).
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-09-19
+- **Last updated:** 2026-09-22
 
 ## Resume in 60 seconds
 
@@ -341,14 +341,52 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 | `docs/roadmap.md` | phase checklist + backlog |
 | `docs/decisions/` | ADRs 0001–0012 |
 | `docs/guides/` | plain-language user guides |
-| `docs/visualization/index.html` | interactive 3D architecture (open by double-click) |
+| `docs/site/` | the living HTML pages — see "Living documentation" below |
+| `docs/visualization/` | HTML diagrams — the 3D architecture (`index.html`) and the S7 transport plan |
 | `scripts/` | setup, demo, and the verification suites |
+
+## Living documentation
+
+`docs/site/` holds navigable pages that explain the platform **with the code that
+does it**. They are not a snapshot and not a separate effort: they are part of
+each slice, and the rule is the same one the rest of the repo follows — *if the
+behaviour changed, the page that describes it changes in the same PR*.
+
+| Page | Covers |
+|---|---|
+| `index.html` | The whole platform, plain language, twenty sections |
+| `agent-flow.html` | The agent end to end: the graph, the prompt, the guardrails, the tool boundary, the interrupt, the policy decision — plus the proposed upgrade, marked as proposed |
+
+There are no numbers in the list above and nothing to renumber: add a page, link
+it from the one it extends, and it is part of the set.
+
+To read them:
+```sh
+python3 -m http.server 8081 --directory docs/site    # → http://localhost:8081
+# or just open docs/site/index.html — no build, no CDN, no network
+```
+
+House rules for a page, enforced by `scripts/check-docs-pages.py` (runs in CI):
+
+- **Self-contained.** Inline CSS/JS, no build step, no CDN, no fonts to fetch.
+  It must work from `file://`.
+- **Quoted code is quoted.** A code block whose caption names a file must match
+  that file line for line. A block that is a sketch must say *illustrative* or
+  *commands* in its caption — so a reader can always tell code from a sketch, and
+  a sketch cannot drift into looking like code.
+- **Cross-linked.** A new page links back to the page it extends, and that page
+  links forward to it.
+- **Same visual language.** Dark by default, light one attribute away; sidebar +
+  scroll-spy + filter + copy; print styles that drop the chrome.
+- **The check can fail.** Before trusting it, break a nav link and a quoted line
+  and watch it complain — the same discipline the other suites follow.
 
 ## How to verify
 
 ```sh
 ./scripts/scan-secrets.sh      # expect: no leaks in tree or history
 ./status.sh                    # expect: cluster up, pods ready, the URL
+python3 scripts/check-docs-pages.py   # expect: pages consistent, quoted lines match
 # the pre-commit hook, self-tested (the literal below is not secret-shaped):
 printf 'LLM_API_KEY=sk-%s\n' "$(printf 'A%.0s' $(seq 1 24))" > t.txt
 git add t.txt && .githooks/pre-commit; echo "exit=$? (expect 1)"; git reset -q t.txt; rm -f t.txt

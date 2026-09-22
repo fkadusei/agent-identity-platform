@@ -293,12 +293,12 @@ svg .etext.warn{fill:var(--amber)}
     is the platform doing its job.
   </p>
 
-  <pre class="ascii">plan ──▶ call_tool ──▶ (ok / denied / error) ──▶ END
-             │
-             └─ approval_required ──▶ create_approval ──▶ await_decision
-                                                                │
-                                       approved ──▶ call_tool ◀──┤
-                                       denied   ──▶ END      ◀──┘</pre>
+  <pre class="ascii">    plan ──▶ call_tool ──▶ (ok / denied / error) ──▶ END
+                 │
+                 └─ approval_required ──▶ create_approval ──▶ await_decision
+                                                                   │
+                                          approved ──▶ call_tool ◀──┤
+                                          denied   ──▶ END      ◀──┘</pre>
   <p class="mono" style="color:var(--faint);font-size:.8rem">the topology comment at the top of <b>app/agent/graph.py</b></p>
 
   <div class="callout warn">
@@ -1472,7 +1472,7 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
 
   <h3>See it yourself</h3>
   <div class="codeblock">
-    <p class="cap">the two cheap ones — no cluster needed</p>
+    <p class="cap">commands — the two cheap ones, no cluster needed</p>
 <pre># the graph's safety properties, against the scripted deps
 python -m pytest app/agent/tests -q
 
@@ -1480,7 +1480,7 @@ python -m pytest app/agent/tests -q
 docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/</pre>
   </div>
   <div class="codeblock">
-    <p class="cap">against a running platform</p>
+    <p class="cap">commands — against a running platform</p>
 <pre># the whole safety story, as a sequence of attacks that must fail
 ./scripts/attack-tests.sh
 

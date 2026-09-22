@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S7 — SPIFFE-native transport: today vs. planned</title>
+<script>
+  // Set the theme before first paint: a stored choice wins, otherwise follow the OS.
+  // `light-dark()` in the CSS does the rest, so there is one place to change.
+  (function () {
+    try {
+      var stored = localStorage.getItem("theme");
+      if (!stored) {
+        stored = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      }
+      document.documentElement.dataset.theme = stored;
+    } catch (e) { /* private mode: fall back to the OS via CSS */ }
+  })();
+</script>
+<style>
+  :root {
+    color-scheme: light dark;
+
+    /* Each value has a plain fallback first, then light-dark() where supported —
+       so an older browser still renders rather than losing the variable. */
+    --bg: #f6f8fa;            --bg: light-dark(#f6f8fa, #0d1117);
+    --card: #ffffff;          --card: light-dark(#ffffff, #161b22);
+    --border: #d0d7de;        --border: light-dark(#d0d7de, #30363d);
+    --text: #1f2328;          --text: light-dark(#1f2328, #e6edf3);
+    --muted: #57606a;         --muted: light-dark(#57606a, #8b949e);
+    --red: #cf222e;           --red: light-dark(#cf222e, #ff7b72);
+    --blue: #0969da;          --blue: light-dark(#0969da, #58a6ff);
+    --green: #1a7f37;         --green: light-dark(#1a7f37, #3fb950);
+    --amber: #9a6700;         --amber: light-dark(#9a6700, #d29922);
+    --mesh-fill: #eef4ff;     --mesh-fill: light-dark(#eef4ff, rgba(88, 166, 255, 0.10));
+    --domain-fill: #eaf7ef;   --domain-fill: light-dark(#eaf7ef, rgba(63, 185, 80, 0.10));
+    --code-bg: #eff1f3;       --code-bg: light-dark(#eff1f3, #21262d);
+    --badge-bg: #cf222e;      --badge-bg: light-dark(#cf222e, #da3633);
+    --badge-fg: #ffffff;
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"]  { color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 64px; background: var(--bg); color: var(--text);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    transition: background-color .15s ease, color .15s ease;
+  }
+  main { max-width: 1080px; margin: 0 auto; }
+  header { display: flex; align-items: flex-start; gap: 16px; }
+  header h1 { flex: 1 1 auto; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; margin: 40px 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  button.theme {
+    flex: 0 0 auto; cursor: pointer; font: 12.5px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text); background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 12px; margin-top: 6px;
+  }
+  button.theme:hover { border-color: var(--blue); color: var(--blue); }
+
+  svg { width: 100%; height: auto; display: block; }
+  svg text { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  /* The diagram takes its colours from the same variables as the page, so both
+     themes are one definition — no second copy of the palette to keep in step. */
+  .box { fill: var(--card); stroke: var(--blue); stroke-width: 1.5; }
+  .box.ok { stroke: var(--green); }
+  .box.bad { stroke: var(--red); }
+  .mesh { fill: var(--mesh-fill); stroke: var(--blue); stroke-opacity: .55; }
+  .domain { fill: var(--domain-fill); stroke: var(--green); stroke-dasharray: 7 5; }
+  .s-red { stroke: var(--red); stroke-width: 2.5; fill: none; }
+  .s-blue { stroke: var(--blue); stroke-width: 2.5; fill: none; }
+  .s-green { stroke: var(--green); stroke-width: 2.5; fill: none; }
+  .dash { stroke-dasharray: 6 5; }
+  .t { fill: var(--text); }
+  .muted { fill: var(--muted); }
+  .red { fill: var(--red); }
+  .blue { fill: var(--blue); }
+  .green { fill: var(--green); }
+  .dot { fill: var(--badge-bg); }
+  .dotlabel { fill: var(--badge-fg); }
+  .mk-red path { fill: var(--red); }
+  .mk-green path { fill: var(--green); }
+  .mk-blue path { fill: var(--blue); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 18px; margin: 4px 0 20px; color: var(--muted); font-size: 13px; }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 26px; height: 0; border-top-width: 3px; border-top-style: solid; display: inline-block; }
+  .swatch.dash { border-top-style: dashed; }
+  ol.concerns { list-style: none; padding: 0; margin: 18px 0 0; }
+  ol.concerns li { position: relative; padding-left: 34px; margin-bottom: 12px; }
+  ol.concerns li::before {
+    counter-increment: c; content: counter(c);
+    position: absolute; left: 0; top: 1px;
+    width: 20px; height: 20px; border-radius: 50%; background: var(--badge-bg); color: var(--badge-fg);
+    display: flex; align-items: center; justify-content: center; font: 700 12px/1 ui-monospace, Menlo, monospace;
+  }
+  ol.concerns { counter-reset: c; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; }
+  code { font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--code-bg); padding: 1px 5px; border-radius: 4px; }
+  .actions li { margin-bottom: 10px; }
+  .actions b { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .ok { color: var(--green); } .bad { color: var(--red); } .warn { color: var(--amber); }
+  .note { color: var(--muted); font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<main>
+
+  <header>
+    <div>
+      <h1>S7 — SPIFFE-native transport everywhere</h1>
+      <p class="sub">What runs today, where the identity story breaks, and the changes I want to make.
+      Simplified for legibility: telemetry fan-out and replication are drawn as one cluster each.</p>
+    </div>
+    <button class="theme" id="theme" type="button" aria-live="polite">theme: —</button>
+  </header>
+
+  <div class="legend">
+    <span><i class="swatch" style="border-color:var(--green)"></i> SPIFFE mTLS (workload SVID)</span>
+    <span><i class="swatch" style="border-color:var(--blue)"></i> Linkerd mTLS (the mesh's identity)</span>
+    <span><i class="swatch dash" style="border-color:var(--red)"></i> plaintext / unencrypted</span>
+    <span><i class="swatch dash" style="border-color:var(--green)"></i> planned (S7)</span>
+  </div>
+
+  <h2>Today</h2>
+  <div class="card">
+    <svg viewBox="0 0 1000 420" role="img" aria-label="Today: one SPIFFE hop inside a Linkerd mesh, and a plaintext browser edge">
+      <defs>
+        <marker id="t-red" class="mk-red" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#cf222e"/>
+        </marker>
+        <marker id="t-green" class="mk-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a7f37"/>
+        </marker>
+      </defs>
+
+      <rect class="mesh" x="20" y="96" width="960" height="304" rx="12"/>
+      <text class="blue" x="36" y="118" font-size="12">
+        Linkerd mesh — its own identity · mTLS on every in-cluster hop
+      </text>
+
+      <rect class="box bad" x="390" y="20" width="150" height="46" rx="8"/>
+      <text class="t" x="465" y="48" text-anchor="middle" font-size="12">Browser</text>
+
+      <line class="s-red dash" x1="465" y1="66" x2="465" y2="150" marker-end="url(#t-red)"/>
+      <text class="red" x="475" y="104" font-size="11">plaintext</text>
+      <text class="red" x="475" y="118" font-size="10.5">port-forward · no TLS in kind</text>
+      <circle class="dot" cx="360" cy="98" r="9"/><text class="dotlabel" x="360" y="102" text-anchor="middle" font-size="11">1</text>
+
+      <path class="s-green" d="M 115 150 V 130 H 285 V 150" marker-end="url(#t-green)"/>
+      <text class="green" x="200" y="126" text-anchor="middle" font-size="11">SPIFFE mTLS</text>
+      <circle class="dot" cx="316" cy="126" r="9"/><text class="dotlabel" x="316" y="130" text-anchor="middle" font-size="11">4</text>
+
+      <g font-size="12">
+        <rect class="box" x="40" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="115" y="174" text-anchor="middle">agent ×2</text>
+        <text class="muted" x="115" y="192" text-anchor="middle" font-size="10.5">:8081 · SPIFFE client</text>
+
+        <rect class="box ok" x="210" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="285" y="174" text-anchor="middle">gateway ×2</text>
+        <text class="muted" x="285" y="192" text-anchor="middle" font-size="10.5">:8443 · SPIFFE server</text>
+
+        <rect class="box" x="390" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="465" y="174" text-anchor="middle">api ×2</text>
+        <text class="muted" x="465" y="192" text-anchor="middle" font-size="10.5">:8080 · HTTP</text>
+
+        <rect class="box" x="570" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="645" y="174" text-anchor="middle">tools ×2</text>
+        <text class="muted" x="645" y="192" text-anchor="middle" font-size="10.5">:8000 · HTTP</text>
+
+        <rect class="box" x="750" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="825" y="174" text-anchor="middle">sandbox ×1</text>
+        <text class="muted" x="825" y="192" text-anchor="middle" font-size="10.5">:8090 · HTTP</text>
+      </g>
+
+      <g font-size="12">
+        <rect class="box" x="40" y="270" width="150" height="56" rx="8"/>
+        <text class="t" x="115" y="294" text-anchor="middle">OPA ×2</text>
+        <text class="muted" x="115" y="312" text-anchor="middle" font-size="10.5">:8181</text>
+
+        <rect class="box" x="210" y="270" width="150" height="56" rx="8"/>
+        <text class="t" x="285" y="294" text-anchor="middle">Keycloak ×2</text>
+        <text class="muted" x="285" y="312" text-anchor="middle" font-size="10.5">:8080</text>
+
+        <rect class="box" x="390" y="270" width="150" height="56" rx="8"/>
+        <text class="t" x="465" y="294" text-anchor="middle">Postgres ×1</text>
+        <text class="muted" x="465" y="312" text-anchor="middle" font-size="10.5">state</text>
+
+        <rect class="box" x="570" y="270" width="330" height="56" rx="8"/>
+        <text class="t" x="735" y="294" text-anchor="middle">observability — otel · prometheus · grafana · jaeger</text>
+        <text class="muted" x="735" y="312" text-anchor="middle" font-size="10.5">scrapes every service's /metrics over the mesh</text>
+      </g>
+      <circle class="dot" cx="925" cy="230" r="9"/><text class="dotlabel" x="925" y="234" text-anchor="middle" font-size="11">3</text>
+      <circle class="dot" cx="700" cy="118" r="9"/><text class="dotlabel" x="700" y="122" text-anchor="middle" font-size="11">2</text>
+    </svg>
+
+    <ol class="concerns">
+      <li><b class="bad">The browser edge is plaintext.</b> Kind reaches the API through <code>kubectl port-forward</code>. The chart <em>supports</em> ingress TLS (<code>ingress.tls.*</code>) but nothing ever runs it, so the one hop with real user tokens is the one hop with no encryption.</li>
+      <li><b class="bad">Two identity systems.</b> Linkerd has an identity for every hop; SPIFFE has one for agent↔gateway. Neither is authoritative at the application layer, and a hop "being encrypted" says nothing about <em>who</em> the peer is.</li>
+      <li><b class="bad">SPIFFE stops at the gateway.</b> <code>tools</code>, <code>api</code>, <code>sandbox</code> and the third-party systems have no SPIFFE identity. The tool server is a policy enforcement point that never learns the caller's workload identity from the transport — only from a JWT.</li>
+      <li><b class="bad">No per-hop identity assertion.</b> <code>tls-check.sh</code> asks <em>Linkerd</em> whether an edge is encrypted. Nothing asserts "this hop's peer is the agent's SVID", so any pod the mesh trusts can reach <code>tools</code> directly.</li>
+    </ol>
+  </div>
+
+  <h2>After S7</h2>
+  <div class="card">
+    <svg viewBox="0 0 1000 460" role="img" aria-label="After S7: SPIFFE on every hop we own, mesh only for third parties, TLS at the browser edge">
+      <defs>
+        <marker id="a-green" class="mk-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#1a7f37"/>
+        </marker>
+        <marker id="a-blue" class="mk-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#0969da"/>
+        </marker>
+      </defs>
+
+      <rect class="domain" x="20" y="96" width="700" height="120" rx="12"/>
+      <text class="green" x="36" y="118" font-size="12">
+        SPIFFE — every hop we own carries a workload identity (and requires a verified peer ID)
+      </text>
+
+      <rect class="mesh" x="20" y="256" width="960" height="190" rx="12"/>
+      <text class="blue" x="36" y="278" font-size="12">
+        Linkerd — kept only where a third party or the vendor stand-in has no SPIFFE identity
+      </text>
+
+      <rect class="box ok" x="390" y="20" width="150" height="46" rx="8"/>
+      <text class="t" x="465" y="48" text-anchor="middle" font-size="12">Browser</text>
+      <line class="s-green" x1="465" y1="66" x2="465" y2="150" marker-end="url(#a-green)"/>
+      <text class="green" x="475" y="104" font-size="11">TLS at the ingress</text>
+      <text class="muted" x="475" y="118" font-size="10.5">the chart's ingress.tls, now exercised</text>
+
+      <path class="s-green" d="M 115 150 V 130 H 285 V 150" marker-end="url(#a-green)"/>
+      <text class="green" x="200" y="126" text-anchor="middle" font-size="11">agent → gateway</text>
+
+      <path class="s-green" d="M 130 210 V 230 H 640 V 210" marker-end="url(#a-green)"/>
+      <text class="green" x="385" y="248" text-anchor="middle" font-size="11">agent → tools · agent → api: the server accepts one peer SVID, not "any valid cert"</text>
+
+      <g font-size="12">
+        <rect class="box ok" x="40" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="115" y="174" text-anchor="middle">agent ×2</text>
+        <text class="muted" x="115" y="192" text-anchor="middle" font-size="10.5">SVID: …/sa/agent</text>
+
+        <rect class="box ok" x="210" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="285" y="174" text-anchor="middle">gateway ×2</text>
+        <text class="muted" x="285" y="192" text-anchor="middle" font-size="10.5">SVID: …/sa/gateway</text>
+
+        <rect class="box ok" x="390" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="465" y="174" text-anchor="middle">api ×2</text>
+        <text class="muted" x="465" y="192" text-anchor="middle" font-size="10.5">SVID: …/sa/api · ingress</text>
+
+        <rect class="box ok" x="570" y="150" width="150" height="56" rx="8"/>
+        <text class="t" x="645" y="174" text-anchor="middle">tools ×2</text>
+        <text class="muted" x="645" y="192" text-anchor="middle" font-size="10.5">SVID: …/sa/tools</text>
+      </g>
+
+      <g font-size="12">
+        <rect class="box" x="40" y="316" width="150" height="56" rx="8"/>
+        <text class="t" x="115" y="340" text-anchor="middle">sandbox ×1</text>
+        <text class="muted" x="115" y="358" text-anchor="middle" font-size="10.5">vendor stand-in · no SVID, by design</text>
+
+        <rect class="box" x="210" y="316" width="150" height="56" rx="8"/>
+        <text class="t" x="285" y="340" text-anchor="middle">OPA ×2</text>
+        <text class="muted" x="285" y="358" text-anchor="middle" font-size="10.5">third party</text>
+
+        <rect class="box" x="390" y="316" width="150" height="56" rx="8"/>
+        <text class="t" x="465" y="340" text-anchor="middle">Keycloak ×2</text>
+        <text class="muted" x="465" y="358" text-anchor="middle" font-size="10.5">third party</text>
+
+        <rect class="box" x="570" y="316" width="150" height="56" rx="8"/>
+        <text class="t" x="645" y="340" text-anchor="middle">Postgres ×1</text>
+        <text class="muted" x="645" y="358" text-anchor="middle" font-size="10.5">third party</text>
+
+        <rect class="box" x="750" y="316" width="210" height="56" rx="8"/>
+        <text class="t" x="855" y="340" text-anchor="middle">otel · prometheus · grafana</text>
+        <text class="muted" x="855" y="358" text-anchor="middle" font-size="10.5">scrapes a plaintext /metrics port</text>
+      </g>
+      <line class="s-blue dash" x1="400" y1="302" x2="700" y2="302" marker-end="url(#a-blue)"/>
+      <text class="blue" x="550" y="296" text-anchor="middle" font-size="11">mesh mTLS continues here — these can't present a SVID</text>
+    </svg>
+
+    <p class="note">A consequence worth naming: turning the mesh off for <em>our</em> pods means Prometheus can no
+    longer scrape them over mesh mTLS, so <code>/metrics</code> moves to a plaintext management port — non-sensitive,
+    internal, and documented rather than quietly exposed.</p>
+  </div>
+
+  <h2>Hop by hop</h2>
+  <table>
+    <thead><tr><th>Hop</th><th>Today</th><th>After S7</th></tr></thead>
+    <tbody>
+      <tr><td>Browser → api</td><td class="bad">plaintext (port-forward)</td><td class="ok">TLS at the ingress</td></tr>
+      <tr><td>agent → gateway</td><td class="warn">SPIFFE inside mesh mTLS</td><td class="ok">SPIFFE only</td></tr>
+      <tr><td>agent → tools</td><td class="bad">mesh identity only</td><td class="ok">SPIFFE, peer = the agent</td></tr>
+      <tr><td>agent → api</td><td class="bad">mesh identity only</td><td class="ok">SPIFFE, peer = the agent</td></tr>
+      <tr><td>tools → sandbox</td><td class="bad">mesh identity only</td><td class="warn">mesh — the sandbox is a vendor stand-in</td></tr>
+      <tr><td>tools → OPA · api → Keycloak · → Postgres</td><td class="warn">mesh identity only</td><td class="warn">mesh — third-party products</td></tr>
+      <tr><td>Prometheus → services</td><td>mesh mTLS</td><td class="warn">plaintext management port</td></tr>
+      <tr><td>Verification</td><td class="bad">Linkerd says "encrypted"</td><td class="ok">per-hop peer identity asserted</td></tr>
+    </tbody>
+  </table>
+
+  <h2>The actions I want to take</h2>
+  <ol class="actions">
+    <li><b>A · app/common/server.py</b> — one shared runner that builds an SSLContext from the workload's X.509-SVID, requires a client certificate and verifies the chain. Extracted from <code>gateway/run.py</code> so there is a single implementation, and gated on an env var so a local run stays plaintext. <span class="bad">(the file the backlog names doesn't exist yet — this creates it)</span></li>
+    <li><b>B · serve SPIFFE, assert the peer</b> — <code>api</code>, <code>tools</code>, <code>agent</code> run with that context; our clients present SVIDs (<code>agentnhi.mtls_client_context</code> already exists); each server allows exactly one peer identity rather than any valid certificate. Resolves <span class="bad">③</span> and <span class="bad">④</span>.</li>
+    <li><b>C · stop wrapping our pods in the mesh</b> — <code>linkerd.io/inject: disabled</code> on our Deployments, mesh retained for third parties and the vendor stand-in. This is what actually retires the second identity, and it forces the <code>/metrics</code> decision above.</li>
+    <li><b>D · the browser edge</b> — an ingress in kind with a TLS cert, so the chart's <code>ingress.tls</code> is the documented path <em>and</em> the exercised one. Independent of A–C; its own PR.</li>
+    <li><b>E · prove it</b> — <code>tls-check.sh</code> gains a per-hop SPIFFE assertion: dial each hop with a client SVID, print the peer identity, and fail if a hop we own is not SPIFFE. That is the slice's "Verified by".</li>
+  </ol>
+
+</main>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var button = document.getElementById("theme");
+    var modes = ["system", "light", "dark"];
+
+    function current() {
+      var stored = null;
+      try { stored = localStorage.getItem("theme"); } catch (e) {}
+      return stored || "system";
+    }
+    function paint() {
+      var mode = current();
+      root.dataset.theme = mode === "system"
+        ? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
+        : mode;
+      button.textContent = "theme: " + mode;
+    }
+    button.addEventListener("click", function () {
+      var next = modes[(modes.indexOf(current()) + 1) % modes.length];
+      try {
+        if (next === "system") { localStorage.removeItem("theme"); }
+        else { localStorage.setItem("theme", next); }
+      } catch (e) {}
+      paint();
+    });
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", paint);
+    paint();
+  })();
+</script>
+</body>
+</html>
