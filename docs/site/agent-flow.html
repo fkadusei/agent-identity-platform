@@ -1,0 +1,1582 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The agent, end to end — Agent Identity Platform</title>
+<meta name="description" content="How a task becomes an action: the agent's graph, the prompt, the guardrails, the tool enforcement point, the human interrupt and the policy decision — with the code that does each step." />
+<style>
+/* ==========================================================================
+   A companion page to docs/site/index.html, deliberately self-contained in the
+   same way: no build, no dependencies, dark by default with a light palette one
+   attribute away. The vocabulary is the platform's own.
+   ========================================================================== */
+:root{
+  --bg:#0b0f16; --bg2:#0e131c; --surface:#131a24; --surface2:#182231; --surface3:#1d2938;
+  --line:#24304a; --line2:#1c2536; --line3:#33415c;
+  --ink:#e8eef7; --ink2:#c3cedd; --muted:#8d9bb0; --faint:#64738a;
+  --accent:#8fb4ff; --accent2:#b6ccff; --accent-soft:#16233c; --accent-line:#2f4770;
+  --green:#6ee7a8; --green-soft:#10281d; --green-line:#245139;
+  --amber:#f0c56a; --amber-soft:#2a2110; --amber-line:#4f3f1c;
+  --red:#ff9d92; --red-soft:#2b1513; --red-line:#572824;
+  --violet:#b9a3ff; --violet-soft:#1b1730; --violet-line:#362a5c;
+  --teal:#5fd3c0; --teal-soft:#0f2624; --teal-line:#1f4d47;
+  --r:10px; --r2:14px; --shadow:0 6px 20px -8px rgb(0 0 0/.55);
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html[data-theme="light"]{
+  --bg:#f7f9fc; --bg2:#eef2f8; --surface:#ffffff; --surface2:#f4f7fb; --surface3:#eaeff7;
+  --line:#d7e0ee; --line2:#e4eaf4; --line3:#bcc9dd;
+  --ink:#101826; --ink2:#2a3a52; --muted:#5a6b85; --faint:#8194ad;
+  --accent:#2f63c8; --accent2:#1f4da8; --accent-soft:#e8f0ff; --accent-line:#b9cdf3;
+  --green:#0f7a4a; --green-soft:#e8f8f0; --green-line:#b3e3cb;
+  --amber:#8a5a00; --amber-soft:#fdf5e3; --amber-line:#efdba6;
+  --red:#a8322a; --red-soft:#fdeceb; --red-line:#f3c3bf;
+  --violet:#6242c4; --violet-soft:#f0ecfe; --violet-line:#cec2f6;
+  --teal:#0b6f61; --teal-soft:#e6f7f4; --teal-line:#b0e2da;
+  --shadow:0 6px 18px -10px rgb(16 24 38/.25);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+::selection{background:rgb(143 180 255/.28)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:var(--mono);font-size:.86em;background:var(--bg2);border:1px solid var(--line2);padding:1px 6px;border-radius:6px;color:var(--ink2)}
+h2{font-size:1.55rem;margin:0 0 .4rem;letter-spacing:-.01em}
+h3{font-size:1.1rem;margin:2.1rem 0 .5rem}
+h4{font-size:.97rem;margin:1.3rem 0 .3rem;color:var(--ink2)}
+p{margin:.7rem 0}
+.wrap{display:grid;grid-template-columns:288px minmax(0,1fr);max-width:1400px;margin:0 auto}
+aside{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line2);padding:22px 16px 60px;background:linear-gradient(180deg,var(--surface),var(--bg))}
+main{padding:34px 40px 120px;max-width:980px}
+@media (max-width:980px){
+  .wrap{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line2)}
+  main{padding:24px 18px 90px}
+}
+.brandline{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.brandline .mark{width:34px;height:34px;flex:none;border-radius:10px;display:grid;place-items:center;font:700 13px/1 var(--sans);color:#0b0f16;background:linear-gradient(150deg,var(--accent2),var(--accent) 60%,#6f92d8)}
+.brandline b{display:block;font-size:.95rem}
+.brandline span{display:block;font-size:.72rem;color:var(--faint)}
+.tools{display:flex;gap:8px;margin:0 0 12px}
+.tools button{flex:1;font:inherit;font-size:.76rem;padding:6px 8px;cursor:pointer;color:var(--muted);background:var(--surface2);border:1px solid var(--line);border-radius:9px}
+.tools button:hover{color:var(--accent);border-color:var(--accent-line)}
+.backlink{display:block;font-size:.8rem;padding:7px 9px;margin-bottom:10px;border:1px dashed var(--line3);border-radius:9px;color:var(--ink2)}
+.backlink:hover{border-color:var(--accent-line);color:var(--accent);text-decoration:none}
+.filter{width:100%;font:inherit;font-size:.8rem;padding:8px 10px;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:9px;margin-bottom:12px}
+nav ol{list-style:none;margin:0;padding:0}
+nav .gtitle{font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);padding:8px 8px 4px}
+nav a{display:block;padding:5px 9px;border-radius:7px;color:var(--ink2);font-size:.86rem;border-left:2px solid transparent}
+nav a:hover{background:var(--surface2);text-decoration:none;color:var(--ink)}
+nav a.active{color:var(--accent);background:var(--accent-soft);border-left-color:var(--accent)}
+nav a.hidden{display:none}
+.progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0;z-index:50}
+.hero h1{font-size:2rem;margin:0 0 .5rem}
+.hero .lede{font-size:1.08rem;color:var(--ink2);max-width:64ch}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:650;letter-spacing:.05em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface2);color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:16px 18px;margin:16px 0;box-shadow:var(--shadow)}
+.callout{border:1px solid var(--line3);border-left-width:3px;border-radius:var(--r);padding:12px 15px;margin:14px 0;background:var(--surface2);font-size:.95rem}
+.callout b:first-child{display:block;margin-bottom:2px}
+.callout.info{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.ok{border-left-color:var(--green);background:var(--green-soft)}
+.callout.warn{border-left-color:var(--amber);background:var(--amber-soft)}
+.callout.danger{border-left-color:var(--red);background:var(--red-soft)}
+.callout.violet{border-left-color:var(--violet);background:var(--violet-soft)}
+table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0;font-size:.9rem;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+th{text-align:left;font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);background:var(--surface2);padding:9px 12px;border-bottom:1px solid var(--line)}
+td{padding:9px 12px;border-bottom:1px solid var(--line2);color:var(--ink2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--surface2)}
+.mono{font-family:var(--mono);font-size:.85em}
+.pill{display:inline-block;font:600 .7rem/1.6 var(--sans);letter-spacing:.04em;text-transform:uppercase;padding:2px 9px;border-radius:999px;border:1px solid var(--line3);color:var(--muted)}
+.pill.ok{color:var(--green);border-color:var(--green-line);background:var(--green-soft)}
+.pill.warn{color:var(--amber);border-color:var(--amber-line);background:var(--amber-soft)}
+.pill.bad{color:var(--red);border-color:var(--red-line);background:var(--red-soft)}
+.pill.teal{color:var(--teal);border-color:var(--teal-line);background:var(--teal-soft)}
+.pill.violet{color:var(--violet);border-color:var(--violet-line);background:var(--violet-soft)}
+.codeblock{position:relative;margin:14px 0}
+.codeblock pre{margin:0;background:#080c12;border:1px solid var(--line2);border-radius:var(--r);padding:13px 15px;overflow-x:auto;font-family:var(--mono);font-size:.82rem;line-height:1.6;color:#cdd9e8}
+html[data-theme="light"] .codeblock pre{background:#0f1725;color:#dbe6f5}
+.codeblock .cap{font-size:.72rem;color:var(--faint);margin:0 0 5px;letter-spacing:.04em;text-transform:uppercase}
+.codeblock .copy{position:absolute;top:8px;right:8px;font:inherit;font-size:.7rem;padding:4px 9px;cursor:pointer;color:var(--muted);background:rgb(0 0 0/.35);border:1px solid var(--line3);border-radius:7px}
+.codeblock .copy:hover{color:var(--accent);border-color:var(--accent-line)}
+pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.5;color:var(--ink2)}
+.steps{counter-reset:s;list-style:none;padding:0;margin:16px 0}
+.steps>li{counter-increment:s;position:relative;padding:2px 0 16px 46px;border-left:1px solid var(--line2);margin-left:14px}
+.steps>li:last-child{border-left-color:transparent}
+.steps>li::before{content:counter(s);position:absolute;left:-15px;top:0;width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font:700 .8rem/1 var(--sans);color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line)}
+.steps>li b{color:var(--ink)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:16px 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:14px 16px}
+.tile h4{margin:0 0 6px;color:var(--ink)}
+.tile p{margin:0;font-size:.9rem;color:var(--muted)}
+.kv{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.kv span{font-size:.78rem;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface2);color:var(--ink2)}
+.kv span b{color:var(--ink)}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line2);color:var(--faint);font-size:.85rem}
+.totop{position:fixed;right:18px;bottom:18px;font:inherit;font-size:.78rem;padding:9px 13px;cursor:pointer;color:var(--ink2);background:var(--surface2);border:1px solid var(--line3);border-radius:999px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+.totop.show{opacity:1;pointer-events:auto}
+svg .box{fill:var(--surface);stroke:var(--line3);stroke-width:1.2}
+svg .box.ours{stroke:var(--violet-line);fill:var(--violet-soft)}
+svg .box.ext{stroke:var(--teal-line);fill:var(--teal-soft)}
+svg .lbl{fill:var(--ink);font:600 12.5px var(--sans)}
+svg .sub{fill:var(--muted);font:10.5px var(--sans)}
+svg .edge{stroke:var(--muted);stroke-width:1.3;fill:none;marker-end:url(#ar)}
+svg .edge.violet{stroke:var(--violet);marker-end:url(#arv)}
+svg .edge.dash{stroke-dasharray:4 3}
+svg .etext{fill:var(--muted);font:10px var(--sans)}
+svg .etext.warn{fill:var(--amber)}
+@media print{aside,.tools,.filter,.totop,.codeblock .copy,.progress,.backlink{display:none}
+  .wrap{display:block}main{max-width:none;padding:0}
+  .codeblock pre{background:#f4f6fb;color:#101826;border-color:#ccd6e6}}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="wrap">
+<aside>
+  <div class="brandline">
+    <span class="mark" aria-hidden="true">AI</span>
+    <div><b>The agent, end to end</b><span>task → model → policy → action</span></div>
+  </div>
+  <a class="backlink" href="index.html">← Platform overview</a>
+  <div class="tools">
+    <button id="theme" type="button">Light</button>
+    <button id="expand" type="button">Expand all</button>
+  </div>
+  <input class="filter" id="filter" type="search" placeholder="Filter sections…" aria-label="Filter sections" />
+  <nav aria-label="Contents">
+    <div class="group">
+      <div class="gtitle">The flow</div>
+      <ol>
+        <li><a href="#shape">The shape of it</a></li>
+        <li><a href="#graph">The graph</a></li>
+        <li><a href="#model">What the model sees</a></li>
+        <li><a href="#tools">Where the tools fit</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">The controls</div>
+      <ol>
+        <li><a href="#interrupt">The human interrupt</a></li>
+        <li><a href="#policy">The policy decision</a></li>
+        <li><a href="#safety">The safety property</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">Understanding it</div>
+      <ol>
+        <li><a href="#run">One run, annotated</a></li>
+        <li><a href="#upgrade">What the upgrade would change</a></li>
+        <li><a href="#map">Code map, try it, glossary</a></li>
+      </ol>
+    </div>
+  </nav>
+</aside>
+
+<main>
+<section class="hero" id="shape">
+  <span class="tag">Companion to the platform overview</span>
+  <h1>The agent, end to end</h1>
+  <p class="lede">
+    A task arrives as a sentence. What comes out is either an answer, a refusal with a
+    reason, or a held action waiting for a person. This page follows that path through the
+    code — <b>the model proposes, the platform disposes</b> — and shows exactly where each
+    decision is made, and which control would catch it if the model were wrong.
+  </p>
+  <div class="callout info">
+    <b>Why this shape at all</b>
+    An autonomous agent is a program that decides what to do next, which means the
+    interesting question is never "can it?" but "what happens when it decides something
+    stupid, or is talked into it?" Every arrow below exists to answer that. Nothing here
+    trusts the model with authority; the model is a <i>proposer</i>, and the platform
+    around it is the authority.
+  </div>
+
+  <h3>The cast, and who may talk to whom</h3>
+  <svg viewBox="0 0 920 430" width="100%" role="img" aria-label="The agent sits between the API and three things it needs: the model (through the gateway), the policy engine, and the tool server. A human interrupt is shown between the policy decision and the tool call.">
+    <defs>
+      <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/>
+      </marker>
+      <marker id="arv" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+        <path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/>
+      </marker>
+    </defs>
+
+    <rect x="30" y="150" width="150" height="52" rx="10" class="box"/>
+    <text x="105" y="172" text-anchor="middle" class="lbl">user + browser</text>
+    <text x="105" y="188" text-anchor="middle" class="sub">a sentence, a token</text>
+
+    <rect x="220" y="150" width="130" height="52" rx="10" class="box"/>
+    <text x="285" y="172" text-anchor="middle" class="lbl">api</text>
+    <text x="285" y="188" text-anchor="middle" class="sub">/tasks</text>
+
+    <rect x="392" y="140" width="150" height="72" rx="12" class="box ours"/>
+    <text x="467" y="166" text-anchor="middle" class="lbl">agent</text>
+    <text x="467" y="182" text-anchor="middle" class="sub">the graph</text>
+    <text x="467" y="197" text-anchor="middle" class="sub">holds no model key</text>
+
+    <rect x="600" y="30" width="160" height="52" rx="10" class="box ext"/>
+    <text x="680" y="52" text-anchor="middle" class="lbl">gateway → model</text>
+    <text x="680" y="68" text-anchor="middle" class="sub">the only provider key</text>
+
+    <rect x="600" y="110" width="160" height="52" rx="10" class="box ext"/>
+    <text x="680" y="132" text-anchor="middle" class="lbl">OPA (policy)</text>
+    <text x="680" y="148" text-anchor="middle" class="sub">may this caller call this?</text>
+
+    <rect x="600" y="190" width="160" height="52" rx="10" class="box ext"/>
+    <text x="680" y="212" text-anchor="middle" class="lbl">tool server</text>
+    <text x="680" y="228" text-anchor="middle" class="sub">the enforcement point</text>
+
+    <rect x="600" y="270" width="160" height="52" rx="10" class="box"/>
+    <text x="680" y="292" text-anchor="middle" class="lbl">approvals</text>
+    <text x="680" y="308" text-anchor="middle" class="sub">a person decides</text>
+
+    <rect x="392" y="330" width="150" height="52" rx="10" class="box"/>
+    <text x="467" y="352" text-anchor="middle" class="lbl">audit</text>
+    <text x="467" y="368" text-anchor="middle" class="sub">every step, keyed on identity</text>
+
+    <line x1="180" y1="176" x2="216" y2="176" class="edge"/>
+    <line x1="350" y1="176" x2="388" y2="176" class="edge violet"/>
+    <text x="356" y="167" class="etext warn">SPIFFE</text>
+    <line x1="542" y1="160" x2="596" y2="70" class="edge violet"/>
+    <text x="548" y="112" class="etext warn">mTLS + SVID</text>
+    <line x1="542" y1="176" x2="596" y2="140" class="edge violet"/>
+    <text x="548" y="152" class="etext">asks policy</text>
+    <line x1="542" y1="196" x2="596" y2="212" class="edge violet"/>
+    <text x="540" y="236" class="etext warn">mTLS + token</text>
+    <line x1="467" y1="212" x2="467" y2="326" class="edge dash"/>
+    <line x1="640" y1="242" x2="512" y2="330" class="edge dash"/>
+    <text x="520" y="286" class="etext">held → decided → resume</text>
+
+    <rect x="30" y="240" width="330" height="150" rx="10" class="box" fill="none" stroke-dasharray="5 4"/>
+    <text x="48" y="262" class="lbl">Inside this box: the model's opinion only</text>
+    <text x="48" y="282" class="sub">The graph decides what to attempt; it never decides what is permitted.</text>
+    <text x="48" y="302" class="sub">Everything to the right is a control the model cannot see, argue with,</text>
+    <text x="48" y="320" class="sub">or write to — each checked independently, and each recorded.</text>
+    <text x="48" y="352" class="sub">The user's token travels with the request. The agent exchanges it for</text>
+    <text x="48" y="370" class="sub">one scoped to the tool server. Nothing is ambient.</text>
+  </svg>
+
+  <div class="grid2">
+    <div class="tile">
+      <h4>Four controls, four jobs</h4>
+      <p>
+        <b>Guardrails</b> refuse obvious rubbish before the model is even called.
+        <b>Policy</b> decides whether this caller may call this tool with these arguments.
+        <b>Approvals</b> hold the risky cases for a person. <b>The tool server</b> is where
+        all of it is actually enforced — the model's opinion never reaches it unchecked.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Why not just ask the model not to?</h4>
+      <p>
+        Because a prompt is not a control. A model can be talked into things, and a small
+        local one frequently is. Every control below is code that would work the same if
+        the model were actively hostile — that is the test each of them passes.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section id="graph">
+  <h2>2 · The graph</h2>
+  <p>
+    The agent is a small state machine, not a conversation. Four nodes, and the only
+    interesting structure in it is the loop back from a person's decision into the tool
+    call. Everything the model contributes happens in the first node; everything after it
+    is the platform doing its job.
+  </p>
+
+  <pre class="ascii">plan ──▶ call_tool ──▶ (ok / denied / error) ──▶ END
+             │
+             └─ approval_required ──▶ create_approval ──▶ await_decision
+                                                                │
+                                       approved ──▶ call_tool ◀──┤
+                                       denied   ──▶ END      ◀──┘</pre>
+  <p class="mono" style="color:var(--faint);font-size:.8rem">the topology comment at the top of <b>app/agent/graph.py</b></p>
+
+  <div class="callout warn">
+    <b>Two decisions worth noticing in that little diagram</b>
+    <b style="display:inline">·</b> <code>create_approval</code> is a separate node from
+    <code>await_decision</code>: the interrupt node <i>re-executes</i> when the run resumes, so it
+    must have no side effects. Creating the approval is a side effect; pausing is not.
+    <br>
+    <b style="display:inline">·</b> If the model produces nothing usable, the graph ends
+    <i>refused</i> or <i>error</i> — it does not substitute another action. A refund request must
+    never quietly become a customer lookup.
+  </div>
+
+  <svg viewBox="0 0 900 300" width="100%" role="img" aria-label="The compiled graph: START to plan; plan goes to call_tool or ends; call_tool either ends or goes to create_approval, which goes to await_decision; await_decision resumes call_tool when approved and otherwise ends.">
+    <rect x="20" y="126" width="86" height="40" rx="9" class="box"/>
+    <text x="63" y="150" text-anchor="middle" class="lbl">START</text>
+
+    <rect x="150" y="120" width="130" height="52" rx="11" class="box ours"/>
+    <text x="215" y="142" text-anchor="middle" class="lbl">plan</text>
+    <text x="215" y="158" text-anchor="middle" class="sub">one model call</text>
+
+    <rect x="350" y="60" width="140" height="52" rx="11" class="box"/>
+    <text x="420" y="82" text-anchor="middle" class="lbl">call_tool</text>
+    <text x="420" y="98" text-anchor="middle" class="sub">through enforcement</text>
+
+    <rect x="350" y="180" width="140" height="52" rx="11" class="box"/>
+    <text x="420" y="202" text-anchor="middle" class="lbl">create_approval</text>
+    <text x="420" y="218" text-anchor="middle" class="sub">writes the request</text>
+
+    <rect x="560" y="180" width="140" height="52" rx="11" class="box ours"/>
+    <text x="630" y="202" text-anchor="middle" class="lbl">await_decision</text>
+    <text x="630" y="218" text-anchor="middle" class="sub">interrupt — pauses here</text>
+
+    <rect x="770" y="126" width="110" height="40" rx="9" class="box"/>
+    <text x="825" y="150" text-anchor="middle" class="lbl">END</text>
+
+    <line x1="106" y1="146" x2="146" y2="146" class="edge"/>
+    <line x1="280" y1="136" x2="346" y2="90" class="edge"/>
+    <text x="286" y="104" class="etext">a tool</text>
+    <line x1="280" y1="156" x2="346" y2="200" class="edge dash"/>
+    <text x="282" y="188" class="etext">none usable</text>
+    <path d="M280,146 L300,146 L300,265 L825,265 L825,170" class="edge dash"/>
+    <text x="430" y="282" class="etext">refused / error → END (nothing executed)</text>
+
+    <line x1="490" y1="86" x2="750" y2="126" class="edge"/>
+    <text x="560" y="96" class="etext">ok / denied / error</text>
+
+    <line x1="440" y1="112" x2="430" y2="176" class="edge"/>
+    <text x="452" y="146" class="etext warn">approval_required</text>
+
+    <line x1="490" y1="206" x2="556" y2="206" class="edge"/>
+    <line x1="630" y1="180" x2="480" y2="112" class="edge violet"/>
+    <text x="600" y="150" class="etext warn">resume: approved</text>
+    <line x1="700" y1="200" x2="768" y2="160" class="edge dash"/>
+    <text x="690" y="230" class="etext">denied</text>
+  </svg>
+
+  <h3>The state it carries</h3>
+  <p>Seven fields, and no place to hide a surprise — a run either names a tool and arguments, or it names why it did not.</p>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py</p>
+<pre>class AgentState(TypedDict, total=False):
+    task: str
+    tool: str
+    args: dict
+    reason: str
+    status: str  # ok | denied | refused | error | approval_required | approved
+    refused_tool: str  # what the model asked for, when we know
+    result: dict
+    approval_id: str</pre>
+  </div>
+
+  <h3><code>plan</code> — the only node the model influences</h3>
+  <p>
+    It asks the deps for a decision and copies it into state. Note what it does <i>not</i>
+    do: it never picks a fallback tool, and it keeps "the agent declined" apart from
+    "something was broken", because those two end up on different dashboards at 3am.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py</p>
+<pre>def plan(state: AgentState) -&gt; dict:
+    decision = deps.decide(state["task"])
+    if not decision.get("tool"):
+        # The model produced no usable decision. Do NOT quietly do something
+        # else — a refund request must never turn into a customer lookup.
+        #
+        # "refused" and "error" are different things to whoever is on call:
+        # a refusal is the agent declining to act (the role may not call what
+        # was asked for), an error is something being broken (the tool server
+        # or the model was unreachable).
+        return {
+            "status": "refused" if decision.get("refused") else "error",
+            "reason": decision.get("reason", "no tool was selected"),
+            "refused_tool": decision.get("refused_tool", ""),
+        }
+    return {
+        "tool": decision["tool"],
+        "args": decision.get("args", {}),
+        "reason": decision.get("reason", ""),
+    }</pre>
+  </div>
+
+  <h3><code>call_tool</code> — where the platform takes over</h3>
+  <p>
+    The graph's only job here is to not crash. Whatever the enforcement point returns —
+    executed, denied, or held — becomes state, and the routers decide where to go next.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py</p>
+<pre>def call_tool(state: AgentState) -&gt; dict:
+    # A downstream failure (e.g. the token exchange is refused) must become a
+    # reported error, not an unhandled exception that 500s the request.
+    try:
+        outcome = deps.call_tool(state["tool"], state["args"], state.get("approval_id"))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "reason": f"tool call failed: {exc}"}
+    return {"status": outcome.status, "result": outcome.result or {}, "reason": outcome.reason}</pre>
+  </div>
+
+  <h3><code>create_approval</code> and <code>await_decision</code> — the pause</h3>
+  <p>
+    The split is the whole point. <code>create_approval</code> runs once and writes the
+    request down; <code>await_decision</code> calls <code>interrupt()</code> and is re-entered
+    on resume, so it must not do anything the second time around.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py</p>
+<pre>def create_approval(state: AgentState) -&gt; dict:
+    try:
+        approval = deps.create_approval(state["tool"], state["args"], state.get("reason", ""))
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "error", "reason": f"could not request approval: {exc}"}
+    return {"approval_id": approval["id"]}
+
+def await_decision(state: AgentState) -&gt; dict:
+    decision = interrupt(
+        {
+            "type": "approval_required",
+            "approval_id": state["approval_id"],
+            "tool": state["tool"],
+            "args": state["args"],
+            "reason": state.get("reason", ""),
+        }
+    )
+    approved = bool((decision or {}).get("approved"))
+    return {"status": "approved" if approved else "denied"}</pre>
+  </div>
+
+  <h3>The routers, and the wiring</h3>
+  <p>
+    Four tiny functions that turn the state's <code>status</code> into the next node. This is
+    the entire control vocabulary of the agent — there is no other path through it.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py</p>
+<pre>def after_call(state: AgentState) -&gt; str:
+    return "create_approval" if state.get("status") == "approval_required" else END
+
+def after_create(state: AgentState) -&gt; str:
+    return END if state.get("status") == "error" else "await_decision"
+
+def after_decision(state: AgentState) -&gt; str:
+    return "call_tool" if state.get("status") == "approved" else END
+
+def after_plan(state: AgentState) -&gt; str:
+    return END if state.get("status") in ("error", "refused") else "call_tool"</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py — the graph itself</p>
+<pre>graph = StateGraph(AgentState)
+graph.add_node("plan", plan)
+graph.add_node("call_tool", call_tool)
+graph.add_node("create_approval", create_approval)
+graph.add_node("await_decision", await_decision)
+
+graph.add_edge(START, "plan")
+graph.add_conditional_edges("plan", after_plan, {"call_tool": "call_tool", END: END})
+graph.add_conditional_edges(
+    "call_tool", after_call, {"create_approval": "create_approval", END: END}
+)
+graph.add_conditional_edges(
+    "create_approval", after_create, {"await_decision": "await_decision", END: END}
+)
+graph.add_conditional_edges(
+    "await_decision", after_decision, {"call_tool": "call_tool", END: END}
+)
+
+return graph.compile(checkpointer=checkpointer or InMemorySaver())</pre>
+  </div>
+
+  <div class="callout violet">
+    <b>Why the graph is testable without a cluster</b>
+    Everything the nodes need sits behind <code>AgentDeps</code> — three methods:
+    <code>decide</code>, <code>call_tool</code>, <code>create_approval</code>. The real
+    implementation talks to the model, the tool server and the api; the test one returns a
+    fixed plan and queued responses. That is why the safety properties below can be
+    asserted deterministically in CI instead of hoped for in a demo.
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/agent/deps.py</p>
+<pre>class AgentDeps(Protocol):
+    def decide(self, task: str) -&gt; dict:
+        """Return {"tool": ..., "args": {...}, "reason": ...} for the task."""
+        ...
+
+    def call_tool(self, tool: str, args: dict, approval_id: str | None) -&gt; ToolCallResult:
+        """Call the tool through the enforcement point."""
+        ...
+
+    def create_approval(self, tool: str, args: dict, reason: str) -&gt; dict:
+        """Create a pending approval request; return it (must include an id)."""
+        ...</pre>
+  </div>
+</section>
+
+<section id="model">
+  <h2>3 · What the model sees, and what it may answer</h2>
+  <p>
+    The model is given a prompt built from the tools its caller's role actually has, plus a
+    list of the ones it does not. It answers with JSON. That is the entire interface — it
+    never sees the policy, the audit log, the approval queue, or another user's data.
+  </p>
+
+  <h3>The prompt</h3>
+  <div class="codeblock">
+    <p class="cap">app/agent/llm.py</p>
+<pre>def _prompt(task: str, tools: dict, unavailable: dict | None = None) -&gt; str:
+    parts = [
+        "You are a customer-support agent. Choose exactly one tool from the "
+        "available list to handle the task.\n",
+        f"Available tools:\n{_tool_manifest(tools)}\n\n",
+    ]
+    if unavailable:
+        # Naming the forbidden tools matters: if we simply hide them, a small
+        # model substitutes a different (allowed) tool and the run *looks* like it
+        # succeeded — which is exactly the confusion this avoids.
+        parts.append(
+            "NOT permitted for this user's role (never choose these):\n"
+            f"{_tool_manifest(unavailable)}\n\n"
+        )
+    parts.append(f'Task: "{task}"\n\n')
+    parts.append(
+        "If the task needs a tool that is not permitted, or none of the available "
+        'tools fits, reply with {"tool": null, "reason": "&lt;why&gt;"}.\n'
+        "Otherwise reply with ONLY JSON of the form "
+        '{"tool": "&lt;name&gt;", "args": {&lt;arguments&gt;}, "reason": "&lt;short reason&gt;"}.'
+    )
+    return "".join(parts)</pre>
+  </div>
+  <p>
+    Each line of the manifest is generated from the catalogue, so the prompt cannot drift
+    from what exists:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/llm.py</p>
+<pre>def _tool_manifest(tools: dict) -&gt; str:
+    lines = []
+    for tool in tools.values():
+        required = tool.input_schema.get("required") or []
+        params = ", ".join(required)
+        lines.append(f"- {tool.name}({params}): {tool.description}")
+    return "\n".join(lines)</pre>
+  </div>
+
+  <h4>So a support rep's prompt starts like this</h4>
+  <pre class="ascii">You are a customer-support agent. Choose exactly one tool from the available list to handle the task.
+
+Available tools:
+- crm.customer.read(customer_id): Read a customer's profile (non-sensitive fields).
+- crm.orders.list(customer_id): List a customer's orders.
+- tickets.read(ticket_id): Read a support ticket and its messages.
+- tickets.reply.draft(ticket_id, body): Draft a reply to a ticket. Does NOT send it.
+- refunds.quote(order_id): Quote how much of an order is refundable.
+- refunds.issue(order_id, amount): Issue a refund for an order. High-risk: policy may require approval.
+
+NOT permitted for this user's role (never choose these):
+- privacy.pii.read(customer_id): Read a customer's direct identifiers (name, email, phone). High-risk.
+
+Task: "issue a refund of 200 for order o-2"
+
+If the task needs a tool that is not permitted ... reply with {"tool": null, "reason": "..."}.</pre>
+  <p class="mono" style="color:var(--faint);font-size:.8rem">reconstructed from the catalogue and the prompt builder — the real string is assembled per run</p>
+
+  <h3>The three guardrails on the model's answer</h3>
+  <p>
+    These are deliberately small and deterministic. The point is not to out-think a model;
+    it is to refuse the obvious cases cheaply, audibly, and without relying on a small model
+    to behave.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/guardrails.py</p>
+<pre># A task longer than this is not a task, it is an attempt to stuff the context.
+MAX_TASK_CHARS = 2000
+
+# Phrases that only make sense as an attempt to override the instructions. This is
+# defence in depth: policy still decides what may run.
+_INJECTION_PHRASES = (
+    "ignore previous instructions",
+    "ignore all previous",
+    "ignore the above",
+    "disregard previous",
+    "disregard the above",
+    "you are now",
+    "reveal your instructions",
+    "print your instructions",
+    "show me your system prompt",
+)</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/agent/guardrails.py</p>
+<pre>def check_task(task: str) -&gt; None:
+    """Refuse a task that should never reach the model. Raises GuardrailError."""
+    text = (task or "").strip()
+    if not text:
+        raise GuardrailError("the task is empty")
+    if len(text) &gt; MAX_TASK_CHARS:
+        raise GuardrailError(
+            f"the task is too long ({len(text)} characters, limit {MAX_TASK_CHARS})"
+        )
+    lowered = text.lower()
+    for phrase in _INJECTION_PHRASES:
+        if phrase in lowered:
+            raise GuardrailError(
+                "the task looks like an attempt to override the agent's "
+                f"instructions ({phrase!r}) — refusing it"
+            )
+
+def check_decision(tool: Tool, args: dict) -&gt; None:
+    """Refuse a tool call whose arguments do not fit the tool's own schema.
+
+    The model proposes; this is where the proposal is checked against the
+    catalogue's contract before anything is sent to the tool server.
+    """
+    required = (tool.input_schema or {}).get("required") or []
+    missing = [name for name in required if args.get(name) in (None, "")]
+    if missing:
+        raise GuardrailError(
+            f"{tool.name} needs {', '.join(missing)} and the model did not supply "
+            "them — refusing rather than guessing"
+        )</pre>
+  </div>
+
+  <div class="callout warn">
+    <b>“refusing rather than guessing” is deliberate — and it is the one thing the upgrade changes</b>
+    When a required argument is missing, the run today ends in a refusal that names the
+    missing field. That is the safe default, and it is also the one place where a
+    clarification would be strictly better: the information exists, it is just held by the
+    person. See <a href="#upgrade">section 9</a>.
+  </div>
+
+  <h3>Reading the model's reply</h3>
+  <p>
+    <code>decide_tool</code> keeps three ways of ending without a tool strictly apart, because
+    on 2026-09-16 a single message ("the model did not choose a usable tool") pointed at the
+    model for hours while the real faults were an expired SVID and an unreachable gateway.
+    The model was never reached.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/llm.py — the three causes, and the refusal that is ours not the model's</p>
+<pre>try:
+    content = _chat(_prompt(task, tools, unavailable))
+except Exception as exc:  # noqa: BLE001 - never block the run on the model
+    audit("llm.fallback", cause="unreachable", reason=str(exc)[:200])
+    return _no_tool(
+        fallback, "the model could not be reached — nothing was executed", "unreachable"
+    )
+
+try:
+    decision = json.loads(content)
+except (ValueError, TypeError) as exc:
+    audit("llm.fallback", cause="unparseable", reason=str(exc)[:200])
+    return _no_tool(
+        fallback,
+        "the model's reply could not be understood — nothing was executed",
+        "unparseable",
+    )</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/agent/llm.py — a tool the role may not use, and a deliberately useful message</p>
+<pre>chosen = decision.get("tool")
+if chosen and chosen in (unavailable or {}):
+    # Deterministic: the model asked for a tool this role may not use.
+    # Refuse here rather than let it pick something else instead.
+    return {
+        "tool": None,
+        "args": {},
+        "reason": f"your role may not call {chosen}",
+        "refused": True,
+        # The one case where we know what was asked for: the model named a
+        # tool that exists but is not offered to this role.
+        "refused_tool": chosen,
+    }
+if not chosen:
+    # The model declined. Its own "reason" is unreliable — a small model
+    # tends to echo a tool *description* ("High-risk: policy may require
+    # approval"), which tells the user nothing. Say something useful.
+    return {
+        "tool": None,
+        "args": {},
+        "reason": "no tool your role may call fits this task — nothing was executed",
+        "refused": True,
+    }</pre>
+  </div>
+
+  <h3>Filling gaps, without inventing a decision</h3>
+  <p>
+    Small models are unreliable at copying arguments out of the task text. The code pulls
+    identifiers and amounts out with a regex — but only to fill arguments the model left
+    empty, and only ones the tool actually declares, so the run reflects policy rather than
+    the model's formatting.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/llm.py</p>
+<pre>def _extract_args(task: str) -&gt; dict:
+    """Best-effort arguments pulled from the task text.
+
+    Small models are unreliable at filling tool arguments, and a missing
+    argument would make policy fall through to deny. These are used only to
+    fill gaps the model left, so the run reflects policy rather than the
+    model's formatting.
+    """
+    args: dict = {}
+    ref = re.search(r"\b([oct]-\d+)\b", task)
+    if ref:
+        value = ref.group(1)
+        args[{"o": "order_id", "c": "customer_id", "t": "ticket_id"}[value[0]]] = value
+    amount = re.search(r"(?&lt;![\w-])(\d+(?:\.\d+)?)(?![\w-])", task)
+    if amount:
+        args["amount"] = float(amount.group(1))
+    return args
+
+def _fill_gaps(tool, args: dict, task: str) -&gt; dict:
+    properties = tool.input_schema.get("properties") or {}
+    extracted = _extract_args(task)
+    for key, value in extracted.items():
+        if key in properties and args.get(key) in (None, "", 0):
+            args[key] = value
+    # Coerce to declared types (models often emit numbers as strings).
+    from app.common.schema import coerce_args
+
+    return coerce_args(properties, args)</pre>
+  </div>
+</section>
+
+<section id="tools">
+  <h2>4 · Where the tools fit</h2>
+  <p>
+    Tools are where an agent's opinion turns into something that happened. On this platform
+    they are all reached through <b>one</b> method, and that method is the only place
+    authority is granted — so there is exactly one thing to audit for correctness.
+  </p>
+
+  <h3>What exists</h3>
+  <table>
+    <thead><tr><th>Tool</th><th>Arguments (required)</th><th>Risk</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">crm.customer.read</td><td class="mono">customer_id</td><td><span class="pill ok">low</span></td></tr>
+      <tr><td class="mono">crm.orders.list</td><td class="mono">customer_id</td><td><span class="pill ok">low</span></td></tr>
+      <tr><td class="mono">tickets.read</td><td class="mono">ticket_id</td><td><span class="pill ok">low</span></td></tr>
+      <tr><td class="mono">tickets.reply.draft</td><td class="mono">ticket_id, body</td><td><span class="pill ok">low</span></td></tr>
+      <tr><td class="mono">refunds.quote</td><td class="mono">order_id</td><td><span class="pill ok">low</span></td></tr>
+      <tr><td class="mono">refunds.issue</td><td class="mono">order_id, amount</td><td><span class="pill warn">high</span></td></tr>
+      <tr><td class="mono">privacy.pii.read</td><td class="mono">customer_id</td><td><span class="pill warn">high</span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout info">
+    <b>Every argument is an identifier or a number — never free text that could redirect the caller</b>
+    There is no <code>tenant</code> argument, and no tool takes one. The tenant is decided by
+    the identity on the request, so no phrasing a model produces can move a call into another
+    customer's data. The catalogue's docstring is explicit that handlers contain <b>no
+    authorization logic</b>: they call a backend, and that is all.
+  </div>
+
+  <h3>The enforcement point, step by step</h3>
+  <p>
+    This method is reachable over HTTP (<code>POST /tools/&lt;name&gt;</code>) and over MCP, and
+    both funnel here. The comments in it read as the checklist they are.
+  </p>
+  <ol class="steps">
+    <li><b>Which workload is calling?</b> Proved at the application layer, not just by the transport. A pod holding some identity cannot reach the tool server — the header must name it.</li>
+    <li><b>Is there a user token at all?</b> No token, no call.</li>
+    <li><b>Is the token real, and is it for this tenant?</b> Verified delegation, including expiry and policy version.</li>
+    <li><b>Does the tool exist?</b> An unknown name is denied before policy is even consulted.</li>
+    <li><b>What does policy say?</b> One question, with the identity and the cleaned arguments.</li>
+    <li><b>Allow</b> → execute. <b>Deny</b> → return the reason. <b>Require approval</b> → do not execute until the approvals service confirms a matching approval.</li>
+    <li><b>Record it.</b> Every outcome writes an audit event keyed on the SPIFFE ID, the user and the tenant.</li>
+  </ol>
+
+  <div class="codeblock">
+    <p class="cap">app/tools/enforcement.py — who is calling, and with what</p>
+<pre>def call(
+    self, token: str | None, tool_name: str, args: dict, *, workload_token: str | None = None
+) -&gt; ToolResult:
+    # Which workload is calling, proved at the application layer (S7). The
+    # transport already required a chain-verified SVID; this says *who*, so a
+    # pod that merely holds some identity cannot reach the tool server. The
+    # check is here rather than in a transport handler because both the HTTP
+    # and the MCP interfaces call this one method.
+    if workload.enabled():
+        try:
+            caller = workload.check(workload_token)
+        except workload.WorkloadRejected as exc:
+            audit("tool.workload_rejected", tool=tool_name, reason=str(exc)[:200])
+            return ToolResult(Outcome.DENIED, tool_name, f"workload identity rejected: {exc}")
+
+    if not token:
+        return ToolResult(Outcome.DENIED, tool_name, "no token presented")
+
+    try:
+        delegation = self._verifier.verify(token)
+    except TokenRejected as exc:
+        audit("tool.identity_rejected", tool=tool_name, reason=str(exc))
+        return ToolResult(Outcome.DENIED, tool_name, f"identity rejected: {exc}")
+
+    tool = self._tools.get(tool_name)
+    if tool is None:
+        audit("tool.unknown", tool=tool_name, sub=delegation.user)
+        return ToolResult(Outcome.DENIED, tool_name, "unknown tool")
+
+    call_args = _clean_args(tool, args)</pre>
+  </div>
+
+  <div class="codeblock">
+    <p class="cap">app/tools/enforcement.py — the one question, and the three answers</p>
+<pre>    with span(
+        "policy.decision",
+        spiffe_id=delegation.workload,
+        sub=delegation.user,
+        tenant=delegation.tenant,
+        tool=tool_name,
+    ) as current:
+        decision = self._policy.decide(
+            agent=delegation.workload,
+            user=delegation.user,
+            tool=tool_name,
+            context={
+                "roles": list(delegation.roles),
+                "tenant": delegation.tenant,
+                **call_args,
+            },
+        )
+        current.set_attribute("decision", decision.decision.value)
+        current.set_attribute("reason", decision.reason)
+        current.set_attribute("policy_version", decision.policy_version or "dev")
+
+    if decision.decision is Decision.DENY:
+        audit(
+            "tool.denied",
+            spiffe_id=delegation.workload,
+            sub=delegation.user,
+            tenant=delegation.tenant or "",
+            tool=tool_name,
+            decision=decision.decision.value,
+            reason=decision.reason,
+            policy_version=decision.policy_version,
+        )
+        return ToolResult(Outcome.DENIED, tool_name, decision.reason, decision.decision.value)
+
+    if decision.decision is Decision.REQUIRE_APPROVAL:
+        approval_id = args.get("approval_id")
+        approved = bool(approval_id) and self._approvals.verify(
+            str(approval_id),
+            tool=tool_name,
+            args=call_args,
+            user=delegation.user,
+            agent=delegation.workload,
+            tenant=delegation.tenant or "",
+        )
+        if not approved:
+            audit(
+                "tool.approval_required",
+                spiffe_id=delegation.workload,
+                sub=delegation.user,
+                tenant=delegation.tenant or "",
+                tool=tool_name,
+                reason=decision.reason,
+                policy_version=decision.policy_version,
+            )
+            return ToolResult(
+                Outcome.APPROVAL_REQUIRED,
+                tool_name,
+                decision.reason,
+                decision.decision.value,
+            )</pre>
+  </div>
+
+  <div class="codeblock">
+    <p class="cap">app/tools/enforcement.py — execution, and the line that matters most</p>
+<pre>    try:
+        # The tenant comes from the identity, never from the caller's args —
+        # so a request cannot name a tenant it does not belong to.
+        result = tool.handler(**call_args, tenant=delegation.tenant)
+    except Exception as exc:  # noqa: BLE001 - report, do not crash the server
+        audit(
+            "tool.error",
+            spiffe_id=delegation.workload,
+            sub=delegation.user,
+            tenant=delegation.tenant or "",
+            tool=tool_name,
+            reason=str(exc)[:200],
+        )
+        return ToolResult(Outcome.ERROR, tool_name, f"tool failed: {exc}")</pre>
+  </div>
+
+  <div class="callout ok">
+    <b>Three outcomes, and the agent treats them differently</b>
+    <span class="pill ok">allow</span> the action happens.
+    <span class="pill bad">deny</span> the run ends with the policy's own reason — the same
+    reason the audit recorded.
+    <span class="pill warn">require approval</span> the run pauses; nothing has happened yet.
+    A fourth path exists — the tool itself failing — and it is reported as an
+    <i>error</i>, not a refusal, because "the vendor is down" and "you may not" are not the
+    same message to a person.
+  </div>
+</section>
+
+<section id="interrupt">
+  <h2>5 · The human interrupt</h2>
+  <p>
+    When policy says <i>require approval</i>, nothing has happened yet. The graph writes the
+    request down, pauses, and returns to the user with the approval id. The run resumes only
+    when a person with the manager role records a decision — and the tool server will not
+    accept that decision on trust.
+  </p>
+
+  <h3>Pausing, and coming back</h3>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py</p>
+<pre>def run_task(agent, task: str, thread_id: str, user_token: str) -&gt; dict:
+    """Start a run. Returns the final state, or an approval-required payload."""
+    config = {"configurable": {"thread_id": thread_id}}
+    result = agent.invoke({"task": task}, config=config)
+    return _shape(result)
+
+def resume_task(agent, thread_id: str, approved: bool) -&gt; dict:
+    """Resume a paused run with a human decision."""
+    config = {"configurable": {"thread_id": thread_id}}
+    result = agent.invoke(Command(resume={"approved": approved}), config=config)
+    return _shape(result)
+
+def _shape(state: dict) -&gt; dict:
+    interrupts = state.get("__interrupt__") or ()
+    if interrupts:
+        payload = interrupts[0].value if hasattr(interrupts[0], "value") else interrupts[0]
+        return {"status": "approval_required", **(payload if isinstance(payload, dict) else {})}
+    return {
+        "status": state.get("status", "unknown"),
+        "tool": state.get("tool"),
+        "result": state.get("result", {}),
+        "reason": state.get("reason", ""),
+        "refused_tool": state.get("refused_tool", ""),
+    }</pre>
+  </div>
+
+  <p>
+    The api is a thin, proved hop in front of that: the browser talks to <code>/tasks</code>,
+    the api forwards to the agent over a SPIFFE hop of its own, and the user's token rides
+    along because it is what the agent acts for.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/api/main.py</p>
+<pre>@app.post("/tasks")
+def start_task(body: dict, authorization: str | None = Header(default=None)) -&gt; dict:
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    return _to_agent("/run", body, token, 180)
+
+@app.post("/tasks/resume")
+def resume_task(body: dict, authorization: str | None = Header(default=None)) -&gt; dict:
+    # Forward the caller's token: if the agent restarted, the graph state is
+    # durable but the token is not, so the resume needs it again.
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    return _to_agent("/resume", body, token, 120)</pre>
+  </div>
+
+  <h3>What an approval is bound to</h3>
+  <p>
+    The tool server does not trust a flag in the request body saying "approved". It asks the
+    approvals service to confirm that an approval exists and matches <b>this exact
+    request</b> — all six fields together:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/tools/approvals.py — the five bindings, plus the id</p>
+<pre>def verify(
+    self, approval_id: str, *, tool: str, args: dict, user: str, agent: str, tenant: str
+) -&gt; bool:
+    """Return True only if the approvals service confirms a matching approval."""
+    payload = {
+        "approval_id": approval_id,
+        "tool": tool,
+        "args": args,
+        "user": user,
+        "agent": agent,
+        "tenant": tenant,
+    }</pre>
+  </div>
+  <div class="grid2">
+    <div class="tile">
+      <h4>What that prevents</h4>
+      <p>
+        An approval for a $60 refund cannot be replayed for $600 — the args are part of the
+        match. An approval granted for one customer cannot be used for another — the user and
+        tenant are too. And an approval cannot be borrowed by a different agent.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Why it is a service call, not a signature</h4>
+      <p>
+        The approvals service is a peer inside the trust domain with its own SPIFFE identity
+        and a verified workload — so confirming an approval is an authenticated HTTP hop with
+        no key material to manage, and no signature scheme to get wrong.
+      </p>
+    </div>
+  </div>
+
+  <h3>Who may decide, and who may not</h3>
+  <div class="codeblock">
+    <p class="cap">app/api/main.py</p>
+<pre>@app.post("/approvals/{approval_id}/decision")
+def decide_approval(
+    approval_id: str,
+    body: dict,
+    delegation: Delegation = Depends(require_roles("manager")),
+    store: ApprovalStore = Depends(get_store),
+) -&gt; dict:
+    approval = store.decide(
+        approval_id,
+        approver=delegation.user,
+        approved=bool(body.get("approved")),
+        note=body.get("note"),
+        tenant=delegation.tenant or "",
+    )
+    if approval is None:
+        raise HTTPException(
+            status_code=409,
+            detail="approval not found, already decided, or self-approval is not allowed",
+        )</pre>
+  </div>
+  <div class="callout danger">
+    <b>Separation of duties is enforced, not requested</b>
+    The route requires the <b>manager</b> role, and the store refuses a decision from the same
+    person who made the request — the 409 says so explicitly. This is the property that makes
+    <i>require approval</i> mean something: the person who wants the action cannot be the
+    person who authorizes it, and the platform checks that rather than trusting the UI to
+    hide the button.
+  </div>
+</section>
+
+<section id="policy">
+  <h2>6 · The policy decision</h2>
+  <p>
+    There is one policy, written in Rego, and two callers asking it different questions. That
+    is what keeps the tools the agent offers and the tools a caller may actually use from
+    drifting apart.
+  </p>
+  <table>
+    <thead><tr><th>Who asks</th><th>Question</th><th>Rule</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>The agent, before calling the model</td>
+        <td>"Which tools may these roles use in this tenant?"</td>
+        <td class="mono">tools_for_roles</td>
+        <td>So the model is only ever offered what it could actually use — smaller prompt, fewer wrong turns</td>
+      </tr>
+      <tr>
+        <td>The tool server, for every call</td>
+        <td>"May <i>this</i> caller call <i>this</i> tool with <i>these</i> arguments?"</td>
+        <td class="mono">may_call</td>
+        <td>Because offering is not permitting — this is the authoritative decision</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>One sentence of policy, in three outcomes</h3>
+  <p>Precedence is deny, then require-approval, then allow. Every rule is guarded by the same trust and tenant checks.</p>
+  <div class="codeblock">
+    <p class="cap">policy/authz.rego</p>
+<pre>may_call(tool) if {
+  some role in input.roles
+  tool in role_tools_for(input.tenant, role)
+}
+
+# The tools a set of roles may call — the agent asks for this so the model is
+# offered only what it could actually use (the policy stays the enforcement).
+tools_for_roles := tools if {
+  tools := {tool | some role in input.roles; some tool in role_tools_for(input.tenant, role)}
+}</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">policy/authz.rego — the refund ladder</p>
+<pre>refund_tool := "refunds.issue"
+auto_refund_limit := 50        # &lt;= this: allowed outright
+approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; above: denied</pre>
+  </div>
+  <table>
+    <thead><tr><th>Caller</th><th>Action</th><th>Decision</th><th>Reason (recorded verbatim)</th></tr></thead>
+    <tbody>
+      <tr><td>support_rep</td><td>$30 refund</td><td><span class="pill ok">allow</span></td><td class="mono">allowed: refunds.issue is within your role</td></tr>
+      <tr><td>support_rep</td><td>$200 refund</td><td><span class="pill warn">require_approval</span></td><td class="mono">requires manager approval: refund of 200 is above the auto-approval limit of 50</td></tr>
+      <tr><td>support_rep</td><td>$900 refund</td><td><span class="pill bad">deny</span></td><td class="mono">denied: refund of 900 exceeds the approval ceiling of 500</td></tr>
+      <tr><td>read_only</td><td>$30 refund</td><td><span class="pill bad">deny</span></td><td class="mono">denied: your role may not call refunds.issue</td></tr>
+      <tr><td>support_rep (globex tenant)</td><td>$30 refund</td><td><span class="pill bad">deny</span></td><td class="mono">denied: your role may not call refunds.issue</td></tr>
+      <tr><td>privacy</td><td>read PII</td><td><span class="pill warn">require_approval</span></td><td class="mono">requires privacy approval: PII access</td></tr>
+      <tr><td>support_rep</td><td>read PII</td><td><span class="pill bad">deny</span></td><td class="mono">denied: PII access requires the privacy role</td></tr>
+    </tbody>
+  </table>
+  <p class="mono" style="color:var(--faint);font-size:.8rem">
+    the last row of the table is the eval case the smallest local model fails — a security
+    guardrail, not a formatting quirk
+  </p>
+
+  <div class="callout violet">
+    <b>The same role name can mean different power, per tenant</b>
+    <code>globex</code>'s support reps may quote a refund but not issue one, decided by which
+    customer they belong to. The matrix is written as replacement, not merge, so there is one
+    place to read and nothing to reconcile — and a role nobody mentions keeps the default
+    rather than silently losing it.
+  </div>
+
+  <div class="callout danger">
+    <b>Fail closed, in two places</b>
+    If the policy engine is unreachable, <code>allowed_tools()</code> offers <b>nothing</b>
+    ("fails closed: if the policy is unreachable, no tools are offered"), and at the tool
+    server the approvals check returns <code>False</code> on any error rather than assuming the
+    best. A control that cannot reach its authority denies — never allows.
+  </div>
+</section>
+
+<section id="safety">
+  <h2>7 · The safety property, made checkable</h2>
+  <p>
+    The claim this platform makes is not "the agent behaves". It is: <b>the model may attempt
+    anything, and the platform decides what happens</b>. Each row below is one way that could
+    fail, the code that stops it, and what you would see. None of them rely on the model
+    cooperating.
+  </p>
+  <table>
+    <thead><tr><th>If the model…</th><th>The control</th><th>What actually happens</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>asks for a tool the role may not use</td>
+        <td class="mono">decide_tool → refused</td>
+        <td>ends <span class="pill bad">refused</span>, reason <span class="mono">your role may not call …</span>, and the run does not silently pick another tool</td>
+      </tr>
+      <tr>
+        <td>invents a tool name</td>
+        <td class="mono">catalogue + tool server</td>
+        <td>no usable decision at the agent; and a call that somehow arrives is <span class="mono">tool.unknown</span> → denied. Two independent places</td>
+      </tr>
+      <tr>
+        <td>omits a required argument</td>
+        <td class="mono">check_decision</td>
+        <td><span class="pill bad">refused</span> naming the missing field — "refusing rather than guessing"</td>
+      </tr>
+      <tr>
+        <td>issues a refund above $500</td>
+        <td class="mono">authz.rego deny</td>
+        <td><span class="pill bad">deny</span>, reason quotes the ceiling</td>
+      </tr>
+      <tr>
+        <td>issues a $60–$500 refund</td>
+        <td class="mono">authz.rego require_approval</td>
+        <td><span class="pill warn">pauses</span>; nothing executed until a manager approves that exact request</td>
+      </tr>
+      <tr>
+        <td>tries to reuse an approval for a different amount, user or tenant</td>
+        <td class="mono">approvals.verify — six bindings</td>
+        <td>no match → still <span class="mono">approval_required</span>; the action does not run</td>
+      </tr>
+      <tr>
+        <td>was approved by the same person who asked</td>
+        <td class="mono">require_roles("manager") + store</td>
+        <td><span class="pill bad">409</span> "self-approval is not allowed"</td>
+      </tr>
+      <tr>
+        <td>sends a forged <span class="mono">approval_id</span></td>
+        <td class="mono">approvals service is the authority</td>
+        <td>the tool server asks and gets <span class="mono">false</span> — a flag in the body is not evidence</td>
+      </tr>
+      <tr>
+        <td>reaches the tool server from another pod</td>
+        <td class="mono">workload.check</td>
+        <td><span class="mono">tool.workload_rejected</span> — holding <i>an</i> identity is not enough; the name must be the agent's</td>
+      </tr>
+      <tr>
+        <td>names a tenant in its arguments</td>
+        <td class="mono">tenant from the identity</td>
+        <td>impossible: no tool accepts a tenant, and the handler is given the verified one</td>
+      </tr>
+      <tr>
+        <td>is talked into it by the task text</td>
+        <td class="mono">check_task</td>
+        <td>refused before the model is called; and if it got through, policy is still the control</td>
+      </tr>
+      <tr>
+        <td>cannot be reached, or answers nonsense</td>
+        <td class="mono">decide_tool's three causes</td>
+        <td><span class="pill bad">error</span> with the real fault named — never a substituted action</td>
+      </tr>
+      <tr>
+        <td>reads PII without the privacy role</td>
+        <td class="mono">authz.rego deny</td>
+        <td><span class="pill bad">deny</span>; with the role, it is <span class="mono">require_approval</span> instead</td>
+      </tr>
+      <tr>
+        <td>presents an expired user token</td>
+        <td class="mono">verifier.verify</td>
+        <td><span class="mono">tool.identity_rejected</span> → denied</td>
+      </tr>
+      <tr>
+        <td>— and policy or approvals is unreachable</td>
+        <td class="mono">fail closed</td>
+        <td>no tools offered at the agent; approvals verify returns false. Every failure direction is deny</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<section id="run">
+  <h2>8 · One run, annotated</h2>
+  <p>
+    A support rep at acme asks for a $200 refund. Below is the same run as the rest of this
+    page — this table is the sequence of what happened, who decided, and what was recorded.
+    $200 is deliberately the interesting number: within the role's power, above the
+    auto-approval limit, below the ceiling.
+  </p>
+  <div class="kv">
+    <span><b>task:</b> "issue a refund of 200 for order o-2"</span>
+    <span><b>caller:</b> alice · support_rep · tenant acme</span>
+    <span><b>tool:</b> refunds.issue(order_id="o-2", amount=200)</span>
+  </div>
+  <table>
+    <thead><tr><th>#</th><th>Who</th><th>What happens</th><th>Recorded</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td><td>api</td>
+        <td><span class="mono">POST /tasks</span> → a proved hop to the agent, the rep's token riding along</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>2</td><td>guardrails</td>
+        <td>task is not empty, not oversized, no injection phrases → allowed to reach the model</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>3</td><td>agent → policy</td>
+        <td><span class="mono">tools_for_roles</span>: support_rep in acme may call six tools; PII is listed as not permitted</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>4</td><td>agent → gateway</td>
+        <td>one model call over mTLS + this workload's SVID; the gateway holds the provider credential and stamps the resolved model</td>
+        <td>gateway request log, resolved model</td>
+      </tr>
+      <tr>
+        <td>5</td><td>model</td>
+        <td>answers JSON: <span class="mono">{"tool": "refunds.issue", "args": {"order_id": "o-2", "amount": 200}, "reason": "…"}</span></td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>6</td><td>guardrails</td>
+        <td><span class="mono">check_decision</span>: the tool declares order_id and amount as required; both are present → the proposal is well-formed</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>7</td><td>tool server</td>
+        <td>workload is the agent ✓ · token verifies, tenant acme ✓ · tool exists ✓</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>8</td><td>policy</td>
+        <td>may_call ✓, positive amount ✓, 200 &gt; 50 and ≤ 500 → <b>require_approval</b></td>
+        <td class="mono">tool.approval_required + policy_version</td>
+      </tr>
+      <tr>
+        <td>9</td><td>graph</td>
+        <td><span class="mono">call_tool</span> returns held → <span class="mono">create_approval</span> writes the request bound to tool, args, user, agent, tenant</td>
+        <td class="mono">approval.created</td>
+      </tr>
+      <tr>
+        <td>10</td><td>graph</td>
+        <td><span class="mono">await_decision</span> interrupts; the run is checkpointed and returns <span class="mono">approval_required</span> with the id. Nothing has been refunded</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>11</td><td>a person</td>
+        <td>the manager sees the request in the queue and approves; the rep cannot decide their own request</td>
+        <td class="mono">approval.decided</td>
+      </tr>
+      <tr>
+        <td>12</td><td>api → agent</td>
+        <td><span class="mono">POST /tasks/resume</span> with the decision; the graph re-enters <span class="mono">await_decision</span>, then routes to <span class="mono">call_tool</span></td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>13</td><td>tool server → approvals</td>
+        <td>policy still says require_approval, so the tool server asks the approvals service to confirm a match on all six fields — a flag in the body would not have been enough</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>14</td><td>tool server</td>
+        <td>executes with <span class="mono">tenant="acme"</span> taken from the verified identity, not from anything the model produced</td>
+        <td class="mono">tool.allowed</td>
+      </tr>
+      <tr>
+        <td>15</td><td>agent → user</td>
+        <td>final state <span class="pill ok">ok</span> with the refund result and the policy's reason</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout ok">
+    <b>Read the run again for what is absent</b>
+    At no point does the model hold a credential, choose a tenant, reach a database, see the
+    policy file, or decide that its own proposal is acceptable. It contributed step 5. Steps
+    6–14 are code. That ratio is the design.
+  </div>
+  <p>
+    The same run at $30 never leaves the fast path (steps 7–8 end in <i>allow</i>, step 9 and
+    the pause never happen), and at $900 it ends at step 8 as <i>deny</i> — which is why the
+    demo's job is mostly to make those three numbers visible.
+  </p>
+</section>
+
+<section id="upgrade">
+  <h2>9 · What the upgrade would change</h2>
+  <div class="callout warn">
+    <b>Everything in this section is proposed, not built</b>
+    The page so far describes the code as it stands. This section describes the change under
+    discussion — and, more usefully, shows how little of the platform it touches. Nothing
+    below alters what is <i>permitted</i>; it only changes what the agent <i>does</i> when the
+    task is thin or the answer arrives in more than one step.
+  </div>
+
+  <h3>The two gaps today</h3>
+  <div class="grid2">
+    <div class="tile">
+      <h4>1 · It refuses instead of asking</h4>
+      <p>
+        "Refund that customer" — with no order named — ends as a refusal, because
+        <code>check_decision</code> requires the arguments and it is right to refuse rather
+        than guess. But the information exists: the person has it, and they are right there.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>2 · It takes one step</h4>
+      <p>
+        "Refund the customer from the last ticket" needs twice through the loop: read the
+        ticket, learn the order, then ask for the refund. Today the model must guess both from
+        the sentence in a single pass, and a small one usually will not.
+      </p>
+    </div>
+  </div>
+
+  <h3>Tier 2 — clarification, using the mechanism that already exists</h3>
+  <p>
+    The interrupt is not an approval feature; it is a general "pause and resume with a
+    human's answer" feature. A clarification is the same operation with a different payload,
+    which is why this needs no new checkpointing, no new durability story, and no new client
+    protocol:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the shape of the change, not current code</p>
+<pre>def ask_clarification(state: AgentState) -&gt; dict:
+    answer = interrupt({
+        "type": "clarification_required",   # the approval payload's sibling
+        "question": "Which order should the refund be issued for?",
+        "missing": ["order_id"],
+        "tool": state["tool"],
+    })
+    return {"args": {**state["args"], **(answer or {}).get("values", {})}}</pre>
+  </div>
+  <p>
+    The graph resumes, the argument is filled by a person rather than by a guess, and the run
+    continues into the <b>unchanged</b> tool call path. What has to change is small and
+    honest: the missing-argument branch of <code>check_decision</code> stops being terminal,
+    the API's <code>_shape</code> has a second interrupt type to render, and the eval case
+    "a required argument is missing" is rewritten deliberately rather than quietly.
+  </p>
+
+  <h3>Tier 3 — one observation loop, bounded</h3>
+  <p>
+    The second gap closes with a single new edge: after a successful tool call, instead of
+    always ending, the graph may return to <code>plan</code> with what it learned. The
+    current graph and the proposed one differ by that arrow:
+  </p>
+  <svg viewBox="0 0 900 250" width="100%" role="img" aria-label="A bounded loop: plan to call_tool, and on success back to plan, up to a small step budget; the approval path is unchanged.">
+    <rect x="20" y="96" width="120" height="52" rx="11" class="box ours"/>
+    <text x="80" y="118" text-anchor="middle" class="lbl">plan</text>
+    <text x="80" y="134" text-anchor="middle" class="sub">+ observations</text>
+
+    <rect x="240" y="96" width="140" height="52" rx="11" class="box"/>
+    <text x="310" y="118" text-anchor="middle" class="lbl">call_tool</text>
+    <text x="310" y="134" text-anchor="middle" class="sub">unchanged</text>
+
+    <rect x="240" y="190" width="150" height="46" rx="11" class="box ours"/>
+    <text x="315" y="212" text-anchor="middle" class="lbl">create_approval</text>
+    <text x="315" y="227" text-anchor="middle" class="sub">unchanged</text>
+
+    <rect x="450" y="190" width="150" height="46" rx="11" class="box ours"/>
+    <text x="525" y="212" text-anchor="middle" class="lbl">await_decision</text>
+    <text x="525" y="227" text-anchor="middle" class="sub">unchanged</text>
+
+    <rect x="680" y="96" width="110" height="46" rx="9" class="box"/>
+    <text x="735" y="118" text-anchor="middle" class="lbl">END</text>
+    <text x="735" y="133" text-anchor="middle" class="sub">budget spent</text>
+
+    <line x1="140" y1="122" x2="236" y2="122" class="edge"/>
+    <line x1="380" y1="112" x2="676" y2="112" class="edge dash"/>
+    <text x="470" y="105" class="etext">done, or budget spent</text>
+    <path d="M310,96 L310,60 L80,60 L80,92" class="edge violet"/>
+    <text x="150" y="52" class="etext warn">observed something → one more step (max 3)</text>
+
+    <line x1="330" y1="148" x2="322" y2="186" class="edge"/>
+    <text x="338" y="172" class="etext warn">approval_required</text>
+    <line x1="390" y1="213" x2="446" y2="213" class="edge"/>
+    <line x1="525" y1="190" x2="360" y2="140" class="edge violet"/>
+    <text x="500" y="172" class="etext warn">approved → call_tool</text>
+  </svg>
+  <div class="codeblock">
+    <p class="cap">illustrative — the router that would change</p>
+<pre>def after_call(state: AgentState) -&gt; str:
+    if state.get("status") == "approval_required":
+        return "create_approval"
+    # New: a successful observation may justify one more step.
+    if state.get("status") == "ok" and state.get("steps", 0) &lt; MAX_STEPS:
+        return "plan"
+    return END</pre>
+  </div>
+
+  <h3>What does <i>not</i> change</h3>
+  <table>
+    <thead><tr><th>Unchanged</th><th>Why it can stay unchanged</th></tr></thead>
+    <tbody>
+      <tr><td>Policy and thresholds</td><td>The loop decides what to <i>attempt</i>; policy still decides what <i>happens</i>, on every attempt</td></tr>
+      <tr><td>The enforcement point</td><td>Every step of the loop is still one call through the same method, with the same checks</td></tr>
+      <tr><td>Approval bindings, separation of duties</td><td>The loop neither issues nor verifies approvals — it can only ask again</td></tr>
+      <tr><td>The audit trail</td><td>Multi-step runs produce more events, not different ones; each is still keyed on the same identity</td></tr>
+      <tr><td>Fail-closed behaviour</td><td>An unreachable policy still offers nothing, in a loop no less than before</td></tr>
+    </tbody>
+  </table>
+  <div class="callout violet">
+    <b>The last thing worth saying about the upgrade</b>
+    A loop makes the agent more capable, and it makes the <i>audit trail</i> more important,
+    not less: a run that reads a ticket to find an order and then issues a refund is two
+    recorded actions where there used to be one. That is a reason the platform was built this
+    way round in the first place — the intelligence is the part that is expected to change,
+    and everything that constrains it is designed to be boring.
+  </div>
+</section>
+
+<section id="map">
+  <h2>10 · Code map, try it, glossary</h2>
+
+  <h3>Where each piece lives</h3>
+  <table>
+    <thead><tr><th>File</th><th>Responsibility</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">app/agent/graph.py</td><td>The four nodes, the state, the interrupt, resume and shaping</td></tr>
+      <tr><td class="mono">app/agent/deps.py</td><td>The narrow interface (<code>decide</code>, <code>call_tool</code>, <code>create_approval</code>) + the scripted fake CI uses</td></tr>
+      <tr><td class="mono">app/agent/llm.py</td><td>Prompt, manifest, provider/gateway call, the three causes, gap-filling</td></tr>
+      <tr><td class="mono">app/agent/guardrails.py</td><td><code>check_task</code> and <code>check_decision</code> — the two edges policy never sees</td></tr>
+      <tr><td class="mono">app/agent/live.py</td><td>The real deps: asks policy which tools to offer, exchanges the token, calls the tool server</td></tr>
+      <tr><td class="mono">app/agent/evals.py</td><td>Eight cases, stubbed in CI and runnable live against a real model</td></tr>
+      <tr><td class="mono">app/tools/enforcement.py</td><td><b>The</b> enforcement point — one method, reached by HTTP and MCP alike</td></tr>
+      <tr><td class="mono">app/tools/catalog.py</td><td>The seven tools, their schemas, and handlers with no authorization logic</td></tr>
+      <tr><td class="mono">app/tools/approvals.py</td><td>Verifies an approval matches this exact request — six fields</td></tr>
+      <tr><td class="mono">app/api/main.py</td><td>Tasks, approvals, decisions, audit; the proved hop to the agent</td></tr>
+      <tr><td class="mono">policy/authz.rego</td><td>The role matrix, the refund ladder, the reason chain, the resolution</td></tr>
+    </tbody>
+  </table>
+
+  <h3>See it yourself</h3>
+  <div class="codeblock">
+    <p class="cap">the two cheap ones — no cluster needed</p>
+<pre># the graph's safety properties, against the scripted deps
+python -m pytest app/agent/tests -q
+
+# the policy, exactly as CI runs it (OPA is not installed locally)
+docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">against a running platform</p>
+<pre># the whole safety story, as a sequence of attacks that must fail
+./scripts/attack-tests.sh
+
+# one run, end to end, including the interrupt
+./scripts/show-trace.sh
+
+# the agent's own eight cases, against whatever model is configured
+kubectl exec deploy/agent -c agent -- python -m app.agent.evals --live</pre>
+  </div>
+
+  <h3>Glossary</h3>
+  <table>
+    <tbody>
+      <tr><td><b>delegation</b></td><td>The verified facts about a request: which user, which roles, which tenant, which workload is acting. The only source of truth a tool call has about "who".</td></tr>
+      <tr><td><b>SPIFFE ID</b></td><td>A workload's name, e.g. <span class="mono">spiffe://acme.com/ns/agent-platform/sa/agent</span>. Both ends of every internal hop present one.</td></tr>
+      <tr><td><b>SVID</b></td><td>The credential behind that name — X.509 for mTLS, JWT when a token must be passed along.</td></tr>
+      <tr><td><b>interrupt</b></td><td>The graph's pause. State is checkpointed, the run returns to the caller, and <code>Command(resume=…)</code> continues it — the node re-executes, so it must be side-effect free.</td></tr>
+      <tr><td><b>enforcement point</b></td><td>The one method where authority is granted. Everything above it proposes; nothing below it re-decides.</td></tr>
+      <tr><td><b>require_approval</b></td><td>Policy's third answer. Not a denial — a hold, until a person with the manager role approves that exact request.</td></tr>
+      <tr><td><b>refused vs error</b></td><td>Refused: the agent declined (the role may not do that). Error: something is broken (the model or a service was unreachable). Different messages because they are different problems.</td></tr>
+      <tr><td><b>fail closed</b></td><td>When a control cannot reach its authority, it denies. No tools offered, no approval verified.</td></tr>
+    </tbody>
+  </table>
+
+  <div class="foot">
+    <p>
+      Companion to the <a href="index.html">platform overview</a>. Every excerpt on this page is
+      quoted from the file named above it; where a diagram or prompt is illustrative rather than
+      literal, the caption says so.
+    </p>
+    <p class="mono" style="font-size:.78rem">
+      the model proposes · the platform disposes
+    </p>
+  </div>
+</section>
+</main>
+</div>
+<button class="totop" id="totop" type="button">↑ Top</button>
+<script>
+(function(){
+  var root=document.documentElement;
+  var tbtn=document.getElementById('theme');
+  var saved=null; try{saved=localStorage.getItem('flow-theme')}catch(e){}
+  if(saved) root.setAttribute('data-theme',saved);
+  function sync(){ tbtn.textContent = root.getAttribute('data-theme')==='light' ? 'Dark' : 'Light'; }
+  sync();
+  tbtn.addEventListener('click',function(){
+    var next = root.getAttribute('data-theme')==='light' ? 'dark' : 'light';
+    root.setAttribute('data-theme',next);
+    try{localStorage.setItem('flow-theme',next)}catch(e){}
+    sync();
+  });
+  document.querySelectorAll('.codeblock').forEach(function(block){
+    var pre=block.querySelector('pre'); if(!pre) return;
+    var b=document.createElement('button');
+    b.type='button'; b.className='copy'; b.textContent='copy';
+    b.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        b.textContent='copied'; setTimeout(function(){b.textContent='copy'},1200);
+      },function(){ b.textContent='press ⌘C'; });
+    });
+    block.appendChild(b);
+  });
+  var filter=document.getElementById('filter');
+  filter.addEventListener('input',function(){
+    var q=filter.value.trim().toLowerCase();
+    document.querySelectorAll('nav ol').forEach(function(list){
+      var shown=0;
+      list.querySelectorAll('a').forEach(function(a){
+        var hit = !q || a.textContent.toLowerCase().indexOf(q)>=0;
+        a.classList.toggle('hidden',!hit);
+        if(hit) shown++;
+      });
+      list.parentElement.style.display = shown ? '' : 'none';
+    });
+  });
+  var links=Array.prototype.slice.call(document.querySelectorAll('nav a[href^="#"]'));
+  var sections=links.map(function(a){return document.querySelector(a.getAttribute('href'))});
+  var progress=document.getElementById('progress');
+  function onScroll(){
+    var y=window.scrollY+140, current=null;
+    sections.forEach(function(s,i){ if(s && s.offsetTop<=y) current=i; });
+    links.forEach(function(a,i){ a.classList.toggle('active', i===current); });
+    var h=document.body.scrollHeight-window.innerHeight;
+    progress.style.width = (h>0 ? (window.scrollY/h)*100 : 0)+'%';
+    document.getElementById('totop').classList.toggle('show', window.scrollY>600);
+  }
+  window.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('resize',onScroll);
+  onScroll();
+  document.getElementById('totop').addEventListener('click',function(){ window.scrollTo({top:0,behavior:'smooth'}); });
+  document.getElementById('expand').addEventListener('click',function(){
+    document.querySelectorAll('details').forEach(function(d){d.open=true});
+    this.textContent='Expanded'; setTimeout(function(){this.textContent='Expand all'}.bind(this),1200);
+  });
+})();
+</script>
+</body>
+</html>
