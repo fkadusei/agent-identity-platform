@@ -16,8 +16,9 @@
   Kubernetes cluster (kind) and has grown a set of production-hardening slices
   beyond the original plan. The 2026-09-16 gateway outage is fixed — see S13 and
   S15 in [`docs/backlog.md`](docs/backlog.md). **S18** taught the agent to ask for a
-  missing argument instead of refusing; S17 (cloud providers) and S19 (a bounded
-  multi-step loop) are open.
+  missing argument instead of refusing, and **S19** lets it take more than one
+  bounded step; the agent-upgrade work is complete. **S17** (cloud providers) is
+  the one open slice.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-09-24
 
@@ -162,16 +163,12 @@ End-to-end, on the cluster:
 
 Phases 1–3 are complete and every threat is addressed. Next, pick from the open
 backlog in [`docs/backlog.md`](docs/backlog.md) — each slice has a stable ID with
-what it is, why, where it lands and how we would verify it. Two are open:
+what it is, why, where it lands and how we would verify it. One is open:
 
-- **S19 — the agent takes more than one step.** S18 taught the agent to *ask* for
-  a missing argument; S19 lets a run go round the loop more than once, with a step
-  budget, so "refund the order from the last ticket" becomes answerable. The
-  design (completion as a state, one new `call_tool → plan` edge, policy untouched)
-  is written up in the backlog entry.
 - **S17 — provider-agnostic models.** Two defects in the hosted-provider branch,
   both found by reading it; plus the open question of whether a cloud model may see
-  the personal data the agent can read under approval.
+  the personal data the agent can read under approval. The interesting half is that
+  policy question, not the bug fixes.
 
 Done, kept for the record:
  **S1** (SPIRE's registry is durable, and the KeyManager is
@@ -185,7 +182,9 @@ tool maps), **S9** (the sandbox keeps its own data), **S10** (the privacy view,
 **S11** (SPIRE survives an API-server blip), **S12** (the agent survives a
 Postgres restart), **S13** (stop blaming the model for infrastructure faults),
 **S14** (the scripts pin their cluster context), **S15** (the gateway must not
-serve an expired SVID) and **S16** (a hung process restarts itself).
+serve an expired SVID), **S16** (a hung process restarts itself), **S18** (the
+agent asks for a missing argument instead of refusing) and **S19** (the agent
+takes more than one bounded step).
 
 ## The repository is public
 

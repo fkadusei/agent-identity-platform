@@ -24,3 +24,10 @@ def test_the_suite_covers_the_asking_path():
     # ask instead (S18), not adjusted until it passed.
     names = {name for name, _, _ in run_stubbed()}
     assert "a required argument is asked for, not guessed" in names
+
+
+def test_the_suite_covers_the_multi_step_path():
+    # The decision that makes a second step possible (S19). Without it the loop
+    # never triggers, so the case is the guard against the flag silently rotting.
+    names = {name for name, _, _ in run_stubbed()}
+    assert "the model asks for another step" in names

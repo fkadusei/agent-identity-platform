@@ -184,9 +184,11 @@ svg .etext.warn{fill:var(--amber)}
   <h1>The agent, end to end</h1>
   <p class="lede">
     A task arrives as a sentence. What comes out is an answer, a refusal with a reason, a
-    question waiting for a person, or a held action waiting for a different person to decide. This page follows that path through the
-    code — <b>the model proposes, the platform disposes</b> — and shows exactly where each
-    decision is made, and which control would catch it if the model were wrong.
+    question waiting for a person, or a held action waiting for a different person to decide —
+    after one tool call, or several, each of which policy judged on its own. This page follows
+    that path through the code — <b>the model proposes, the platform disposes</b> — and shows
+    exactly where each decision is made, and which control would catch it if the model were
+    wrong.
   </p>
   <div class="callout info">
     <b>Why this shape at all</b>
@@ -294,6 +296,8 @@ svg .etext.warn{fill:var(--amber)}
   </p>
 
   <pre class="ascii">    plan ──▶ call_tool ──▶ (ok / denied / error) ──▶ END
+                 │  ▲
+                 │  └── ok + "more" ──▶ plan (with what it learned, max 3 steps)
                  │
                  ├─ approval_required ──▶ create_approval ──▶ await_decision
                  │                                                  │
@@ -303,10 +307,10 @@ svg .etext.warn{fill:var(--amber)}
                  └─ missing an argument ──▶ ask_clarification ──▶ call_tool
                                                   ▲              │
                                                   └── still missing ┘</pre>
-  <p class="mono" style="color:var(--faint);font-size:.8rem">the topology comment at the top of <b>app/agent/graph.py</b>, plus the S18 branch</p>
+  <p class="mono" style="color:var(--faint);font-size:.8rem">the topology comment at the top of <b>app/agent/graph.py</b></p>
 
   <div class="callout warn">
-    <b>Three decisions worth noticing in that little diagram</b>
+    <b>Four decisions worth noticing in that little diagram</b>
     <b style="display:inline">·</b> <code>create_approval</code> is a separate node from
     <code>await_decision</code>: the interrupt node <i>re-executes</i> when the run resumes, so it
     must have no side effects. Creating the approval is a side effect; pausing is not.
@@ -318,6 +322,10 @@ svg .etext.warn{fill:var(--amber)}
     <b style="display:inline">·</b> A missing argument is the one gap the graph <i>asks</i> about
     rather than ending on, because the value is held by a person who is right there. The answer is
     merged in and the call still goes to policy — asking is not authorizing.
+    <br>
+    <b style="display:inline">·</b> More than one step is <b>opt-in from the model</b>, bounded at
+    three, and every step is a full visit through the same enforcement point. A run that does not
+    ask stops after one call, exactly as it always did.
   </div>
 
   <svg viewBox="0 0 900 380" width="100%" role="img" aria-label="The compiled graph: START to plan; plan goes to call_tool or to ask_clarification; call_tool either ends or goes to create_approval, which goes to await_decision; await_decision resumes call_tool when approved and otherwise ends; ask_clarification merges the answer and goes back to call_tool, and ends as refused when the asking budget is spent.">
@@ -357,6 +365,9 @@ svg .etext.warn{fill:var(--amber)}
     <line x1="500" y1="180" x2="756" y2="180" class="edge"/>
     <text x="560" y="172" class="etext">ok / denied / error</text>
 
+    <path d="M430,164 L430,120 L205,120 L205,160" class="edge violet"/>
+    <text x="252" y="112" class="etext warn">ok + "more" → one more step (max 3)</text>
+
     <line x1="470" y1="164" x2="470" y2="96" class="edge"/>
     <text x="486" y="134" class="etext warn">approval_required</text>
 
@@ -376,7 +387,7 @@ svg .etext.warn{fill:var(--amber)}
   </svg>
 
   <h3>The state it carries</h3>
-  <p>Nine fields, and no place to hide a surprise — a run either names a tool and arguments, or it names why it did not.</p>
+  <p>Thirteen fields, and no place to hide a surprise — a run either names a tool and arguments, or it names why it did not.</p>
   <div class="codeblock">
     <p class="cap">app/agent/graph.py</p>
 <pre>class AgentState(TypedDict, total=False):
@@ -389,7 +400,11 @@ svg .etext.warn{fill:var(--amber)}
     result: dict
     approval_id: str
     missing: list[str]  # required arguments still to be supplied by a person
-    asks: int  # how many times we have asked for them</pre>
+    asks: int  # how many times we have asked for them
+    steps: int  # how many tool calls this run has made
+    observations: list[dict]  # what each of those calls returned, in order
+    more: bool  # the model asked for another step after seeing the result
+    final: bool  # the graph decided this step ends the run</pre>
   </div>
 
   <h3><code>plan</code> — the only node the model influences</h3>
@@ -398,11 +413,14 @@ svg .etext.warn{fill:var(--amber)}
     do: it never picks a fallback tool, it keeps "the agent declined" apart from
     "something was broken" — those two end up on different dashboards at 3am — and when the
     only thing missing is an argument, it routes to a question rather than an ending.
+    On a second pass it hands the model what the earlier calls returned.
   </p>
   <div class="codeblock">
     <p class="cap">app/agent/graph.py</p>
 <pre>def plan(state: AgentState) -&gt; dict:
-    decision = deps.decide(state["task"])
+    # A second pass carries what the first call returned, so the model decides
+    # with its eyes open rather than from the task text alone.
+    decision = deps.decide(state["task"], state.get("observations") or [])
     if decision.get("clarify"):
         # The model named a tool it may use and lacked an argument a person
         # can supply. Ask, rather than refuse — but note what this does *not*
@@ -433,24 +451,62 @@ svg .etext.warn{fill:var(--amber)}
         "tool": decision["tool"],
         "args": decision.get("args", {}),
         "reason": decision.get("reason", ""),
+        "more": bool(decision.get("more")),
+        "final": False,
     }</pre>
   </div>
 
   <h3><code>call_tool</code> — where the platform takes over</h3>
   <p>
-    The graph's only job here is to not crash. Whatever the enforcement point returns —
-    executed, denied, or held — becomes state, and the routers decide where to go next.
+    The graph's only job here is to not crash, to record what happened so a second step can
+    use it, and to refuse to repeat itself. That last part is a control, not tidiness: a
+    repeated call is a repeated <i>action</i> — a second refund — so the check sits in the
+    node that acts, where no route can bypass it.
   </p>
   <div class="codeblock">
     <p class="cap">app/agent/graph.py</p>
 <pre>def call_tool(state: AgentState) -&gt; dict:
     # A downstream failure (e.g. the token exchange is refused) must become a
     # reported error, not an unhandled exception that 500s the request.
+    previous = (state.get("observations") or [{}])[-1]
+    if (
+        state.get("observations")
+        and previous.get("tool") == state.get("tool")
+        and previous.get("args") == state.get("args")
+    ):
+        # The model asked for a call it has already made. Repeating it would
+        # be a second real action — a second refund — for no new information,
+        # so this stops instead. It is the only place that can enforce that:
+        # by the time the router runs, the call would already have happened.
+        return {
+            "status": "ok",
+            "result": previous.get("result", {}),
+            "reason": "the same call was already made — stopping rather than repeating it",
+            "final": True,
+        }
     try:
         outcome = deps.call_tool(state["tool"], state["args"], state.get("approval_id"))
     except Exception as exc:  # noqa: BLE001
-        return {"status": "error", "reason": f"tool call failed: {exc}"}
-    return {"status": outcome.status, "result": outcome.result or {}, "reason": outcome.reason}</pre>
+        # `final`, like everywhere in this node: a failure is not a step, so
+        # there is nothing to observe and no reason to go round again.
+        return {"status": "error", "reason": f"tool call failed: {exc}", "final": True}
+    update: dict = {
+        "status": outcome.status,
+        "result": outcome.result or {},
+        "reason": outcome.reason,
+        "final": True,  # unless the model asked for another step below
+    }
+    if outcome.status == "ok":
+        # Only a call that *happened* is a step, and only a step can be
+        # observed — a denial or a hold teaches the model nothing about the
+        # task, so a run cannot loop on those.
+        update["steps"] = state.get("steps", 0) + 1
+        update["observations"] = [
+            *(state.get("observations") or []),
+            {"tool": state["tool"], "args": state["args"], "result": outcome.result or {}},
+        ]
+        update["final"] = not state.get("more")
+    return update</pre>
   </div>
 
   <h3><code>create_approval</code>, <code>await_decision</code>, <code>ask_clarification</code> — the pauses</h3>
@@ -526,13 +582,22 @@ def await_decision(state: AgentState) -&gt; dict:
 
   <h3>The routers, and the wiring</h3>
   <p>
-    Six tiny functions that turn the state into the next node. This is the entire control
-    vocabulary of the agent — there is no other path through it.
+    Six tiny functions that turn the state into the next node. <code>after_call</code> is
+    where the loop lives, and it reads as three questions: was it held? did the model ask
+    for more? can it still afford it?
   </p>
   <div class="codeblock">
     <p class="cap">app/agent/graph.py</p>
 <pre>def after_call(state: AgentState) -&gt; str:
-    return "create_approval" if state.get("status") == "approval_required" else END
+    if state.get("status") == "approval_required":
+        return "create_approval"
+    # Another step only when the model asked for one *and* the last call
+    # actually happened (`final` is what call_tool sets), with the budget as
+    # the backstop: three real actions is the ceiling for one request,
+    # whatever the model says.
+    if not state.get("final") and state.get("steps", 0) &lt; MAX_STEPS:
+        return "plan"
+    return END
 
 def after_create(state: AgentState) -&gt; str:
     return END if state.get("status") == "error" else "await_decision"
@@ -571,7 +636,7 @@ graph.add_conditional_edges(
     {"call_tool": "call_tool", "ask_clarification": "ask_clarification", END: END},
 )
 graph.add_conditional_edges(
-    "call_tool", after_call, {"create_approval": "create_approval", END: END}
+    "call_tool", after_call, {"create_approval": "create_approval", "plan": "plan", END: END}
 )
 graph.add_conditional_edges(
     "create_approval", after_create, {"await_decision": "await_decision", END: END}
@@ -599,8 +664,13 @@ return graph.compile(checkpointer=checkpointer or InMemorySaver())</pre>
   <div class="codeblock">
     <p class="cap">app/agent/deps.py</p>
 <pre>class AgentDeps(Protocol):
-    def decide(self, task: str) -&gt; dict:
-        """Return {"tool": ..., "args": {...}, "reason": ...} for the task."""
+    def decide(self, task: str, observations: list[dict] | None = None) -&gt; dict:
+        """Return {"tool": ..., "args": {...}, "reason": ...} for the task.
+
+        `observations` is what earlier tool calls in this run returned, in order —
+        empty on the first pass. A second pass is only ever asked for when the
+        model asked for it (see `more` in graph.py), so this stays optional.
+        """
         ...
 
     def call_tool(self, tool: str, args: dict, approval_id: str | None) -&gt; ToolCallResult:
@@ -624,7 +694,9 @@ return graph.compile(checkpointer=checkpointer or InMemorySaver())</pre>
   <h3>The prompt</h3>
   <div class="codeblock">
     <p class="cap">app/agent/llm.py</p>
-<pre>def _prompt(task: str, tools: dict, unavailable: dict | None = None) -&gt; str:
+<pre>def _prompt(
+    task: str, tools: dict, unavailable: dict | None = None, observations: list[dict] | None = None
+) -&gt; str:
     parts = [
         "You are a customer-support agent. Choose exactly one tool from the "
         "available list to handle the task.\n",
@@ -638,12 +710,21 @@ return graph.compile(checkpointer=checkpointer or InMemorySaver())</pre>
             "NOT permitted for this user's role (never choose these):\n"
             f"{_tool_manifest(unavailable)}\n\n"
         )
+    if observations:
+        # A second pass: the model is shown what its own calls returned, which is
+        # the whole point of allowing more than one step.
+        parts.append(
+            "You have already done this for the task, in order:\n"
+            f"{_observations_text(observations)}\n\n"
+        )
     parts.append(f'Task: "{task}"\n\n')
     parts.append(
         "If the task needs a tool that is not permitted, or none of the available "
         'tools fits, reply with {"tool": null, "reason": "&lt;why&gt;"}.\n'
         "If a required argument is not in the task, still name the tool and leave "
         "that argument out — never invent one; the user will be asked for it.\n"
+        "If you will need another call after seeing this one's result (for example "
+        'reading a ticket before refunding its order), add "more": true.\n'
         "Otherwise reply with ONLY JSON of the form "
         '{"tool": "&lt;name&gt;", "args": {&lt;arguments&gt;}, "reason": "&lt;short reason&gt;"}.'
     )
@@ -661,6 +742,23 @@ return graph.compile(checkpointer=checkpointer or InMemorySaver())</pre>
         required = tool.input_schema.get("required") or []
         params = ", ".join(required)
         lines.append(f"- {tool.name}({params}): {tool.description}")
+    return "\n".join(lines)
+
+
+# A tool result can be large, and the prompt is rebuilt on every step, so each
+# one is shown truncated. What the model needs is enough to decide the next move,
+# not a full record — the run keeps the whole thing in its own state.
+_MAX_OBSERVATION_CHARS = 600
+
+
+def _observations_text(observations: list[dict]) -&gt; str:
+    lines = []
+    for i, obs in enumerate(observations, start=1):
+        result = json.dumps(obs.get("result", {}), sort_keys=True)
+        if len(result) &gt; _MAX_OBSERVATION_CHARS:
+            result = result[:_MAX_OBSERVATION_CHARS] + "…"
+        args = json.dumps(obs.get("args", {}), sort_keys=True)
+        lines.append(f"{i}. {obs.get('tool')}({args}) -&gt; {result}")
     return "\n".join(lines)</pre>
   </div>
 
@@ -762,7 +860,7 @@ _INJECTION_PHRASES = (
   <div class="codeblock">
     <p class="cap">app/agent/llm.py — the three causes, and the refusal that is ours not the model's</p>
 <pre>try:
-    content = _chat(_prompt(task, tools, unavailable))
+    content = _chat(_prompt(task, tools, unavailable, observations))
 except Exception as exc:  # noqa: BLE001 - never block the run on the model
     audit("llm.fallback", cause="unreachable", reason=str(exc)[:200])
     return _no_tool(
@@ -833,7 +931,13 @@ if not chosen:
             "clarify": True,
             "reason": f"{tool.name} needs {', '.join(missing)}",
         }
-    return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}</pre>
+    result = {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
+    if decision.get("more"):
+        # The model says it will need a look at this result before it can
+        # finish (S19). Only ever an *extra* step, bounded by the graph —
+        # and a tool wins over this flag, so it can never stop a call.
+        result["more"] = True
+    return result</pre>
   </div>
 
   <h3>Filling gaps, without inventing a decision</h3>
@@ -1362,6 +1466,16 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
         <td class="mono">fail closed</td>
         <td>no tools offered at the agent; approvals verify returns false. Every failure direction is deny</td>
       </tr>
+      <tr>
+        <td>asks for another step, forever</td>
+        <td class="mono">MAX_STEPS = 3</td>
+        <td>the run ends after three real actions whatever the model says. Only calls that <i>happened</i> count, so a denial or a hold cannot be looped on</td>
+      </tr>
+      <tr>
+        <td>asks for the same call twice</td>
+        <td class="mono">call_tool's repeat guard</td>
+        <td>the second one is not executed — a repeat is a second real action, so the check sits in the node that acts</td>
+      </tr>
     </tbody>
   </table>
 </section>
@@ -1518,16 +1632,71 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
     clarified $200 refund is still held for a manager, and a clarified <code>bulk.</code>
     argument is still denied. Answering supplies a fact; it never grants anything.
   </div>
+
+  <h3>And when the answer takes two steps</h3>
+  <p>
+    "Refund the order from the last ticket" needs the ticket read before the refund can even be
+    asked for. The model says so after the first call, the graph goes round once with the result
+    in hand, and the second action is a first-class action in every way:
+  </p>
+  <table>
+    <thead><tr><th>#</th><th>Who</th><th>What happens</th><th>Recorded</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1–5</td><td>api · guardrails · policy · gateway · model</td>
+        <td>the task passes the guardrails, the role's tools are fetched, one model call is made</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>6</td><td>model</td>
+        <td>answers <span class="mono">{"tool": "tickets.read", "args": {"ticket_id": "t-1"}, "more": true}</span> — it will need another look</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>7</td><td>tool server</td>
+        <td><b>step 1</b>: the ticket is read, through exactly the same checks as any single-step run</td>
+        <td class="mono">tool.allowed</td>
+      </tr>
+      <tr>
+        <td>8</td><td>graph</td>
+        <td>the call happened and the model asked for more, and one call of three is spent → back to <span class="mono">plan</span></td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>9</td><td>model</td>
+        <td>now shown <i>what the ticket said</i>, it answers <span class="mono">{"tool": "refunds.issue", "args": {"order_id": "o-1001", "amount": 200}}</span> — no <span class="mono">more</span>, because it is finished</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>10–12</td><td>tool server · policy</td>
+        <td><b>step 2</b>: policy is asked again, from scratch, and $200 is held for a manager exactly as before</td>
+        <td class="mono">tool.approval_required → approval.created</td>
+      </tr>
+      <tr>
+        <td>13</td><td>a person → agent</td>
+        <td>approved, resumed, executed. <span class="mono">steps: 2</span> in the final state</td>
+        <td class="mono">tool.allowed</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout ok">
+    <b>What the second step does not get</b>
+    It does not inherit permission from the first. Each step is one call through the same
+    enforcement point with the same identity, so step 2 is judged as if it were the only
+    thing the agent had ever asked for. The loop adds reach, not authority — and the audit
+    shows two actions where there used to be one, which is the point.
+  </div>
 </section>
 
 <section id="upgrade">
   <h2>9 · What the upgrade would change</h2>
   <div class="callout warn">
-    <b>Half of this section is now built — the other half is still proposed</b>
-    Clarification below (Tier 2) shipped as S18, and the rest of this page describes it as
-    current code. The bounded observation loop (Tier 3) is still a proposal. Neither alters
-    what is <i>permitted</i>: they change what the agent <i>does</i> when the task is thin or
-    the answer arrives in more than one step.
+    <b>Both halves are now built — this section is the record of how they changed</b>
+    Clarification (Tier 2) shipped as S18 and the bounded loop (Tier 3) as S19, so the rest of
+    this page describes them as current code; what follows is what each change was, what it
+    cost, and what deliberately did not move. Neither altered what is <i>permitted</i>: they
+    change what the agent <i>does</i> when the task is thin or the answer arrives in more than
+    one step.
   </div>
 
   <h3>The two gaps today</h3>
@@ -1541,11 +1710,11 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
       </p>
     </div>
     <div class="tile">
-      <h4>2 · It takes one step <span class="pill warn">proposed</span></h4>
+      <h4>2 · It took one step <span class="pill ok">built · S19</span></h4>
       <p>
         "Refund the customer from the last ticket" needs twice through the loop: read the
-        ticket, learn the order, then ask for the refund. Today the model must guess both from
-        the sentence in a single pass, and a small one usually will not.
+        ticket, learn the order, then ask for the refund. Before, the model had to guess both
+        from the sentence in a single pass, and a small one usually would not.
       </p>
     </div>
   </div>
@@ -1569,54 +1738,57 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
     annotated run</a>.
   </p>
 
-  <h3>Tier 3 — one observation loop, bounded <span class="pill warn">proposed</span></h3>
+  <h3>Tier 3 — one observation loop, bounded <span class="pill ok">built · S19</span></h3>
   <p>
-    The second gap closes with a single new edge: after a successful tool call, instead of
-    always ending, the graph may return to <code>plan</code> with what it learned. The
-    current graph and the proposed one differ by that arrow:
+    Built as predicted: one new edge, <code>call_tool → plan</code>, with what the call
+    returned carried in state. Two things were decided while building it, and both are worth
+    knowing because they are the difference between this and the naive version:
   </p>
-  <svg viewBox="0 0 900 250" width="100%" role="img" aria-label="A bounded loop: plan to call_tool, and on success back to plan, up to a small step budget; the approval path is unchanged.">
-    <rect x="20" y="96" width="120" height="52" rx="11" class="box ours"/>
-    <text x="80" y="118" text-anchor="middle" class="lbl">plan</text>
-    <text x="80" y="134" text-anchor="middle" class="sub">+ observations</text>
-
-    <rect x="240" y="96" width="140" height="52" rx="11" class="box"/>
-    <text x="310" y="118" text-anchor="middle" class="lbl">call_tool</text>
-    <text x="310" y="134" text-anchor="middle" class="sub">unchanged</text>
-
-    <rect x="240" y="190" width="150" height="46" rx="11" class="box ours"/>
-    <text x="315" y="212" text-anchor="middle" class="lbl">create_approval</text>
-    <text x="315" y="227" text-anchor="middle" class="sub">unchanged</text>
-
-    <rect x="450" y="190" width="150" height="46" rx="11" class="box ours"/>
-    <text x="525" y="212" text-anchor="middle" class="lbl">await_decision</text>
-    <text x="525" y="227" text-anchor="middle" class="sub">unchanged</text>
-
-    <rect x="680" y="96" width="110" height="46" rx="9" class="box"/>
-    <text x="735" y="118" text-anchor="middle" class="lbl">END</text>
-    <text x="735" y="133" text-anchor="middle" class="sub">budget spent</text>
-
-    <line x1="140" y1="122" x2="236" y2="122" class="edge"/>
-    <line x1="380" y1="112" x2="676" y2="112" class="edge dash"/>
-    <text x="470" y="105" class="etext">done, or budget spent</text>
-    <path d="M310,96 L310,60 L80,60 L80,92" class="edge violet"/>
-    <text x="150" y="52" class="etext warn">observed something → one more step (max 3)</text>
-
-    <line x1="330" y1="148" x2="322" y2="186" class="edge"/>
-    <text x="338" y="172" class="etext warn">approval_required</text>
-    <line x1="390" y1="213" x2="446" y2="213" class="edge"/>
-    <line x1="525" y1="190" x2="360" y2="140" class="edge violet"/>
-    <text x="500" y="172" class="etext warn">approved → call_tool</text>
-  </svg>
+  <div class="grid2">
+    <div class="tile">
+      <h4>The loop is opt-in, not automatic</h4>
+      <p>
+        The planned design had every successful run go round again so the model could say it
+        was finished — which would have made a single-step task take two model calls and end
+        as <i>answered</i> rather than <i>ok</i>, changing the outcome contract the demo, the
+        UI and the tests all read. Instead the model says up front that it will need another
+        look (<code>"more": true</code>), and a run that does not ask stops after one call,
+        exactly as before.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>The same call is never made twice</h4>
+      <p>
+        A repeat is not a wasted round trip, it is a second <i>action</i> — a second refund.
+        The check lives in the node that acts, before the call, so no routing can bypass it,
+        and it only looks at calls that actually happened: the held attempt of an approved
+        refund is not a repeat of anything.
+      </p>
+    </div>
+  </div>
+  <p>The router, as it is now — the loop is the middle question:</p>
   <div class="codeblock">
-    <p class="cap">illustrative — the router that would change</p>
+    <p class="cap">app/agent/graph.py</p>
 <pre>def after_call(state: AgentState) -&gt; str:
     if state.get("status") == "approval_required":
         return "create_approval"
-    # New: a successful observation may justify one more step.
-    if state.get("status") == "ok" and state.get("steps", 0) &lt; MAX_STEPS:
+    # Another step only when the model asked for one *and* the last call
+    # actually happened (`final` is what call_tool sets), with the budget as
+    # the backstop: three real actions is the ceiling for one request,
+    # whatever the model says.
+    if not state.get("final") and state.get("steps", 0) &lt; MAX_STEPS:
         return "plan"
     return END</pre>
+  </div>
+  <p>
+    And the budget itself, with the reason it is three:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/graph.py</p>
+<pre># How many tool calls one run may make. Three: enough for "read the ticket, look
+# up the order, issue the refund", and few enough that a model looping on itself
+# cannot do much damage or cost much before the graph stops it.
+MAX_STEPS = 3</pre>
   </div>
 
   <h3>What does <i>not</i> change</h3>
@@ -1630,6 +1802,13 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
       <tr><td>Fail-closed behaviour</td><td>An unreachable policy still offers nothing, in a loop no less than before</td></tr>
     </tbody>
   </table>
+  <div class="callout ok">
+    <b>Checked, not assumed</b>
+    A single-step run still makes one model call and one tool call and ends <code>ok</code>
+    — there is a test whose whole job is that nothing changed for it. The budget stops a run
+    that would never stop on its own. A recorded repeat is refused, and an approval in the
+    middle is a pause rather than the end of the task.
+  </div>
   <div class="callout violet">
     <b>The last thing worth saying about the upgrade</b>
     A loop makes the agent more capable, and it makes the <i>audit trail</i> more important,
@@ -1692,6 +1871,8 @@ kubectl exec deploy/agent -c agent -- python -m app.agent.evals --live</pre>
       <tr><td><b>enforcement point</b></td><td>The one method where authority is granted. Everything above it proposes; nothing below it re-decides.</td></tr>
       <tr><td><b>require_approval</b></td><td>Policy's third answer. Not a denial — a hold, until a person with the manager role approves that exact request.</td></tr>
       <tr><td><b>clarification</b></td><td>A pause for an argument only a person has, not for a permission. It is bounded (two asks) and the answer is judged by policy like any other argument — answering is not approving.</td></tr>
+      <tr><td><b>observation</b></td><td>What one tool call returned, kept in the run's state and shown to the model on the next step. Only calls that <i>happened</i> produce one, which is why a run cannot loop on a denial.</td></tr>
+      <tr><td><b>step</b></td><td>One tool call that happened. Bounded at three (<code>MAX_STEPS</code>); a run that does not ask for more makes exactly one, as it always did.</td></tr>
       <tr><td><b>refused vs error</b></td><td>Refused: the agent declined (the role may not do that). Error: something is broken (the model or a service was unreachable). Different messages because they are different problems.</td></tr>
       <tr><td><b>fail closed</b></td><td>When a control cannot reach its authority, it denies. No tools offered, no approval verified.</td></tr>
     </tbody>

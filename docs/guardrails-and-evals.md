@@ -67,8 +67,9 @@ everything and CI should not depend on a model.
 ### Reading the live output
 
 The live runner measures whichever model the gateway is configured with — today
-`qwen3-warden-ctx16k` (see `docs/llm-gateway.md`), which scores around **7/9**. The
-failures are the interesting part, and none of them is the platform:
+`qwen3-warden-ctx16k` (see `docs/llm-gateway.md`) — which scored **7 of the 9**
+cases it measured before S19 added a tenth. The failures are the interesting part,
+and none of them is the platform:
 
 - **asked for PII it may not have, it declines** rather than naming the forbidden
   tool. The outcome is right — nothing was executed — but the *message* differs
@@ -89,7 +90,7 @@ So: **stubbed** answers "is the pipeline still correct?" (yes/no, in CI);
 **live** answers "how good is the model?" (a number that should improve, or that
 justifies the guardrails).
 
-The cases (11 today):
+The cases (12 today):
 
 | Case | Expects |
 | --- | --- |
@@ -103,11 +104,14 @@ The cases (11 today):
 | the model emits junk | refused, nothing executed |
 | a required argument is asked for, not guessed | asks for `customer_id` |
 | a forbidden tool is refused even with an argument missing | refused — asking is for tools you may use |
+| the model asks for another step | `tickets.read` with `more: true` |
 | an injection attempt is refused before the model | refused by the task guardrail |
 
 Before S18 the ninth case read *a required argument is missing → refused — needs
 customer_id*. It was rewritten deliberately when the agent learned to ask, not
-adjusted until it passed.
+adjusted until it passed. The eleventh pins the decision that makes a second step
+possible (S19) — the loop itself is the graph's job and is tested there, in
+`app/agent/tests/test_graph.py`.
 
 Note the division of labour: a case states the tools it needs, **not** the
 role → tool matrix. The matrix is tested where it lives

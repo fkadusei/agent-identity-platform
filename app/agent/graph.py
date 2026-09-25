@@ -1,6 +1,8 @@
 """The agent as a stateful graph with a human-approval interrupt.
 
     plan ──▶ call_tool ──▶ (ok / denied / error) ──▶ END
+                 │  ▲
+                 │  └── ok + "more" ──▶ plan (with what it learned, max 3 steps)
                  │
                  ├─ approval_required ──▶ create_approval ──▶ await_decision
                  │                                                  │
@@ -17,6 +19,12 @@ checkpointed — and resumes only when a human decision is recorded. When the mo
 cannot supply a required argument, the graph pauses the same way and asks for it
 (S18): an answer is information, not authorization, so it is merged into the
 arguments and the call still goes to policy.
+
+More than one step (S19) is *opt-in from the model*: it says it will need another
+look after seeing a result, and the graph goes round again with that result in
+its state. A run that does not ask stops after one call, exactly as before — which
+is why the outcome of a simple task is still `ok`, and not some "done" variant.
+Every step is a full visit through the same enforcement point.
 
 `create_approval` is a separate node from `await_decision` on purpose: the
 interrupt node re-executes on resume, so it must have no side effects.
@@ -36,6 +44,11 @@ from app.agent.deps import AgentDeps
 # asked to guess what the machine wants.
 MAX_ASKS = 2
 
+# How many tool calls one run may make. Three: enough for "read the ticket, look
+# up the order, issue the refund", and few enough that a model looping on itself
+# cannot do much damage or cost much before the graph stops it.
+MAX_STEPS = 3
+
 
 class AgentState(TypedDict, total=False):
     task: str
@@ -48,13 +61,19 @@ class AgentState(TypedDict, total=False):
     approval_id: str
     missing: list[str]  # required arguments still to be supplied by a person
     asks: int  # how many times we have asked for them
+    steps: int  # how many tool calls this run has made
+    observations: list[dict]  # what each of those calls returned, in order
+    more: bool  # the model asked for another step after seeing the result
+    final: bool  # the graph decided this step ends the run
 
 
 def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
     """Compile the agent graph. Pass a persistent checkpointer in production."""
 
     def plan(state: AgentState) -> dict:
-        decision = deps.decide(state["task"])
+        # A second pass carries what the first call returned, so the model decides
+        # with its eyes open rather than from the task text alone.
+        decision = deps.decide(state["task"], state.get("observations") or [])
         if decision.get("clarify"):
             # The model named a tool it may use and lacked an argument a person
             # can supply. Ask, rather than refuse — but note what this does *not*
@@ -85,16 +104,52 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
             "tool": decision["tool"],
             "args": decision.get("args", {}),
             "reason": decision.get("reason", ""),
+            "more": bool(decision.get("more")),
+            "final": False,
         }
 
     def call_tool(state: AgentState) -> dict:
         # A downstream failure (e.g. the token exchange is refused) must become a
         # reported error, not an unhandled exception that 500s the request.
+        previous = (state.get("observations") or [{}])[-1]
+        if (
+            state.get("observations")
+            and previous.get("tool") == state.get("tool")
+            and previous.get("args") == state.get("args")
+        ):
+            # The model asked for a call it has already made. Repeating it would
+            # be a second real action — a second refund — for no new information,
+            # so this stops instead. It is the only place that can enforce that:
+            # by the time the router runs, the call would already have happened.
+            return {
+                "status": "ok",
+                "result": previous.get("result", {}),
+                "reason": "the same call was already made — stopping rather than repeating it",
+                "final": True,
+            }
         try:
             outcome = deps.call_tool(state["tool"], state["args"], state.get("approval_id"))
         except Exception as exc:  # noqa: BLE001
-            return {"status": "error", "reason": f"tool call failed: {exc}"}
-        return {"status": outcome.status, "result": outcome.result or {}, "reason": outcome.reason}
+            # `final`, like everywhere in this node: a failure is not a step, so
+            # there is nothing to observe and no reason to go round again.
+            return {"status": "error", "reason": f"tool call failed: {exc}", "final": True}
+        update: dict = {
+            "status": outcome.status,
+            "result": outcome.result or {},
+            "reason": outcome.reason,
+            "final": True,  # unless the model asked for another step below
+        }
+        if outcome.status == "ok":
+            # Only a call that *happened* is a step, and only a step can be
+            # observed — a denial or a hold teaches the model nothing about the
+            # task, so a run cannot loop on those.
+            update["steps"] = state.get("steps", 0) + 1
+            update["observations"] = [
+                *(state.get("observations") or []),
+                {"tool": state["tool"], "args": state["args"], "result": outcome.result or {}},
+            ]
+            update["final"] = not state.get("more")
+        return update
 
     def create_approval(state: AgentState) -> dict:
         try:
@@ -155,7 +210,15 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
         }
 
     def after_call(state: AgentState) -> str:
-        return "create_approval" if state.get("status") == "approval_required" else END
+        if state.get("status") == "approval_required":
+            return "create_approval"
+        # Another step only when the model asked for one *and* the last call
+        # actually happened (`final` is what call_tool sets), with the budget as
+        # the backstop: three real actions is the ceiling for one request,
+        # whatever the model says.
+        if not state.get("final") and state.get("steps", 0) < MAX_STEPS:
+            return "plan"
+        return END
 
     def after_create(state: AgentState) -> str:
         return END if state.get("status") == "error" else "await_decision"
@@ -192,7 +255,7 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
         {"call_tool": "call_tool", "ask_clarification": "ask_clarification", END: END},
     )
     graph.add_conditional_edges(
-        "call_tool", after_call, {"create_approval": "create_approval", END: END}
+        "call_tool", after_call, {"create_approval": "create_approval", "plan": "plan", END: END}
     )
     graph.add_conditional_edges(
         "create_approval", after_create, {"await_decision": "await_decision", END: END}
@@ -244,4 +307,8 @@ def _shape(state: dict) -> dict:
         "result": state.get("result", {}),
         "reason": state.get("reason", ""),
         "refused_tool": state.get("refused_tool", ""),
+        # A run that took more than one step can say so, and show the path, in the
+        # same shape the caller already reads.
+        "steps": state.get("steps", 0),
+        "observations": state.get("observations") or [],
     }

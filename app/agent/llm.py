@@ -31,7 +31,26 @@ def _tool_manifest(tools: dict) -> str:
     return "\n".join(lines)
 
 
-def _prompt(task: str, tools: dict, unavailable: dict | None = None) -> str:
+# A tool result can be large, and the prompt is rebuilt on every step, so each
+# one is shown truncated. What the model needs is enough to decide the next move,
+# not a full record — the run keeps the whole thing in its own state.
+_MAX_OBSERVATION_CHARS = 600
+
+
+def _observations_text(observations: list[dict]) -> str:
+    lines = []
+    for i, obs in enumerate(observations, start=1):
+        result = json.dumps(obs.get("result", {}), sort_keys=True)
+        if len(result) > _MAX_OBSERVATION_CHARS:
+            result = result[:_MAX_OBSERVATION_CHARS] + "…"
+        args = json.dumps(obs.get("args", {}), sort_keys=True)
+        lines.append(f"{i}. {obs.get('tool')}({args}) -> {result}")
+    return "\n".join(lines)
+
+
+def _prompt(
+    task: str, tools: dict, unavailable: dict | None = None, observations: list[dict] | None = None
+) -> str:
     parts = [
         "You are a customer-support agent. Choose exactly one tool from the "
         "available list to handle the task.\n",
@@ -45,12 +64,21 @@ def _prompt(task: str, tools: dict, unavailable: dict | None = None) -> str:
             "NOT permitted for this user's role (never choose these):\n"
             f"{_tool_manifest(unavailable)}\n\n"
         )
+    if observations:
+        # A second pass: the model is shown what its own calls returned, which is
+        # the whole point of allowing more than one step.
+        parts.append(
+            "You have already done this for the task, in order:\n"
+            f"{_observations_text(observations)}\n\n"
+        )
     parts.append(f'Task: "{task}"\n\n')
     parts.append(
         "If the task needs a tool that is not permitted, or none of the available "
         'tools fits, reply with {"tool": null, "reason": "<why>"}.\n'
         "If a required argument is not in the task, still name the tool and leave "
         "that argument out — never invent one; the user will be asked for it.\n"
+        "If you will need another call after seeing this one's result (for example "
+        'reading a ticket before refunding its order), add "more": true.\n'
         "Otherwise reply with ONLY JSON of the form "
         '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>"}.'
     )
@@ -185,9 +213,13 @@ def _no_tool(fallback: dict | None, reason: str, cause: str) -> dict:
 
 
 def decide_tool(
-    task: str, tools: dict, unavailable: dict | None = None, fallback: dict | None = None
+    task: str,
+    tools: dict,
+    unavailable: dict | None = None,
+    fallback: dict | None = None,
+    observations: list[dict] | None = None,
 ) -> dict:
-    """Return {"tool", "args", "reason"}.
+    """Return {"tool", "args", "reason"} — and "more" when another step is needed.
 
     If the model cannot produce a usable decision we return **no tool** — never a
     different one. Silently substituting another action is worse than failing: a
@@ -202,7 +234,7 @@ def decide_tool(
     #    gateway and a timeout land here. This is an infrastructure fault, and
     #    nothing below it has been observed — least of all the model's answer.
     try:
-        content = _chat(_prompt(task, tools, unavailable))
+        content = _chat(_prompt(task, tools, unavailable, observations))
     except Exception as exc:  # noqa: BLE001 - never block the run on the model
         audit("llm.fallback", cause="unreachable", reason=str(exc)[:200])
         return _no_tool(
@@ -264,7 +296,13 @@ def decide_tool(
                     "clarify": True,
                     "reason": f"{tool.name} needs {', '.join(missing)}",
                 }
-            return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
+            result = {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
+            if decision.get("more"):
+                # The model says it will need a look at this result before it can
+                # finish (S19). Only ever an *extra* step, bounded by the graph —
+                # and a tool wins over this flag, so it can never stop a call.
+                result["more"] = True
+            return result
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])
     except Exception as exc:  # noqa: BLE001 - never block the run on the model
         audit("llm.fallback", cause="unusable", reason=str(exc)[:200])

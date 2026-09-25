@@ -17,8 +17,13 @@ class ToolCallResult:
 
 
 class AgentDeps(Protocol):
-    def decide(self, task: str) -> dict:
-        """Return {"tool": ..., "args": {...}, "reason": ...} for the task."""
+    def decide(self, task: str, observations: list[dict] | None = None) -> dict:
+        """Return {"tool": ..., "args": {...}, "reason": ...} for the task.
+
+        `observations` is what earlier tool calls in this run returned, in order —
+        empty on the first pass. A second pass is only ever asked for when the
+        model asked for it (see `more` in graph.py), so this stays optional.
+        """
         ...
 
     def call_tool(self, tool: str, args: dict, approval_id: str | None) -> ToolCallResult:
@@ -34,15 +39,33 @@ class AgentDeps(Protocol):
 # A scripted implementation for tests and offline demos.
 # ---------------------------------------------------------------------------
 class ScriptedDeps:
-    """Deterministic deps: a fixed plan and queued tool responses."""
+    """Deterministic deps: a fixed plan, or a queue of plans, plus tool responses.
 
-    def __init__(self, plan: dict, responses: list[ToolCallResult]):
+    `plans` is what makes a multi-step run testable: the graph asks for a decision
+    once per step, and each call returns the next scripted answer. Without it the
+    same plan comes back every time, which is exactly the loop the step budget
+    exists to bound.
+    """
+
+    def __init__(
+        self,
+        plan: dict,
+        responses: list[ToolCallResult],
+        plans: list[dict] | None = None,
+    ):
         self._plan = plan
+        self._plans = list(plans) if plans is not None else None
         self._responses = list(responses)
         self.calls: list[dict[str, Any]] = []
         self.approvals_created = 0
+        # What the model was shown on each pass — so a test can assert the run
+        # actually fed its own result back.
+        self.observations_seen: list[list[dict]] = []
 
-    def decide(self, task: str) -> dict:
+    def decide(self, task: str, observations: list[dict] | None = None) -> dict:
+        self.observations_seen.append(list(observations or []))
+        if self._plans:
+            return dict(self._plans.pop(0))
         return dict(self._plan)
 
     def call_tool(self, tool: str, args: dict, approval_id: str | None) -> ToolCallResult:
