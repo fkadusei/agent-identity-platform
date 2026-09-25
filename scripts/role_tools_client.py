@@ -43,19 +43,26 @@ CALLS = [
 
 
 def login(username: str, password: str) -> str:
-    resp = httpx.post(
-        f"{KC}/protocol/openid-connect/token",
-        data={
-            "grant_type": "password",
-            "client_id": "demo-cli",
-            "client_secret": os.environ["DEMO_CLI_SECRET"],
-            "username": username,
-            "password": password,
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+    # A cold Keycloak (right after a restart) can exceed a short timeout on the
+    # first token. One retry settles it, and issuing a token is a read.
+    for attempt in (1, 2):
+        try:
+            resp = httpx.post(
+                f"{KC}/protocol/openid-connect/token",
+                data={
+                    "grant_type": "password",
+                    "client_id": "demo-cli",
+                    "client_secret": os.environ["DEMO_CLI_SECRET"],
+                    "username": username,
+                    "password": password,
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()["access_token"]
+        except httpx.TimeoutException:
+            if attempt == 2:
+                raise
 
 
 def exchange(user_token: str) -> str:

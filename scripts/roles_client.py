@@ -14,11 +14,20 @@ API = "http://api:8080"
 
 
 def login(username: str, password: str) -> dict:
-    resp = httpx.post(
-        f"{API}/auth/login", json={"username": username, "password": password}, timeout=10
-    )
-    resp.raise_for_status()
-    return resp.json()
+    # A cold API/Keycloak (right after a restart) can exceed a short timeout on
+    # the first call. One retry settles it, and a login is a read, so it is safe.
+    for attempt in (1, 2):
+        try:
+            resp = httpx.post(
+                f"{API}/auth/login",
+                json={"username": username, "password": password},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.TimeoutException:
+            if attempt == 2:
+                raise
 
 
 def bearer(token: str) -> dict:
@@ -38,7 +47,7 @@ created = httpx.post(
         "lastName": "Candidate",
         "password": password,
     },
-    timeout=10,
+    timeout=30,
 )
 created.raise_for_status()
 print("   ->", json.dumps(created.json()))
@@ -51,7 +60,7 @@ if carol["tools"]:
     raise SystemExit(f"a user with no roles was offered tools: {carol['tools']}")
 
 print("3. carol tries to administer users (must be refused)")
-resp = httpx.get(f"{API}/admin/users", headers=bearer(carol["access_token"]), timeout=10)
+resp = httpx.get(f"{API}/admin/users", headers=bearer(carol["access_token"]), timeout=30)
 print(f"   -> HTTP {resp.status_code}: {resp.json().get('detail')}")
 if resp.status_code != 403:
     # It said "must be refused" and then printed whatever came back; a 200 would have
@@ -72,13 +81,13 @@ if outcome.get("status") != "refused":
 print("4. admin grants support_rep")
 admin = login("admin", "admin123")
 print("   -> admin roles:", admin["roles"])
-users = httpx.get(f"{API}/admin/users", headers=bearer(admin["access_token"]), timeout=10).json()
+users = httpx.get(f"{API}/admin/users", headers=bearer(admin["access_token"]), timeout=30).json()
 carol_id = next(u["id"] for u in users if u["username"] == username)
 granted = httpx.post(
     f"{API}/admin/users/{carol_id}/roles",
     json={"role": "support_rep"},
     headers=bearer(admin["access_token"]),
-    timeout=10,
+    timeout=30,
 )
 granted.raise_for_status()
 print("   -> carol roles now:", granted.json()["roles"])

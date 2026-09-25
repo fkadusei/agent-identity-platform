@@ -22,16 +22,23 @@ failures = 0
 
 
 def login(username, password, client_id, secret):
-    resp = httpx.post(
-        f"{KC}/protocol/openid-connect/token",
-        data={
-            "grant_type": "password", "client_id": client_id, "client_secret": secret,
-            "username": username, "password": password,
-        },
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()["access_token"]
+    # A cold Keycloak (right after a restart) can exceed a short timeout on the
+    # first token. One retry settles it, and issuing a token is a read.
+    for attempt in (1, 2):
+        try:
+            resp = httpx.post(
+                f"{KC}/protocol/openid-connect/token",
+                data={
+                    "grant_type": "password", "client_id": client_id, "client_secret": secret,
+                    "username": username, "password": password,
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()["access_token"]
+        except httpx.TimeoutException:
+            if attempt == 2:
+                raise
 
 
 def tool_token(user_token):
