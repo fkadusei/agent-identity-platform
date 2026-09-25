@@ -64,12 +64,12 @@ class LiveDeps:
         allowed = tools_for_roles(self._settings.opa_url, self._roles, self._tenant)
         return {name: tool for name, tool in TOOLS.items() if name in allowed}
 
-    def decide(self, task: str) -> dict:
+    def decide(self, task: str, observations: list[dict] | None = None) -> dict:
         allowed = self.allowed_tools()
         # Tell the model what it may NOT use too, and refuse deterministically if
         # it asks for one of those (see decide_tool).
         unavailable = {name: tool for name, tool in TOOLS.items() if name not in allowed}
-        return decide_tool(task, allowed, unavailable)
+        return decide_tool(task, allowed, unavailable, observations=observations)
 
     def call_tool(self, tool: str, args: dict, approval_id: str | None) -> ToolCallResult:
         body = dict(args)

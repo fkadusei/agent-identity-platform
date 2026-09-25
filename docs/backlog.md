@@ -697,28 +697,41 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   missing → refused" case rewritten deliberately), and the live paths
   (demo, attacks, tenancy) unchanged.
 
-## S19 — The agent takes more than one step (bounded loop) — **open**
+## S19 — The agent takes more than one step (bounded loop) — **done**
 
 - **What:** a task that needs two calls — "refund the order from the last ticket"
-  — cannot be done at all today, because the graph makes exactly one tool call and
-  ends.
-- **Why:** the second half of the agent-upgrade work, and the one that makes the
-  agent useful for anything but single-hop requests. S18 landed first so a
-  multi-step run can be multi-*turn* before it is multi-*step*.
-- **Design, agreed before building:**
-  - completion is a **state**, not a property of "no tool": the reply may carry an
-    `answer`, which becomes `status: "answered"`. The alternative — a `finish`
-    tool — was considered and deferred: it would put a no-op into the catalogue,
-    require a grant in `policy/authz.rego`, and add a `tool.allowed` event to every
-    finished run. Isolating completion behind one transition keeps that open as a
-    later change.
-  - one new edge, `call_tool → plan`, with an observation in state and a step
-    budget (three). Policy and the enforcement point are untouched: the loop
-    changes what is *attempted*, never what is *permitted*.
-- **Lands in:** `app/agent/{graph,llm,evals}.py`, the web app (a step trace), and
-  the pages that describe the flow.
-- **Verified by:** graph tests (the loop stops at the budget, the same call is not
-  repeated), a multi-step eval case, and the existing suites.
+  — could not be done at all, because the graph made exactly one tool call and
+  ended.
+- **Why:** the second half of the agent-upgrade work. S18 landed first so a
+  multi-step run could be multi-*turn* before it was multi-*step*.
+- **Built:**
+  - One new edge, `call_tool → plan`, and `observations` in the state: what each
+    call returned, in order, shown to the model on the next pass (truncated for
+    the prompt; the run keeps the whole thing).
+  - **The loop is opt-in from the model, and that is a change from the agreed
+    design.** The plan was for every successful run to go round again so the model
+    could declare itself finished — which would have made a single-step task take
+    two model calls and end as `answered` rather than `ok`, changing the outcome
+    contract the demo, the UI and the tests all read. Instead the reply may carry
+    `"more": true`, and a run that does not ask stops after one call. Completion is
+    therefore expressed by *not* asking for more, which needed no new terminal
+    status and no unvalidated model prose in the result.
+  - **`MAX_STEPS = 3`**, counted in calls that *happened* — a denial or a hold
+    teaches the model nothing, so a run cannot loop on those.
+  - **The same call is never made twice.** A repeat is a second real action (a
+    second refund) for no new information, and the check sits in `call_tool`,
+    before the call, where no routing can bypass it. It compares against
+    *observations*, so the held attempt of an approved refund — not a step, and not
+    an observation — is correctly allowed through.
+  - `AgentDeps.decide` grew an optional `observations` argument; `ScriptedDeps`
+    grew a queue of decisions, which is what makes a multi-step run testable.
+- **Lands in:** `app/agent/{deps,llm,graph,live,evals}.py`, the web app (the path
+  a multi-step run took), `docs/site/agent-flow.html`, `docs/guardrails-and-evals.md`.
+- **Verified by:** graph tests (a single-step run is unchanged — one model call,
+  one tool call, `ok`; a second step sees the first result; the budget stops a
+  model that would never stop; a recorded repeat is refused; an approval in the
+  middle is a pause and the loop continues after it), the stubbed evals in CI (12
+  cases now), and the live suites after the rebuild.
 
 ## Not slices (documented limits)
 

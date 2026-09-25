@@ -535,6 +535,8 @@ function ResultCard({
 }) {
   const held = outcome.status === "approval_required";
   const asking = outcome.status === "clarification_required";
+  // A multi-step run carries what each call returned, in order.
+  const path: any[] = outcome.observations || [];
   const [decided, setDecided] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
@@ -583,6 +585,11 @@ function ResultCard({
               <>
                 It chose <code>{outcome.tool}</code> but will not invent the argument
                 it needs
+              </>
+            ) : path.length > 1 ? (
+              <>
+                It made <b>{path.length} calls</b>, in order:{" "}
+                {path.map((o: any) => o.tool).join(" → ")}
               </>
             ) : (
               <>

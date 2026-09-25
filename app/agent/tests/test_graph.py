@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from app.agent.deps import ScriptedDeps, ToolCallResult
-from app.agent.graph import MAX_ASKS, build_agent, resume_task, run_task
+from app.agent.graph import MAX_ASKS, MAX_STEPS, build_agent, resume_task, run_task
 
 PLAN = {"tool": "refunds.issue", "args": {"order_id": "o-1001", "amount": 200}, "reason": "refund"}
 ASK = {
@@ -153,10 +153,128 @@ def test_a_partial_answer_is_asked_for_again():
     assert deps.calls[0]["args"] == {"order_id": "o-1001", "amount": 25}
 
 
+# ---------------------------------------------------------------------------
+# S19 — more than one step, but only when the model asks and only within budget
+# ---------------------------------------------------------------------------
+TICKET = {"tool": "tickets.read", "args": {"ticket_id": "t-1"}, "more": True}
+
+
+def test_one_step_is_unchanged_when_the_model_does_not_ask_for_more():
+    """The whole reason the loop is opt-in: a simple task stays one call, and its
+    outcome stays `ok`, so nothing downstream has to learn a new state."""
+    deps = ScriptedDeps(PLAN, [ToolCallResult("ok", result={"id": "r-0001"})])
+    out = run_task(build_agent(deps), "refund o-1001", "t-single", "user-token")
+
+    assert out["status"] == "ok"
+    assert out["steps"] == 1
+    assert len(deps.calls) == 1
+    # And the model was only asked once.
+    assert len(deps.observations_seen) == 1
+
+
+def test_a_second_step_sees_what_the_first_one_returned():
+    plans = [
+        TICKET,
+        {"tool": "refunds.issue", "args": {"order_id": "o-1001", "amount": 200}},
+    ]
+    deps = ScriptedDeps(
+        {},
+        [ToolCallResult("ok", result={"body": "my mug arrived broken"}),
+         ToolCallResult("ok", result={"id": "r-0009"})],
+        plans=plans,
+    )
+    out = run_task(build_agent(deps), "refund the order from the last ticket", "t-two", "tok")
+
+    assert out["status"] == "ok"
+    assert out["result"] == {"id": "r-0009"}
+    assert out["steps"] == 2
+    assert [c["tool"] for c in deps.calls] == ["tickets.read", "refunds.issue"]
+    # The second decision was made with the first call's result in hand — that is
+    # the entire feature: without it the model is guessing.
+    assert deps.observations_seen[0] == []
+    assert deps.observations_seen[1][0]["tool"] == "tickets.read"
+    assert deps.observations_seen[1][0]["result"] == {"body": "my mug arrived broken"}
+
+
+def test_the_loop_stops_at_the_step_budget():
+    def step(i: int) -> dict:
+        return {"tool": "crm.customer.read", "args": {"customer_id": f"c-{i}"}, "more": True}
+
+    deps = ScriptedDeps(
+        {},
+        [ToolCallResult("ok", result={"n": i}) for i in range(MAX_STEPS + 2)],
+        plans=[step(i) for i in range(MAX_STEPS + 2)],
+    )
+    out = run_task(build_agent(deps), "keep going", "t-budget", "tok")
+
+    assert out["status"] == "ok"
+    assert out["steps"] == MAX_STEPS
+    assert len(deps.calls) == MAX_STEPS
+    # It is not asked for a fourth decision: the budget stops the run, not the model.
+    assert len(deps.observations_seen) == MAX_STEPS
+
+
+def test_the_same_call_is_not_made_twice():
+    """A repeat would be a second real action for no new information — a second
+    refund. The check is in the node that acts, so it cannot be routed around."""
+    same = {"tool": "refunds.issue", "args": {"order_id": "o-1001", "amount": 200}, "more": True}
+    deps = ScriptedDeps(
+        same,
+        [ToolCallResult("ok", result={"id": "r-0001"}), ToolCallResult("ok", result={"id": "r-0002"})],
+    )
+    out = run_task(build_agent(deps), "refund it twice", "t-dup", "tok")
+
+    assert len(deps.calls) == 1
+    assert out["status"] == "ok"
+    assert out["result"] == {"id": "r-0001"}
+    assert "already made" in out["reason"]
+
+
+def test_an_approval_inside_the_loop_does_not_end_the_run():
+    """The pause is a step in the middle, not the end of the task: once decided,
+    the loop carries on with what it has learned."""
+    plans = [
+        TICKET,
+        {"tool": "refunds.issue", "args": {"order_id": "o-1001", "amount": 200}, "more": True},
+        {"tool": "tickets.read", "args": {"ticket_id": "t-1"}},
+    ]
+    deps = ScriptedDeps(
+        {},
+        [
+            ToolCallResult("ok", result={"body": "broken mug"}),
+            ToolCallResult("approval_required", reason="needs manager"),
+            ToolCallResult("ok", result={"id": "r-0010"}),
+            ToolCallResult("ok", result={"body": "broken mug"}),
+        ],
+        plans=plans,
+    )
+    agent = build_agent(deps)
+
+    # Step 1 happens, step 2 is held, and the run surfaces the hold.
+    held = run_task(agent, "refund the order from the ticket, then check it", "t-loop", "tok")
+    assert held["status"] == "approval_required"
+    assert deps.approvals_created == 1
+
+    final = resume_task(agent, "t-loop", {"approved": True})
+    assert final["status"] == "ok"
+    # Three *steps* (calls that happened), across four attempts at the tool
+    # server — the held one repeated with its approval, which is not a step and
+    # not an observation, so the no-repeat guard correctly lets it through.
+    assert final["steps"] == 3
+    assert [c["tool"] for c in deps.calls] == [
+        "tickets.read",
+        "refunds.issue",
+        "refunds.issue",
+        "tickets.read",
+    ]
+    assert deps.calls[1]["approval_id"] is None
+    assert deps.calls[2]["approval_id"] == "ap-scripted"
+
+
 class _RaisingDeps:
     """A downstream failure (e.g. a refused token exchange) must not 500."""
 
-    def decide(self, task: str) -> dict:
+    def decide(self, task: str, observations=None) -> dict:
         return PLAN
 
     def call_tool(self, *_args, **_kwargs):
