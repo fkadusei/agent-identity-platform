@@ -190,8 +190,8 @@ End-to-end, on the cluster:
 ## Immediate next task
 
 Phases 1–3 are complete, every threat is addressed, and **S1–S22 are done**. What
-remains is one open slice and two loose ends — all three are small and each is
-written up where it lands:
+remains is one open slice and one loose end — both are small and each is written up
+where it lands:
 
 1. **S17 — provider-agnostic models** (the only open slice). Two defects in the
    hosted-provider branch, both found by reading it: the forwarder sends no model,
@@ -201,13 +201,14 @@ written up where it lands:
    concrete case that turns on — a multi-step run re-exposes a `privacy.pii.read`
    result to whichever model the gateway points at — and deliberately left the
    control here.
-2. **`demo-roles.sh` is flaky** (roughly one run in five, right after a restart):
-   the client scripts use `timeout=10` on the login/admin calls while the model call
-   gets 60, so a cold first call can time out. A one-line hardening — raise them, or
-   retry once — settles it. See Known issues.
-3. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
+2. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
    live key, and documented in [`docs/ha.md`](docs/ha.md) and question 12 of the
    pages. No action unless you want HA identity on by default.
+
+Recently closed: **the `demo-roles.sh` cold-start flakiness.** The login helpers in
+the client scripts (`roles`, `demo`, `attack`, `role_tools`, `tenancy`) now use a
+30s timeout and retry once on a timeout, and the admin/approval calls use 30s, so
+the first call after a restart no longer loses the race.
 
 Done, kept for the record:
  **S1** (SPIRE's registry is durable, and the KeyManager is
@@ -279,11 +280,6 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 
 ## Known issues / gotchas
 
-- **`demo-roles.sh` can time out once, right after a restart.** The client scripts
-  use `timeout=10` on the login and admin calls (`scripts/roles_client.py` and its
-  siblings) while the model call gets 60s, so a cold first call loses the race. It
-  passed 5–6 runs in a row once warm, and re-running clears it. Fix (not done):
-  raise those timeouts, or retry once. Seen intermittently; not a correctness bug.
 - **Keycloak is durable now** (S2): its realm and users live in Postgres, the
   realm is imported by a Job with `--override=false`, and `setup.sh` no longer
   recreates it — so accounts enrolled at runtime survive a re-run. Consequence,

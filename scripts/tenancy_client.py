@@ -16,13 +16,20 @@ AGENT = "spiffe://acme.com/ns/agent-platform/sa/agent"
 
 
 def login(username: str, password: str) -> dict:
-    resp = httpx.post(
-        f"{API}/auth/login",
-        json={"username": username, "password": password},
-        timeout=10,
-    )
-    resp.raise_for_status()
-    return resp.json()
+    # A cold API/Keycloak (right after a restart) can exceed a short timeout on
+    # the first call. One retry settles it, and a login is a read, so it is safe.
+    for attempt in (1, 2):
+        try:
+            resp = httpx.post(
+                f"{API}/auth/login",
+                json={"username": username, "password": password},
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except httpx.TimeoutException:
+            if attempt == 2:
+                raise
 
 
 def decide(input_doc: dict) -> str:
