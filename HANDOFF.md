@@ -16,9 +16,9 @@
   Kubernetes cluster (kind) and has grown a set of production-hardening slices
   beyond the original plan. The 2026-09-16 gateway outage is fixed — see S13 and
   S15 in [`docs/backlog.md`](docs/backlog.md). **S18** taught the agent to ask for a
-  missing argument instead of refusing, and **S19** lets it take more than one
-  bounded step; the agent-upgrade work is complete. **S17** (cloud providers) is
-  the one open slice.
+  missing argument instead of refusing, **S19** lets it take more than one bounded
+  step, and **S20** stops it inventing an identifier; the agent-upgrade work is
+  complete. **S17** (cloud providers) is the one open slice.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-09-24
 
@@ -183,8 +183,9 @@ tool maps), **S9** (the sandbox keeps its own data), **S10** (the privacy view,
 Postgres restart), **S13** (stop blaming the model for infrastructure faults),
 **S14** (the scripts pin their cluster context), **S15** (the gateway must not
 serve an expired SVID), **S16** (a hung process restarts itself), **S18** (the
-agent asks for a missing argument instead of refusing) and **S19** (the agent
-takes more than one bounded step).
+agent asks for a missing argument instead of refusing), **S19** (the agent
+takes more than one bounded step) and **S20** (the agent passes identifiers along
+instead of inventing them).
 
 ## The repository is public
 

@@ -70,3 +70,48 @@ def check_decision(tool: Tool, args: dict) -> list[str]:
     """
     required = (tool.input_schema or {}).get("required") or []
     return [name for name in required if args.get(name) in (None, "")]
+
+
+def identifier_args(tool: Tool) -> list[str]:
+    """The tool's required arguments that name something that exists in the world.
+
+    The convention is the `_id` suffix — `customer_id`, `order_id`, `ticket_id`.
+    These are facts the model cannot reason its way to; it either saw one or it is
+    guessing, which is the distinction `resolve_identifiers` enforces.
+    """
+    required = (tool.input_schema or {}).get("required") or []
+    return [name for name in required if name.endswith("_id")]
+
+
+def resolve_identifiers(
+    tool: Tool, args: dict, seen: set[str], from_task: dict
+) -> tuple[dict, list[str]]:
+    """Keep only the identifiers the model could have seen — never let it invent one.
+
+    `seen` is the set of identifiers the model has been shown: those written in the
+    task, and those an earlier call returned in this run. A value outside that set
+    is a guess rather than a proposal, so it is replaced by whatever the *task* said
+    (if it said anything — the person's words outrank the model's) and otherwise
+    removed, which routes the call into a question instead of an action against the
+    wrong record.
+
+    Membership of a set, not a search of the text: a model that answers
+    `"order_id": "order"` has used a word that happens to appear in the task, and
+    `"order_id": "order_id"` a field name that does not appear at all. Neither is an
+    identifier, so neither is seen.
+
+    Returns the corrected arguments and the names whose value could not have been
+    seen, so the caller can record that it happened.
+    """
+    kept = dict(args)
+    invented: list[str] = []
+    for name in identifier_args(tool):
+        value = kept.get(name)
+        if value in (None, "") or str(value) in seen:
+            continue
+        invented.append(name)
+        if from_task.get(name) not in (None, ""):
+            kept[name] = from_task[name]
+        else:
+            kept.pop(name, None)
+    return kept, invented

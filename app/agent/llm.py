@@ -19,7 +19,7 @@ import httpx
 
 from agentnhi import audit
 
-from app.agent.guardrails import check_decision
+from app.agent.guardrails import check_decision, resolve_identifiers
 
 
 def _tool_manifest(tools: dict) -> str:
@@ -84,6 +84,12 @@ def _prompt(
     return "".join(parts)
 
 
+# What an identifier looks like in this platform: a short prefix, a dash, digits
+# (o-1001, c-100, t-5001). The same shape `_extract_args` reads out of a task, so
+# "the task named one" and "this looks like one" cannot drift apart.
+_ID_TOKEN = re.compile(r"\b([oct]-\d+)\b")
+
+
 def _extract_args(task: str) -> dict:
     """Best-effort arguments pulled from the task text.
 
@@ -93,7 +99,7 @@ def _extract_args(task: str) -> dict:
     model's formatting.
     """
     args: dict = {}
-    ref = re.search(r"\b([oct]-\d+)\b", task)
+    ref = _ID_TOKEN.search(task)
     if ref:
         value = ref.group(1)
         args[{"o": "order_id", "c": "customer_id", "t": "ticket_id"}[value[0]]] = value
@@ -113,6 +119,19 @@ def _fill_gaps(tool, args: dict, task: str) -> dict:
     from app.common.schema import coerce_args
 
     return coerce_args(properties, args)
+
+
+def _seen_identifiers(task: str, observations: list[dict] | None) -> set[str]:
+    """The identifiers the model has been shown — in the task, or in a tool result.
+
+    A set of *tokens that look like identifiers*, not the raw text: the model answering
+    `"order_id": "order"` has used a word from the task, and "order" is not an
+    identifier however often it appears.
+    """
+    seen = set(_ID_TOKEN.findall(task))
+    for obs in observations or []:
+        seen |= set(_ID_TOKEN.findall(json.dumps(obs, sort_keys=True)))
+    return seen
 
 
 def _mtls_client() -> httpx.Client:
@@ -280,6 +299,15 @@ def decide_tool(
         if chosen in tools:
             tool = tools[decision["tool"]]
             args = _fill_gaps(tool, dict(decision.get("args") or {}), task)
+            # An identifier the model has not been shown is a guess, not a
+            # proposal (S20): the person may have named it, and if they did their
+            # words win; if they did not, the argument goes back to being missing
+            # and the run asks rather than acting on the wrong record.
+            args, invented = resolve_identifiers(
+                tool, args, _seen_identifiers(task, observations), _extract_args(task)
+            )
+            if invented:
+                audit("llm.identifier_invented", tool=tool.name, args=",".join(invented))
             missing = check_decision(tool, args)
             if missing:
                 # A required argument the task does not contain. This is the one
