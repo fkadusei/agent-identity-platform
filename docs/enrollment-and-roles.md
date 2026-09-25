@@ -62,6 +62,48 @@ roles, which the UI uses to decide what to show.
 Demo accounts: `alice`/`alice123` (support_rep), `manager`/`manager123`
 (manager), `admin`/`admin123` (platform_admin).
 
+## Seeing it in Keycloak
+
+These users are not in the app. The app keeps no user table: it verifies a token
+Keycloak issued and reads `sub`, the realm roles and the `tenant` attribute from
+it. To confirm that for yourself, ask Keycloak.
+
+From the terminal, one command. It runs inside the API pod and reuses the API's
+own least-privilege client (`platform-admin`: `manage-users` + read-roles), so
+there is nothing to set up and no admin password involved:
+
+```bash
+./scripts/show-keycloak-users.sh
+```
+
+For the admin console itself, two one-time steps — a hosts entry and a
+port-forward:
+
+```bash
+echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts      # once
+kubectl --context kind-agent-platform -n agent-platform port-forward svc/keycloak 8080:8080
+```
+
+Then open <http://keycloak:8080/admin> and sign in as `admin` / `admin`. Switch
+the realm selector to **agent-platform** → **Users**. Per user, **Role mapping**
+is the realm role and **Attributes** is the tenant.
+
+Two things that will puzzle you otherwise:
+
+- Browsing `localhost:8080` does not work. `KC_HOSTNAME_STRICT=true` pins the
+  console to `http://keycloak:8080`, so the browser has to resolve that name —
+  hence the hosts entry, and why the redirect otherwise dead-ends.
+- The realm holds more users than the demo. `carol-*`, `norole` and `survivor`
+  are written by the suites (`demo-roles.sh`, the admin and tenancy tests). The
+  realm is a live database and the tests use it, which is worth saying out loud
+  when demonstrating rather than hiding.
+
+The console is reachable **only** by port-forward: the ingress routes `/` to the
+API (`deploy/kind/manifests/edge/ingress.yaml`), so no admin console is exposed
+at the edge — `admin`/`admin` on a public hostname would be the worst day. That
+credential is demo-only, used once to create the master realm on a fresh
+database.
+
 ## Try it end to end
 
 ```bash
