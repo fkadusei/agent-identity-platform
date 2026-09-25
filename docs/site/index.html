@@ -280,11 +280,11 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
     <b>The claim, stated so it can be checked</b>
     There is no static credential between the components of this platform. Not between the
     agent and the tools, not between the API and Keycloak, not between the services and the
-    database. <code>docs/threat-model.md</code> lists ten threats and names the test that
+    database. <code>docs/threat-model.md</code> lists eleven threats and names the test that
     addresses each; <a href="#verified">§17</a> shows how to run them.
   </div>
 
-  <h3>The ten threats it is designed against</h3>
+  <h3>The eleven threats it is designed against</h3>
   <p>These come from the project's own threat model, and they are the yardstick every
     design decision is measured against.</p>
   <table>
@@ -300,6 +300,7 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
       <tr><td><b>T8</b> PII exposure via the model</td><td>Personal data reaching the provider</td><td>The gateway is the only thing holding the model credential; PII needs its own role and approval (<a href="#gateway">§10</a>)</td></tr>
       <tr><td><b>T9</b> Cross-tenant leakage</td><td>One customer seeing another's data</td><td>The tenant is an identity claim, scoped at every layer (<a href="#tenancy">§12</a>)</td></tr>
       <tr><td><b>T10</b> Supply chain</td><td>A tampered image or policy</td><td>Keyless signing and an admission policy (<a href="#ci">§15</a>)</td></tr>
+      <tr><td><b>T11</b> A multi-step run keeps and re-shows tool results</td><td>Personal data read at step 1 lingering in the run's state and reaching the model at step 2</td><td>Accepted and bounded: synthetic data, a local model by default, and the audit records <i>that</i> a read happened, not what it returned (<a href="#data">§13</a>)</td></tr>
     </tbody>
   </table>
 </section>
@@ -1645,7 +1646,7 @@ thinking: '{"tool": "refunds.quote", "args": {} }'   ← correct, and ignored</p
       <tr><td>A machine caller's name rides a JWT-SVID, not the certificate</td><td>Our ASGI server does not expose the peer certificate. The name is audience-bound, five minutes, never logged — but it is a bearer token, not a SAN assertion.</td></tr>
       <tr><td>The mesh must be present for third-party encryption</td><td>Without it, those hops are plaintext — and setup says so rather than pretending.</td></tr>
       <tr><td>Cross-tenant isolation is enforced in the application and the policy</td><td>Not by separate databases or clusters. For a shared deployment of this shape that is the right trade; for stricter isolation you would go further.</td></tr>
-      <tr><td>The threat model covers ten threats</td><td>It does not claim to cover categories outside it — availability under deliberate attack, or the security of the model provider's own systems, are out of scope and named as such.</td></tr>
+      <tr><td>The threat model covers eleven threats</td><td>It does not claim to cover categories outside it — availability under deliberate attack, or the security of the model provider's own systems, are out of scope and named as such.</td></tr>
     </tbody>
   </table>
 </section>
@@ -1797,7 +1798,7 @@ thinking: '{"tool": "refunds.quote", "args": {} }'   ← correct, and ignored</p
   <table>
     <thead><tr><th>Read</th><th>For</th></tr></thead>
     <tbody>
-      <tr><td class="mono">threat-model.md</td><td>The ten threats, the mitigation, and the test for each</td></tr>
+      <tr><td class="mono">threat-model.md</td><td>The eleven threats, the mitigation, and the test for each</td></tr>
       <tr><td class="mono">decisions/ADR-0012-transport-identity.md</td><td>Why SPIFFE here and the mesh there, and what the boundary costs</td></tr>
       <tr><td class="mono">tls.md</td><td>Transport security, the verification output, and the residuals</td></tr>
       <tr><td class="mono">policy-lifecycle.md</td><td>How policy is written, versioned, signed and shipped</td></tr>

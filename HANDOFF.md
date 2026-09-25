@@ -18,8 +18,9 @@
   S15 in [`docs/backlog.md`](docs/backlog.md). **S18** taught the agent to ask for a
   missing argument instead of refusing, **S19** lets it take more than one bounded
   step, **S20** stops it inventing an identifier, and **S21** stops "allowed" reading
-  as "it happened"; the agent-upgrade work is complete. **S17** (cloud providers) is
-  the one open slice.
+  as "it happened"; the agent-upgrade work is complete, and **S22** writes down what
+  that loop now keeps and re-exposes. **S17** (cloud providers) is the one open
+  slice.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-09-25
 
@@ -188,28 +189,23 @@ End-to-end, on the cluster:
 
 ## Immediate next task
 
-Phases 1–3 are complete, every threat is addressed, and **S1–S21 are done**. What
-remains is one open slice and three loose ends — all four are small and each is
+Phases 1–3 are complete, every threat is addressed, and **S1–S22 are done**. What
+remains is one open slice and two loose ends — all three are small and each is
 written up where it lands:
 
 1. **S17 — provider-agnostic models** (the only open slice). Two defects in the
    hosted-provider branch, both found by reading it: the forwarder sends no model,
    and it forwards a JSON hint a strict provider may reject. The *interesting* half
    is the policy question: may a cloud model see the personal data the agent can
-   read under approval? Local-only means it cannot, today.
-2. **Two S19 consequences worth documenting** — they are behaviour, not bugs, and
-   they belong in [`docs/threat-model.md`](docs/threat-model.md) and
-   [`docs/privacy.md`](docs/privacy.md):
-   - a run's **checkpoint now holds what each tool returned**, so a PII read inside
-     a multi-step run leaves the data in the run's state, not only in the response;
-   - a **high-risk result is fed back into the next prompt** on a second step, so
-     whatever a PII tool returned is shown to the model. It sharpens item 1: it is
-     the concrete case the cloud-model question turns on.
-3. **`demo-roles.sh` is flaky** (roughly one run in five, right after a restart):
+   read under approval? Local-only means it cannot, today. **S22** documented the
+   concrete case that turns on — a multi-step run re-exposes a `privacy.pii.read`
+   result to whichever model the gateway points at — and deliberately left the
+   control here.
+2. **`demo-roles.sh` is flaky** (roughly one run in five, right after a restart):
    the client scripts use `timeout=10` on the login/admin calls while the model call
    gets 60, so a cold first call can time out. A one-line hardening — raise them, or
    retry once — settles it. See Known issues.
-4. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
+3. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
    live key, and documented in [`docs/ha.md`](docs/ha.md) and question 12 of the
    pages. No action unless you want HA identity on by default.
 
@@ -228,8 +224,9 @@ Postgres restart), **S13** (stop blaming the model for infrastructure faults),
 serve an expired SVID), **S16** (a hung process restarts itself), **S18** (the
 agent asks for a missing argument instead of refusing), **S19** (the agent
 takes more than one bounded step), **S20** (the agent passes identifiers along
-instead of inventing them) and **S21** (a tool's own "no" is reported and
-recorded, instead of a bare "allowed").
+instead of inventing them), **S21** (a tool's own "no" is reported and
+recorded, instead of a bare "allowed") and **S22** (what the loop keeps and
+re-exposes is written down and accepted, not prevented).
 
 ## The repository is public
 
@@ -381,7 +378,7 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 | `start.sh` / `status.sh` / `stop.sh` | one-command bring-up / check / stop |
 | `SECURITY.md` | security invariants + private reporting |
 | `CONTRIBUTING.md` | how to contribute |
-| `docs/threat-model.md` | 10 threats, mitigations, and the test for each |
+| `docs/threat-model.md` | 11 threats, mitigations, and the test for each |
 | `docs/roles-and-tools.md` | the role → tool matrix |
 | `docs/guardrails-and-evals.md` | the agent's guardrails and the eval suite |
 | `docs/privacy.md` | the PII tool, its approval gate, the access trail |

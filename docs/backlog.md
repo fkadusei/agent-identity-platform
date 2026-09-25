@@ -800,7 +800,7 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Verified by:** an enforcement test that both events are recorded in order and
   that a normal answer raises none; the reported task replayed live.
 
-## S22 — Document what the loop stores and re-exposes — **open**
+## S22 — Document what the loop stores and re-exposes — **done**
 
 - **What:** two consequences of S19's multi-step loop that are behaviour rather
   than defects, and are not yet written where they belong.
@@ -815,16 +815,26 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
     PII tool returned is shown to the model. With a local model nothing leaves the
     building; the moment the gateway points at a cloud provider, this is the hop
     that would carry it off-site.
-- **Where it lands:** `docs/threat-model.md` (a threat entry with its mitigation or
-  its accepted risk) and `docs/privacy.md` (the storage and retention question), and
-  a sentence on `docs/site/agent-flow.html` §9 where the loop is described.
-- **Decision needed, not work:** whether to accept both as documented behaviour, or
-  constrain them — e.g. do not retain observation contents for PII tools, and/or let
-  policy decide that a run which read PII may only continue with a local model. That
-  second option is the concrete form of **S17**'s policy question, which is why this
-  is worth settling first.
-- **Verified by:** the docs naming the concrete case (a `privacy.pii.read` as step 1
-  of a two-step run) and stating plainly which of the two options was chosen.
+- **Decision taken: accept both, documented and bounded — not prevented.** The data
+  is synthetic (ADR-0006), the model is local by default, the audit records *that* a
+  read happened and not what it returned, and a run's state lives only as long as
+  the run. Constraining them — dropping observation contents for PII tools, or
+  making "a run that read PII may continue only on a local model" a policy decision
+  — is **S17**'s policy question, and is deliberately left there rather than
+  pre-empted here.
+- **Built:** `docs/threat-model.md` gains **T11** (the threat, the accepted-risk
+  mitigation, and the test that demonstrates it), `docs/privacy.md` gains "What a
+  run keeps, and for how long" (the storage and retention answer, with the four
+  bounds), and `docs/site/agent-flow.html` §9 gains a callout next to the loop. The
+  live pages' threat count moves ten → eleven, with the T11 row, so the summary
+  cannot drift from the model.
+- **Verified by:** the docs naming the concrete case — a `privacy.pii.read` as step
+  1 of a two-step run — and stating plainly that both consequences are accepted
+  rather than prevented, with the cloud-model control deferred to S17. The
+  demonstration test is
+  `test_a_second_step_sees_what_the_first_one_returned`
+  (`app/agent/tests/test_graph.py`); `scripts/check-docs-pages.py` keeps the pages
+  and their quoted lines consistent.
 
 ## Not slices (documented limits)
 

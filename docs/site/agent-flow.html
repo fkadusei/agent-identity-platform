@@ -1971,6 +1971,18 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
 MAX_STEPS = 3</pre>
   </div>
 
+  <div class="callout warn">
+    <b>What the loop keeps, and re-exposes</b>
+    Carrying a result in state is the feature, and it has two consequences worth naming
+    (S22). A run's checkpoint now holds what each tool returned, so a
+    <code>privacy.pii.read</code> as step 1 of a two-step run leaves the personal data in
+    the run's state for as long as the run exists. And the previous result is fed back into
+    the next prompt, so it reaches whichever model the gateway points at — local by default,
+    which keeps it on-premises today. Both are accepted and bounded rather than prevented;
+    the control for the cloud case is the policy question in S17. See
+    <code>docs/threat-model.md</code> (T11) and <code>docs/privacy.md</code>.
+  </div>
+
   <h3>What does <i>not</i> change</h3>
   <table>
     <thead><tr><th>Unchanged</th><th>Why it can stay unchanged</th></tr></thead>

@@ -106,6 +106,26 @@ commit SHAs (mutable tags can be repointed); SBOM (Syft); Trivy scans; SAST
 policy bundle signed keyless (ADR-0010).
 **Test.** CI jobs (`.github/workflows/security.yml`) fail on findings.
 
+## T11 — A multi-step run retains and re-exposes what its tools returned
+
+**Threat.** A run that makes more than one call keeps what each call returned in
+its checkpointed state, and shows the previous result to the model on the next
+step. A `privacy.pii.read` as the first step of a two-step run therefore leaves the
+personal data in Postgres for as long as the run exists — and, once the gateway
+points at a cloud provider, carries it to that provider on the second step.
+**Mitigation.** **Accepted, bounded, and documented — not prevented.** The data is
+synthetic (ADR-0006); the model is local by default, so nothing leaves the building
+today; the audit records *that* a PII read happened, not what it returned; and a
+run's state lives only as long as the run. The control that would close the cloud
+case is **S17**'s policy question — whether a run that read PII may only continue on
+a local model — which is deliberately not built yet. See [`privacy.md`](privacy.md)
+for the storage and retention answer.
+**Test.** `test_a_second_step_sees_what_the_first_one_returned`
+(`app/agent/tests/test_graph.py`) is the demonstration: the second decision is made
+with the first call's result in hand, which is exactly the exposure being accepted.
+The mitigation is the documentation itself, checked by
+`scripts/check-docs-pages.py`.
+
 ---
 
 ## Out of scope (documented, not hidden)
