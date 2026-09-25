@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Questions, answered — Agent Identity Platform</title>
+<meta name="description" content="The questions I asked about this platform, and what the code and the running cluster actually do: where the users live, how many agents there are, why the agent asks before it acts, and what a lifecycle for many agents would look like." />
+<style>
+/* ==========================================================================
+   A third page beside docs/site/index.html and agent-flow.html, deliberately
+   self-contained in the same way: no build, no dependencies, the same visual
+   language. This one is a growing log of questions — each answer grounded in a
+   file or in a command that was actually run.
+   ========================================================================== */
+:root{
+  --bg:#0b0f16; --bg2:#0e131c; --surface:#131a24; --surface2:#182231; --surface3:#1d2938;
+  --line:#24304a; --line2:#1c2536; --line3:#33415c;
+  --ink:#e8eef7; --ink2:#c3cedd; --muted:#8d9bb0; --faint:#64738a;
+  --accent:#8fb4ff; --accent2:#b6ccff; --accent-soft:#16233c; --accent-line:#2f4770;
+  --green:#6ee7a8; --green-soft:#10281d; --green-line:#245139;
+  --amber:#f0c56a; --amber-soft:#2a2110; --amber-line:#4f3f1c;
+  --red:#ff9d92; --red-soft:#2b1513; --red-line:#572824;
+  --violet:#b9a3ff; --violet-soft:#1b1730; --violet-line:#362a5c;
+  --teal:#5fd3c0; --teal-soft:#0f2624; --teal-line:#1f4d47;
+  --r:10px; --r2:14px; --shadow:0 6px 20px -8px rgb(0 0 0/.55);
+  --sans:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:dark;
+}
+html[data-theme="light"]{
+  --bg:#f7f9fc; --bg2:#eef2f8; --surface:#ffffff; --surface2:#f4f7fb; --surface3:#eaeff7;
+  --line:#d7e0ee; --line2:#e4eaf4; --line3:#bcc9dd;
+  --ink:#101826; --ink2:#2a3a52; --muted:#5a6b85; --faint:#8194ad;
+  --accent:#2f63c8; --accent2:#1f4da8; --accent-soft:#e8f0ff; --accent-line:#b9cdf3;
+  --green:#0f7a4a; --green-soft:#e8f8f0; --green-line:#b3e3cb;
+  --amber:#8a5a00; --amber-soft:#fdf5e3; --amber-line:#efdba6;
+  --red:#a8322a; --red-soft:#fdeceb; --red-line:#f3c3bf;
+  --violet:#6242c4; --violet-soft:#f0ecfe; --violet-line:#cec2f6;
+  --teal:#0b6f61; --teal-soft:#e6f7f4; --teal-line:#b0e2da;
+  --shadow:0 6px 18px -10px rgb(16 24 38/.25);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:24px}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.7 var(--sans);-webkit-font-smoothing:antialiased}
+::selection{background:rgb(143 180 255/.28)}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+code,kbd{font-family:var(--mono);font-size:.86em;background:var(--bg2);border:1px solid var(--line2);padding:1px 6px;border-radius:6px;color:var(--ink2)}
+h2{font-size:1.5rem;margin:0 0 .35rem;letter-spacing:-.01em}
+h3{font-size:1.08rem;margin:2.1rem 0 .5rem}
+h4{font-size:.97rem;margin:1.3rem 0 .3rem;color:var(--ink2)}
+p{margin:.7rem 0}
+.wrap{display:grid;grid-template-columns:290px minmax(0,1fr);max-width:1400px;margin:0 auto}
+aside{position:sticky;top:0;height:100vh;overflow-y:auto;border-right:1px solid var(--line2);padding:22px 16px 60px;background:linear-gradient(180deg,var(--surface),var(--bg))}
+main{padding:34px 40px 120px;max-width:980px}
+@media (max-width:980px){
+  .wrap{grid-template-columns:1fr}
+  aside{position:static;height:auto;border-right:none;border-bottom:1px solid var(--line2)}
+  main{padding:24px 18px 90px}
+}
+.brandline{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+.brandline .mark{width:34px;height:34px;flex:none;border-radius:10px;display:grid;place-items:center;font:700 13px/1 var(--sans);color:#0b0f16;background:linear-gradient(150deg,var(--accent2),var(--accent) 60%,#6f92d8)}
+.brandline b{display:block;font-size:.95rem}
+.brandline span{display:block;font-size:.72rem;color:var(--faint)}
+.tools{display:flex;gap:8px;margin:0 0 12px}
+.tools button{flex:1;font:inherit;font-size:.76rem;padding:6px 8px;cursor:pointer;color:var(--muted);background:var(--surface2);border:1px solid var(--line);border-radius:9px}
+.tools button:hover{color:var(--accent);border-color:var(--accent-line)}
+.backlink{display:block;font-size:.8rem;padding:7px 9px;margin-bottom:8px;border:1px dashed var(--line3);border-radius:9px;color:var(--ink2)}
+.backlink:hover{border-color:var(--accent-line);color:var(--accent);text-decoration:none}
+.filter{width:100%;font:inherit;font-size:.8rem;padding:8px 10px;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:9px;margin-bottom:12px}
+nav ol{list-style:none;margin:0;padding:0}
+nav .gtitle{font-size:.68rem;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);padding:8px 8px 4px}
+nav a{display:block;padding:5px 9px;border-radius:7px;color:var(--ink2);font-size:.86rem;border-left:2px solid transparent}
+nav a:hover{background:var(--surface2);text-decoration:none;color:var(--ink)}
+nav a.active{color:var(--accent);background:var(--accent-soft);border-left-color:var(--accent)}
+nav a.hidden{display:none}
+.progress{position:fixed;top:0;left:0;height:2px;background:var(--accent);width:0;z-index:50}
+.hero h1{font-size:2rem;margin:0 0 .5rem}
+.hero .lede{font-size:1.08rem;color:var(--ink2);max-width:66ch}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:.72rem;font-weight:650;letter-spacing:.05em;text-transform:uppercase;padding:3px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface2);color:var(--muted)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:16px 18px;margin:16px 0;box-shadow:var(--shadow)}
+.callout{border:1px solid var(--line3);border-left-width:3px;border-radius:var(--r);padding:12px 15px;margin:14px 0;background:var(--surface2);font-size:.95rem}
+.callout b:first-child{display:block;margin-bottom:2px}
+.callout.info{border-left-color:var(--accent);background:var(--accent-soft)}
+.callout.ok{border-left-color:var(--green);background:var(--green-soft)}
+.callout.warn{border-left-color:var(--amber);background:var(--amber-soft)}
+.callout.danger{border-left-color:var(--red);background:var(--red-soft)}
+.callout.violet{border-left-color:var(--violet);background:var(--violet-soft)}
+table{width:100%;border-collapse:separate;border-spacing:0;margin:14px 0;font-size:.9rem;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+th{text-align:left;font-size:.7rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);background:var(--surface2);padding:9px 12px;border-bottom:1px solid var(--line)}
+td{padding:9px 12px;border-bottom:1px solid var(--line2);color:var(--ink2);vertical-align:top}
+tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:var(--surface2)}
+.mono{font-family:var(--mono);font-size:.85em}
+.pill{display:inline-block;font:600 .7rem/1.6 var(--sans);letter-spacing:.04em;text-transform:uppercase;padding:2px 9px;border-radius:999px;border:1px solid var(--line3);color:var(--muted)}
+.pill.ok{color:var(--green);border-color:var(--green-line);background:var(--green-soft)}
+.pill.warn{color:var(--amber);border-color:var(--amber-line);background:var(--amber-soft)}
+.pill.bad{color:var(--red);border-color:var(--red-line);background:var(--red-soft)}
+.pill.teal{color:var(--teal);border-color:var(--teal-line);background:var(--teal-soft)}
+.pill.violet{color:var(--violet);border-color:var(--violet-line);background:var(--violet-soft)}
+.codeblock{position:relative;margin:14px 0}
+.codeblock pre{margin:0;background:#080c12;border:1px solid var(--line2);border-radius:var(--r);padding:13px 15px;overflow-x:auto;font-family:var(--mono);font-size:.82rem;line-height:1.6;color:#cdd9e8}
+html[data-theme="light"] .codeblock pre{background:#0f1725;color:#dbe6f5}
+.codeblock .cap{font-size:.72rem;color:var(--faint);margin:0 0 5px;letter-spacing:.04em;text-transform:uppercase}
+.codeblock .copy{position:absolute;top:8px;right:8px;font:inherit;font-size:.7rem;padding:4px 9px;cursor:pointer;color:var(--muted);background:rgb(0 0 0/.35);border:1px solid var(--line3);border-radius:7px}
+.codeblock .copy:hover{color:var(--accent);border-color:var(--accent-line)}
+pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:.78rem;line-height:1.5;color:var(--ink2)}
+.answer{border-left:3px solid var(--accent);padding-left:14px;margin:.6rem 0 1.2rem;font-size:1.02rem;color:var(--ink)}
+.answer b{color:var(--accent)}
+ol.steps{counter-reset:s;list-style:none;padding:0;margin:16px 0}
+ol.steps>li{counter-increment:s;position:relative;padding:2px 0 16px 46px;border-left:1px solid var(--line2);margin-left:14px}
+ol.steps>li:last-child{border-left-color:transparent}
+ol.steps>li::before{content:counter(s);position:absolute;left:-15px;top:0;width:28px;height:28px;border-radius:999px;display:grid;place-items:center;font:700 .8rem/1 var(--sans);color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line)}
+ol.steps>li b{color:var(--ink)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:16px 0}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:14px 16px}
+.tile h4{margin:0 0 6px;color:var(--ink)}
+.tile p{margin:0;font-size:.9rem;color:var(--muted)}
+.foot{margin-top:60px;padding-top:18px;border-top:1px solid var(--line2);color:var(--faint);font-size:.85rem}
+.totop{position:fixed;right:18px;bottom:18px;font:inherit;font-size:.78rem;padding:9px 13px;cursor:pointer;color:var(--ink2);background:var(--surface2);border:1px solid var(--line3);border-radius:999px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
+.totop.show{opacity:1;pointer-events:auto}
+.qnum{font:700 .78rem/1 var(--mono);color:var(--faint);margin-right:8px}
+@media print{aside,.tools,.filter,.totop,.codeblock .copy,.progress,.backlink{display:none}
+  .wrap{display:block}main{max-width:none;padding:0}
+  .codeblock pre{background:#f4f6fb;color:#101826;border-color:#ccd6e6}}
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="wrap">
+<aside>
+  <div class="brandline">
+    <span class="mark" aria-hidden="true">Q&amp;A</span>
+    <div><b>Questions, answered</b><span>what the code actually does</span></div>
+  </div>
+  <a class="backlink" href="index.html">← Platform overview</a>
+  <a class="backlink" href="agent-flow.html">← The agent, end to end</a>
+  <div class="tools">
+    <button id="theme" type="button">Light</button>
+    <button id="expand" type="button">Expand all</button>
+  </div>
+  <input class="filter" id="filter" type="search" placeholder="Filter questions…" aria-label="Filter questions" />
+  <nav aria-label="Contents">
+    <div class="group">
+      <div class="gtitle">Start here</div>
+      <ol>
+        <li><a href="#how">How to read this</a></li>
+        <li><a href="#what">What is this platform, in a minute?</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">Identity and data</div>
+      <ol>
+        <li><a href="#users">Where are the users stored?</a></li>
+        <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
+        <li><a href="#demo-data">What data does the demo hold?</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">The agent</div>
+      <ol>
+        <li><a href="#one-agent">Is there one agent, or many?</a></li>
+        <li><a href="#agent-now">What can it do now that it couldn't before?</a></li>
+        <li><a href="#why-ask">Why didn't it ask for the order?</a></li>
+        <li><a href="#why-allowed">Why did a wrong order come back "allowed"?</a></li>
+      </ol>
+    </div>
+    <div class="group">
+      <div class="gtitle">Going further</div>
+      <ol>
+        <li><a href="#cloud">What is the cloud-provider work?</a></li>
+        <li><a href="#multi">What would many agents take?</a></li>
+      </ol>
+    </div>
+  </nav>
+</aside>
+
+<main>
+<section class="hero" id="how">
+  <span class="tag">A growing log</span>
+  <h1>Questions, answered</h1>
+  <p class="lede">
+    Every question I asked about this platform while learning it, with the answer the
+    <b>code</b> and the <b>running cluster</b> give — not the answer a diagram suggests. New
+    questions get added as they come up, and each answer says where to look, so you can check
+    it rather than take it on faith.
+  </p>
+  <div class="callout info">
+    <b>How each answer is built</b>
+    If it is a fact about a file, the file is named. If it is a fact about behaviour, it was
+    seen running — and where it was surprising, the answer says what surprised me. Three pages
+    sit together: the <a href="index.html">overview</a> explains the whole platform, the
+    <a href="agent-flow.html">agent page</a> follows one task through the code, and this page
+    answers questions — including the ones the other two now had to change for.
+  </div>
+</section>
+
+<section id="what">
+  <h2><span class="qnum">01</span>What is this platform, in a minute?</h2>
+  <p class="answer">
+    <b>A control plane for AI agents.</b> It answers one question, over and over, per action:
+    <i>"may this agent, acting for this person, in this tenant, do this — right now?"</i> — and
+    it answers it in code that does not trust the model.
+  </p>
+  <p>
+    The shape is four of our own services, one identity system underneath, and one place where a
+    model is allowed to live:
+  </p>
+  <table>
+    <thead><tr><th>Piece</th><th>Its job</th><th>It may</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">api</td><td>Login, enrollment, approvals, audit, and the web app</td><td>Talk to Keycloak; hold the admin client; proxy tasks to the agent</td></tr>
+      <tr><td class="mono">agent</td><td>The graph: plan → call a tool → ask → or pause for a person</td><td>Propose actions. Hold <b>no</b> model credential</td></tr>
+      <tr><td class="mono">tools</td><td>The enforcement point — the only place authority is granted</td><td>Call the downstream systems, after policy and any approval</td></tr>
+      <tr><td class="mono">gateway</td><td>The only thing with the model provider's key</td><td>Reach the model; count and cap spend per calling agent</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Underneath: <b>SPIRE</b> gives every workload a name and a short-lived credential;
+    <b>Keycloak</b> holds the people and issues their tokens; <b>OPA</b> decides per call; and
+    <b>Postgres</b> keeps the things that must survive a restart — approvals, the audit trail,
+    and paused runs. The phrase to keep in mind is the one the pages repeat: <b>the model
+    proposes, the platform disposes</b>.
+  </p>
+</section>
+
+<section id="users">
+  <h2><span class="qnum">02</span>Where are the users stored?</h2>
+  <p class="answer">
+    <b>In Keycloak, in the realm <code>agent-platform</code>.</b> The application keeps
+    <b>no user table of its own</b> — it verifies a token and reads identity out of it.
+  </p>
+  <table>
+    <thead><tr><th>Layer</th><th>Where</th></tr></thead>
+    <tbody>
+      <tr><td>Definition (in git)</td><td class="mono">deploy/kind/manifests/keycloak/ (the realm template): users, realm roles, clients</td></tr>
+      <tr><td>Rendered</td><td><code>scripts/render.py</code> fills the client secrets from the gitignored <code>.env</code></td></tr>
+      <tr><td>Imported</td><td>A one-shot <code>keycloak-import</code> Job, run before the server starts, with <code>--override=false</code> — a no-op once the realm exists</td></tr>
+      <tr><td>Stored at runtime</td><td>Keycloak's own database in Postgres — not the app's</td></tr>
+      <tr><td>Administered</td><td>Keycloak's Admin API, via the least-privilege <code>platform-admin</code> client (<code>manage-users</code> + read-roles, never the bootstrap admin)</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Inside a token, the <b>role</b> is a realm role and the <b>tenant</b> is a user attribute —
+    which is why the agent's decisions can differ for the same role name in two tenants. The
+    demo users are:
+  </p>
+  <table>
+    <thead><tr><th>User</th><th>Tenant</th><th>Role</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">alice</td><td>acme</td><td>support_rep</td></tr>
+      <tr><td class="mono">manager</td><td>acme</td><td>manager</td></tr>
+      <tr><td class="mono">admin</td><td>acme</td><td>platform_admin</td></tr>
+      <tr><td class="mono">priya</td><td>acme</td><td>privacy</td></tr>
+      <tr><td class="mono">bella</td><td>acme</td><td>billing</td></tr>
+      <tr><td class="mono">dana</td><td>acme</td><td>read_only</td></tr>
+      <tr><td class="mono">grace</td><td>globex</td><td>support_rep <span class="pill warn">less power</span></td></tr>
+    </tbody>
+  </table>
+  <p>
+    <code>grace</code> is the tenancy lesson: the same role name as alice, fewer tools, because
+    the policy gives <code>globex</code>'s support reps its own entry that <i>replaces</i> the
+    default. Enrollment (<code>POST /enroll</code>) grants nothing — an admin has to assign the
+    realm role, which is why the demo's <code>carol</code> can sign in and do nothing.
+  </p>
+</section>
+
+<section id="keycloak-ui">
+  <h2><span class="qnum">03</span>How do I show someone the users really exist?</h2>
+  <p class="answer">
+    <b>Ask Keycloak, not the app.</b> One command prints the users straight from Keycloak's
+    Admin API; the console is two steps away if you want to click instead.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — one command, no setup, no admin password</p>
+<pre>./scripts/show-keycloak-users.sh</pre>
+  </div>
+  <p>
+    It runs <i>inside</i> the API pod, which is the whole trick: in there <code>keycloak</code>
+    resolves by service name, so there is no port-forward, no <code>/etc/hosts</code> entry and
+    no browser — and it reuses the API's own least-privilege client, so no master admin
+    credential is involved. It reports 19 users today, including the leftover
+    <code>carol-*</code>, <code>norole</code> and <code>survivor</code> that the test suites
+    wrote.
+  </p>
+  <h3>For the console itself</h3>
+  <div class="codeblock">
+    <p class="cap">commands — a hosts entry and a port-forward, then a browser</p>
+<pre>echo "127.0.0.1 keycloak" | sudo tee -a /etc/hosts      # once
+kubectl --context kind-agent-platform -n agent-platform port-forward svc/keycloak 8080:8080</pre>
+  </div>
+  <p>
+    Then <b>http://keycloak:8080/admin</b>, sign in as <code>admin</code>/<code>admin</code>
+    (demo-only, and only reachable this way — the ingress routes <code>/</code> to the API, so
+    no admin console is exposed at the edge), switch the realm to <b>agent-platform</b>, and
+    open <b>Users</b>. Per user, <b>Role mapping</b> is the role and <b>Attributes</b> is the
+    tenant.
+  </p>
+  <div class="callout warn">
+    <b>Two things that puzzle people otherwise</b>
+    Browsing <code>localhost:8080</code> does not work: the realm pins the console's hostname,
+    so the browser has to resolve the name <code>keycloak</code> — hence the hosts entry. And
+    the realm holds more users than the demo, because the suites write to it: the realm is a
+    live database, not a fixture.
+  </div>
+</section>
+
+<section id="demo-data">
+  <h2><span class="qnum">04</span>What data does the demo hold?</h2>
+  <p class="answer">
+    <b>Five orders, three tickets, and the people above</b> — synthetic, served by a
+    <code>sandbox</code> service that keeps its own state. Nothing here is real, and the state
+    survives restarts (it is snapshotted to its own volume).
+  </p>
+  <h3>The orders, and which <code>o-</code> numbers exist</h3>
+  <table>
+    <thead><tr><th>Order</th><th>Tenant</th><th>Customer</th><th>Total</th><th>Status</th><th>Already refunded</th><th>Refundable</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">o-1001</td><td>acme</td><td class="mono">c-100</td><td>$50.00</td><td>delivered</td><td>$7,578.00</td><td><b>$0.00</b></td></tr>
+      <tr><td class="mono">o-1002</td><td>acme</td><td class="mono">c-100</td><td>$320.00</td><td>delivered</td><td>$200.00</td><td>$120.00</td></tr>
+      <tr><td class="mono">o-2001</td><td>acme</td><td class="mono">c-200</td><td>$25.00</td><td>shipped</td><td>$0.00</td><td>$25.00</td></tr>
+      <tr><td class="mono">o-3001</td><td>acme</td><td class="mono">c-300</td><td>$900.00</td><td>delivered</td><td>$200.00</td><td>$700.00</td></tr>
+      <tr><td class="mono">o-9001</td><td><b>globex</b></td><td class="mono">c-900</td><td>$100.00</td><td>delivered</td><td>$0.00</td><td>$100.00</td></tr>
+    </tbody>
+  </table>
+  <div class="callout warn">
+    <b>Three things that surprise people</b>
+    <b style="display:inline">·</b> <code>o-9001</code> belongs to <b>globex</b>: asking as
+    acme answers <code>unknown order</code> — tenancy working, not a bug.
+    <b style="display:inline">·</b> <code>o-1001</code>'s refunded figure is enormous because
+    every demo and attack run has refunded it; its <code>refundable</code> is now zero.
+    <b style="display:inline">·</b> the simulator does <b>not</b> enforce
+    <code>refundable &gt; 0</code>, so a refund against <code>o-1001</code> still "issues". The
+    platform's real limits are the policy ones — ≤ $50 allowed, ≤ $500 with a manager, above
+    that denied. For a clean demo use <code>o-2001</code> (untouched) or <code>o-1002</code>.
+  </div>
+  <p>The tickets are where the interesting multi-step task lives:</p>
+  <table>
+    <thead><tr><th>Ticket</th><th>Tenant</th><th>Customer</th><th>Subject</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">t-5001</td><td>acme</td><td class="mono">c-100</td><td>"My order arrived damaged" — a GADGET-B, which is order <code>o-1002</code></td></tr>
+      <tr><td class="mono">t-5002</td><td>acme</td><td class="mono">c-200</td><td>"Where is my order?"</td></tr>
+      <tr><td class="mono">t-9001</td><td>globex</td><td class="mono">c-900</td><td>the other tenant's</td></tr>
+    </tbody>
+  </table>
+  <p>
+    So <i>"refund the order from ticket t-5001"</i> is a genuine three-step task — read the
+    ticket, list the customer's orders, then refund — which is exactly what the agent's step
+    budget was built for. Customers <code>c-100</code>, <code>c-200</code> and
+    <code>c-300</code> exist for acme; <code>c-900</code> for globex.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — ask the running sandbox, which owns the live state</p>
+<pre>kubectl --context kind-agent-platform -n agent-platform exec -i deploy/tools -c tools -- python -c "
+import httpx
+for oid in ('o-1001','o-1002','o-2001','o-3001'):
+    print(oid, httpx.get(f'http://sandbox:8090/orders/{oid}/refund-quote', headers={'X-Tenant':'acme'}).json())
+"</pre>
+  </div>
+</section>
+
+<section id="one-agent">
+  <h2><span class="qnum">05</span>Is there one agent, or many?</h2>
+  <p class="answer">
+    <b>One — and the platform is built for exactly one.</b> One workload, one SPIFFE ID, held by
+    two interchangeable replicas. Many runs happen at once, all as the same agent acting for
+    different people.
+  </p>
+  <p>
+    The identity is <code>spiffe://acme.com/ns/agent-platform/sa/agent</code>, and the word
+    <i>workload</i> is doing the work in that sentence: identity is issued per workload, not per
+    replica, which is why both pods prove the same name. Registration is a rule about
+    <i>when</i> an identity may be issued, binding a Kubernetes service account to a name:
+  </p>
+  <div class="codeblock">
+    <p class="cap">scripts/setup.sh</p>
+<pre>ensure_entry() { # ensure_entry &lt;service-account&gt; &lt;spiffe-id&gt;
+  local sa="$1" id="$2" entry parent
+  # Drop any existing entries for this identity (e.g. parented to a node that is
+  # gone), then register one per attested agent.
+  for entry in $($SPIRE entry show -socketPath "$SOCKET" -spiffeID "$id" 2>/dev/null \
+    | awk '/Entry ID/{print $NF}'); do
+    $SPIRE entry delete -socketPath "$SOCKET" -entryID "$entry" >/dev/null
+  done
+  for parent in $($SPIRE agent list -socketPath "$SOCKET" 2>/dev/null \
+    | awk '/SPIFFE ID/{print $NF}'); do
+    $SPIRE entry create -socketPath "$SOCKET" \
+      -spiffeID "$id" -parentID "$parent" \
+      -selector "k8s:ns:$NS" -selector "k8s:sa:$sa" >/dev/null
+  done
+  ok "registration entry: $id (k8s:sa=$sa)"
+}</pre>
+  </div>
+  <p>
+    Four workloads are registered that way: <code>agent</code>, <code>gateway</code>,
+    <code>api</code> and <code>tools</code>. And policy then trusts one actor:
+  </p>
+  <div class="codeblock">
+    <p class="cap">policy/authz.rego</p>
+<pre>trusted_agent := "spiffe://acme.com/ns/agent-platform/sa/agent"</pre>
+  </div>
+  <p>
+    A second agent would be refused as <code>denied: untrusted workload identity</code> until
+    it is registered <i>and</i> the policy names it. That is not an accident of configuration —
+    it is the current design, and question 10 is what changing it would take.
+  </p>
+</section>
+
+<section id="agent-now">
+  <h2><span class="qnum">06</span>What can the agent do now that it couldn't before?</h2>
+  <p class="answer">
+    <b>Four things, and each one came from someone using it and finding it wanting.</b> None of
+    them changed what is <i>permitted</i> — they changed what the agent does with a thin task,
+    and how honest the record is.
+  </p>
+  <div class="grid2">
+    <div class="tile">
+      <h4>Ask instead of refusing <span class="pill ok">S18</span></h4>
+      <p>
+        "Refund $200" with no order named used to end as a refusal. It now pauses and asks
+        <i>which order</i>, because the person has the answer. Bounded at two asks; a tool the
+        role may not call is still refused outright.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Take more than one step <span class="pill ok">S19</span></h4>
+      <p>
+        "Refund the order from ticket t-5001" needs the ticket read first. The agent can now go
+        round again with what the call returned — at most three steps, and only when it says it
+        needs another. Every step is judged by policy on its own.
+      </p>
+    </div>
+    <div class="tile">
+      <h4>Pass identifiers along, never invent them <span class="pill ok">S20</span></h4>
+      <p>
+        An identifier is kept only if the model has <b>seen</b> it — in the task or in an
+        earlier tool result. Otherwise it is dropped, and the task's own value wins over the
+        model's guess (see question 7).
+      </p>
+    </div>
+    <div class="tile">
+      <h4>"Allowed" stops meaning "it happened" <span class="pill ok">S21</span></h4>
+      <p>
+        When the tool answers that it could not do the work, the screen says
+        <b>allowed — but nothing happened</b>, and the tool's answer is recorded in the audit
+        (see question 8).
+      </p>
+    </div>
+  </div>
+  <div class="callout violet">
+    <b>The pattern in all four</b>
+    The model proposes; the platform disposes. S18–S20 make the agent <i>better at
+    conversing</i> without giving it a gram more authority, and S21 makes the platform
+    <i>more honest</i> about what happened. If one of these ever read as "the model got a new
+    power", the design would have gone wrong — it is worth checking that when reading them.
+  </div>
+</section>
+
+<section id="why-ask">
+  <h2><span class="qnum">07</span>Why didn't it ask for the order?</h2>
+  <p class="answer">
+    <b>Because the model supplied one — it answered with the field's own name as the value.</b>
+    The agent asks when a required argument is <i>missing</i>; a guess is not missing, so
+    nothing asked, and a refund against an order literally called <code>order_id</code> went to
+    a manager for approval.
+  </p>
+  <p>
+    Reproduced from a real run. The task was <i>"Issue a refund of 200 dollars for order "</i>
+    — nothing after "order" — and the approval it created carried:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the arguments the approval was bound to</p>
+<pre>{"amount": 200.0, "order_id": "order_id"}</pre>
+  </div>
+  <p>Four steps, each behaving exactly as designed, which was the problem:</p>
+  <ol class="steps">
+    <li>The model replied <code>{"tool": "refunds.issue", "args": {"order_id": "order_id", "amount": 200}}</code>.</li>
+    <li>The gap-filling code looked for an order in the task text, found none, and left the model's value alone.</li>
+    <li>The guardrail that exists to catch missing arguments only checked that a required value was <b>present and non-empty</b> — and <code>"order_id"</code> is a non-empty string.</li>
+    <li>Policy saw a well-formed $200 refund and held it for a manager.</li>
+  </ol>
+  <p>
+    The fix is a rule, not a patch: <b>the model may pass along an identifier it has seen — in
+    the task or in a tool result — and may never invent one.</b> What counts as an identifier is
+    the <code>_id</code> suffix, so amounts and free text are untouched:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/guardrails.py</p>
+<pre>def identifier_args(tool: Tool) -&gt; list[str]:
+    """The tool's required arguments that name something that exists in the world.
+
+    The convention is the `_id` suffix — `customer_id`, `order_id`, `ticket_id`.
+    These are facts the model cannot reason its way to; it either saw one or it is
+    guessing, which is the distinction `resolve_identifiers` enforces.
+    """
+    required = (tool.input_schema or {}).get("required") or []
+    return [name for name in required if name.endswith("_id")]</pre>
+  </div>
+  <div class="callout warn">
+    <b>And the fix had a hole that only a retry found</b>
+    The first version searched the task text for the model's value — and retrying the same task
+    then got through as <code>{"order_id": "order"}</code>, because the word <i>"order"</i>
+    appears in <i>"for order "</i>. A word passed as an identifier. The comparison is now a set
+    of identifier-<i>shaped</i> tokens, and both cases are tests, so the reported bug and its
+    near-miss are pinned.
+  </div>
+  <p>
+    What you see now, five runs out of five: the same task comes back
+    <code>clarification_required · missing: order_id</code>, and answering with the order
+    proceeds into the manager approval it always needed. What the platform still does
+    <i>not</i> do is check that an order exists before acting — that is the tool's job, and it
+    is the next question.
+  </p>
+</section>
+
+<section id="why-allowed">
+  <h2><span class="qnum">08</span>Why did a wrong order come back <i>allowed</i>?</h2>
+  <p class="answer">
+    <b>Because "allowed" is policy's answer, not the tool's.</b> Policy allowed the call — the
+    amount was under the auto-approval limit — and the tool then discovered the order does not
+    exist and said so. The screen showed policy's word and the tool's failure side by side, and
+    "allowed" read as success.
+  </p>
+  <p>The amount is what decides it:</p>
+  <table>
+    <thead><tr><th>Task</th><th>What policy says</th><th>What you saw</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">order z, $200</td><td>the id is not an identifier at all → <b>asks</b></td><td>Which order?</td></tr>
+      <tr><td class="mono">order o-9999, $200</td><td>$200 &gt; $50 → <b>held for approval</b></td><td>Held — a manager decides</td></tr>
+      <tr><td class="mono">order o-9999, $20</td><td>≤ $50 → <b>allowed</b>, then the tool answers</td><td>allowed + <code>unknown order</code></td></tr>
+    </tbody>
+  </table>
+  <div class="callout danger">
+    <b>The outcome was deliberate, and I did not reverse it</b>
+    Before changing anything I found a test that says so explicitly:
+    <span class="mono">test_a_missing_record_is_a_result_not_an_error</span> — <i>"asking for a
+    record that is not there is an answer the caller can read, not a failure."</i> A previous
+    slice chose that on purpose. So the <b>outcome</b> stayed, and the two things genuinely
+    wrong got fixed instead.
+  </div>
+  <ol class="steps">
+    <li><b>The audit gap.</b> The trail held only <code>tool.allowed</code>, which records the
+      decision and not what came back — so "did the refund actually happen?" could not be
+      answered from the audit at all. The tool's own answer is now recorded too:
+      <code>tool.reported_error</code>, with the message.</li>
+    <li><b>The display.</b> "allowed" no longer stands alone: the chip reads
+      <b>allowed — but nothing happened</b>, the step says the call was allowed and the tool
+      answered <code>unknown order</code>, and the result block is headed <i>The tool's
+      answer</i>.</li>
+  </ol>
+  <div class="codeblock">
+    <p class="cap">commands — the trail, on the running cluster</p>
+<pre>tool.allowed          {"tool": "refunds.issue", "reason": "allowed: refunds.issue is within your role"}
+tool.reported_error   {"tool": "refunds.issue", "reason": "unknown order"}</pre>
+  </div>
+  <p>
+    The honest limit that remains: an identifier that does not exist is something only the
+    backend knows. The platform could check first — an extra read the person did not ask for,
+    with its own policy question — and that is a design decision, not a bug fix.
+  </p>
+</section>
+
+<section id="cloud">
+  <h2><span class="qnum">09</span>What is the cloud-provider work?</h2>
+  <p class="answer">
+    <b>Letting the platform talk to a model outside the building — and deciding whether it
+    should.</b> The plumbing is in place; two defects in the hosted branch stop it working, and
+    the interesting half is a policy question, not a code one.
+  </p>
+  <p>
+    Today the model runs locally (Ollama), which is a deliberate choice: when the agent reads
+    personal data under an approval, nothing leaves the machine. What is already there:
+  </p>
+  <ul>
+    <li>the model is named in <b>one</b> place, and <code>./scripts/use-model.sh</code> swaps it without rebuilding;</li>
+    <li>a slot for a provider key already exists, and <b>only the gateway</b> can read it — the agent holds no model credential at all;</li>
+    <li>only the gateway talks to a model; everything else asks it.</li>
+  </ul>
+  <h3>The two defects, both found by reading that path</h3>
+  <table>
+    <thead><tr><th>Symptom</th><th>Cause</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>The request reaches the provider with <b>no model named</b>, and fails</td>
+        <td>The gateway forwards the request it received; the agent deliberately sends no model (it should not care which vendor answers). The gateway works out the model for its own audit but does not put it into the forwarded request.</td>
+      </tr>
+      <tr>
+        <td>A strict provider may reject a <b>"give me JSON" hint</b></td>
+        <td>The agent already asks for JSON in words in the prompt, so dropping the formal hint is survivable — it just needs dropping when the provider does not accept it.</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout info">
+    <b>The question that makes it a slice rather than a patch</b>
+    Should a cloud model ever see customer data? Local-only means it cannot. Point the gateway
+    at a provider and an approved PII read would send that data off-site. The platform's style
+    would answer that with <b>policy</b> — a rule such as "this tool, or this tenant, may only
+    use a local model" — and the two defects come along with it. This is <b>S17</b>, and it is
+    the last open slice.
+  </div>
+  <p>
+    What "done" looks like: a fake OpenAI-compatible provider running in-cluster (so the path
+    can be tested with nobody's cloud key), tests for those two defects, one live run against a
+    real provider, and a written answer to the data question.
+  </p>
+</section>
+
+<section id="multi">
+  <h2><span class="qnum">10</span>What would many agents — and sub-agents — take?</h2>
+  <p class="answer">
+    <b>There is no agent record anywhere.</b> An agent exists by appearing in four registries
+    owned by four different systems, and "registration" is a rule about <i>when an identity may
+    be issued</i> — not a row about a robot.
+  </p>
+  <table>
+    <thead><tr><th>What</th><th>Where it lives</th><th>What is in it</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Identity</b></td>
+        <td>SPIRE's datastore (its own Postgres database, durable)</td>
+        <td>A registration entry: service account + namespace → SPIFFE ID. Today created imperatively by the setup script</td>
+      </tr>
+      <tr>
+        <td><b>Delegation</b></td>
+        <td>Keycloak's Postgres (the realm)</td>
+        <td>A client whose <code>clientId</code> <i>is</i> the SPIFFE ID, authenticating with a JWT-SVID instead of a secret, with token exchange enabled and the audience/tenant mappers</td>
+      </tr>
+      <tr>
+        <td><b>Admission</b></td>
+        <td>Each service's configuration</td>
+        <td>Which SPIFFE IDs may call it, and whose token exchange its user tokens may carry. <b>Both default to the one agent</b></td>
+      </tr>
+      <tr>
+        <td><b>Authorization</b></td>
+        <td>The OPA bundle (policy in git, built and signed)</td>
+        <td>Which agents are trusted, and the roles → tools matrix</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout ok">
+    <b>The gateway needs no change</b>
+    It accepts any caller holding a JWT-SVID audienced to it, and keys its rate and cost limits
+    on the proven caller. A second agent would simply get its own budget — the multi-agent
+    story there is already done.
+  </div>
+  <h3>So a second agent is four edits</h3>
+  <ol class="steps">
+    <li><b>SPIRE:</b> give it a service account and a registration entry — the identity follows the workload.</li>
+    <li><b>Keycloak:</b> a client named by its SPIFFE ID, with the same three attributes and mappers. No secret: it signs with its JWT-SVID.</li>
+    <li><b>Admission:</b> add it to the allow-lists of the services it must reach. This is the knob that makes "which agents may talk to which services" a real decision — and the tool server additionally pins <i>which</i> agent's exchange its user tokens must come from.</li>
+    <li><b>Policy:</b> name it as trusted, and give it its own roles → tools matrix if it should differ. <code>input.agent</code> is already a policy input, so this is a natural extension.</li>
+  </ol>
+  <h3>Sub-agents are the interesting case: a chain, not just an identity</h3>
+  <p>
+    Today there is exactly one delegation hop — a person to the agent — using RFC 8693 token
+    exchange. Agent A calling agent B needs three things, two of which are half-anticipated:
+  </p>
+  <table>
+    <thead><tr><th>Need</th><th>State of play</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>The chain must <b>name the path</b> (person → A → B)</td>
+        <td>RFC 8693 expresses this with the <code>act</code> (actor) claim, and the SDK <b>already reads it</b> in preference to the token's issuer. What is missing is <i>producing</i> it: the exchange accepts extra parameters, but nothing passes an actor token yet.</td>
+      </tr>
+      <tr>
+        <td>B must act as the <b>same human</b>, never as itself</td>
+        <td>The subject stays the person's; A and B are added to the chain. A sub-agent acting purely as a service identity is a <i>different</i> thing and should not touch user data at all.</td>
+      </tr>
+      <tr>
+        <td>A sub-agent must get <b>less, not more</b></td>
+        <td>The exchange already takes a scope, so a parent can hand down a narrowed one. Policy should then decide per agent, because "may <i>this</i> agent refund for this user" is a different question from "may the agent".</td>
+      </tr>
+    </tbody>
+  </table>
+  <h3>The lifecycle of an agent</h3>
+  <table>
+    <thead><tr><th>Phase</th><th>What happens</th><th>Today</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Register</b></td>
+        <td>Service account + registration entry + Keycloak client + admission lists + policy grant, reviewed</td>
+        <td><span class="pill ok">works</span> but imperatively; production wants it declarative and reviewed, because it is a privilege decision</td>
+      </tr>
+      <tr>
+        <td><b>Attest</b> (birth)</td>
+        <td>The pod starts, SPIRE checks its Kubernetes service-account token, and hands it an X.509-SVID (1 h) and a JWT-SVID (5 min) over a Unix socket. <b>No secret is provisioned, nothing lands on disk</b></td>
+        <td><span class="pill ok">works</span> — and this is why there is no password to leak or rotate by hand</td>
+      </tr>
+      <tr>
+        <td><b>Act</b> (per request)</td>
+        <td>Exchange the person's token for one scoped to the tool server → call tools over an mTLS hop naming itself → policy decides per call → the audit records the agent, the person and the tenant</td>
+        <td><span class="pill ok">works</span></td>
+      </tr>
+      <tr>
+        <td><b>Delegate down</b></td>
+        <td>Sub-agent calls, actor chaining, narrowed scope, per-agent policy</td>
+        <td><span class="pill warn">new</span> — identity and admission work; the chain and per-agent policy are the work</td>
+      </tr>
+      <tr>
+        <td><b>Rotate</b></td>
+        <td>X.509 1 h, JWT 5 min, signing authority 24 h — fetched per use, no restart, no key to rotate</td>
+        <td><span class="pill ok">works</span></td>
+      </tr>
+      <tr>
+        <td><b>Suspend / revoke</b></td>
+        <td>Delete the registration entry (no new credentials), disable the client (no new exchanges), remove from the admission lists (calls refused), drop the policy grant</td>
+        <td><span class="pill warn">new</span> — and the honest caveat: a credential already issued stays valid until it expires, so revocation means <i>stop issuing</i>, not <i>instantly dead</i></td>
+      </tr>
+      <tr>
+        <td><b>Decommission</b></td>
+        <td>Remove all four, delete the workload</td>
+        <td><span class="pill teal">the audit remains</span> — who did what, on whose behalf, forever</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout warn">
+    <b>Three decisions I would want made before any of it is built</b>
+    <b style="display:inline">·</b> Is an agent <b>per-tenant or shared</b>? Shared means one
+    identity acting across tenants with the tenant taken from the person's token — today's
+    model, and the safer default; per-tenant contains a compromise to one customer, at the cost
+    of more identities and more policy.
+    <b style="display:inline">·</b> Is <b>the registry a privilege boundary</b>? Adding an agent
+    is adding a workload the platform will trust, so it deserves the scrutiny of a policy
+    change: reviewed, and recorded.
+    <b style="display:inline">·</b> Does <b>a sub-agent inherit the parent's authority, or
+    less</b>? I would say strictly less, and make it enforceable rather than advisory.
+  </div>
+</section>
+
+<div class="foot">
+  <p>
+    A growing log: questions get added as they are asked, and each answer is checked rather than
+    remembered — facts about files name the file, facts about behaviour were seen running, and
+    where an answer needed code to change, the change and its test are named. Companion pages:
+    <a href="index.html">the platform overview</a> and
+    <a href="agent-flow.html">the agent, end to end</a>.
+  </p>
+</div>
+
+</main>
+</div>
+<button class="totop" id="totop" type="button">↑ Top</button>
+<script>
+(function(){
+  var root=document.documentElement;
+  var tbtn=document.getElementById('theme');
+  var saved=null; try{saved=localStorage.getItem('qa-theme')}catch(e){}
+  if(saved) root.setAttribute('data-theme',saved);
+  function sync(){ tbtn.textContent = root.getAttribute('data-theme')==='light' ? 'Dark' : 'Light'; }
+  sync();
+  tbtn.addEventListener('click',function(){
+    var next = root.getAttribute('data-theme')==='light' ? 'dark' : 'light';
+    root.setAttribute('data-theme',next);
+    try{localStorage.setItem('qa-theme',next)}catch(e){}
+    sync();
+  });
+  document.querySelectorAll('.codeblock').forEach(function(block){
+    var pre=block.querySelector('pre'); if(!pre) return;
+    var b=document.createElement('button');
+    b.type='button'; b.className='copy'; b.textContent='copy';
+    b.addEventListener('click',function(){
+      navigator.clipboard.writeText(pre.innerText).then(function(){
+        b.textContent='copied'; setTimeout(function(){b.textContent='copy'},1200);
+      },function(){ b.textContent='press ⌘C'; });
+    });
+    block.appendChild(b);
+  });
+  var filter=document.getElementById('filter');
+  filter.addEventListener('input',function(){
+    var q=filter.value.trim().toLowerCase();
+    document.querySelectorAll('nav ol').forEach(function(list){
+      var shown=0;
+      list.querySelectorAll('a').forEach(function(a){
+        var hit = !q || a.textContent.toLowerCase().indexOf(q)>=0;
+        a.classList.toggle('hidden',!hit);
+        if(hit) shown++;
+      });
+      list.parentElement.style.display = shown ? '' : 'none';
+    });
+  });
+  var links=Array.prototype.slice.call(document.querySelectorAll('nav a[href^="#"]'));
+  var sections=links.map(function(a){return document.querySelector(a.getAttribute('href'))});
+  var progress=document.getElementById('progress');
+  function onScroll(){
+    var y=window.scrollY+140, current=null;
+    sections.forEach(function(s,i){ if(s && s.offsetTop<=y) current=i; });
+    links.forEach(function(a,i){ a.classList.toggle('active', i===current); });
+    var h=document.body.scrollHeight-window.innerHeight;
+    progress.style.width = (h>0 ? (window.scrollY/h)*100 : 0)+'%';
+    document.getElementById('totop').classList.toggle('show', window.scrollY>600);
+  }
+  window.addEventListener('scroll',onScroll,{passive:true});
+  window.addEventListener('resize',onScroll);
+  onScroll();
+  document.getElementById('totop').addEventListener('click',function(){ window.scrollTo({top:0,behavior:'smooth'}); });
+  document.getElementById('expand').addEventListener('click',function(){
+    document.querySelectorAll('details').forEach(function(d){d.open=true});
+    this.textContent='Expanded'; setTimeout(function(){this.textContent='Expand all'}.bind(this),1200);
+  });
+})();
+</script>
+</body>
+</html>
