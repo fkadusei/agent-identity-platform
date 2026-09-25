@@ -744,6 +744,38 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   at three, and the repeat guard firing when the model tried a call it had already
   made.
 
+## S20 — The model may pass along an identifier, never invent one — **done**
+
+- **What:** asked to refund $200 with no order named, the model answered
+  `{"order_id": "order_id", "amount": 200}` — the field's own name as the value.
+  `check_decision` saw a present, non-empty string, so nothing was missing and no
+  question was asked: a refund against an order called `order_id` went to a manager
+  for approval.
+- **Why:** reported by using the platform, not by reading it. It is the hole under
+  S18 — the ask only fires when the model *omits* an argument, and a guessed value
+  is not an omission. Worse, `_fill_gaps` only filled empty arguments, so a model
+  that guessed a different id than the person typed would have had its guess used.
+- **Built:**
+  - `resolve_identifiers`: an identifier is kept only if the model has **seen** it —
+    in the task, or in what an earlier call returned. A value outside that is a
+    guess, and a guess is not a proposal: it is replaced by the one the task named
+    (the person's words outrank the model's) and otherwise removed, which routes the
+    call into the question S18 already knows how to ask.
+  - What counts as an identifier is the `_id` suffix on a required argument —
+    `customer_id`, `order_id`, `ticket_id` — so `amount` and `body` are untouched.
+    Seen means a whole token: `o-1` is not found inside `o-1001`.
+  - `llm.identifier_invented` is audited with the argument *name* — the guessed
+    value is deliberately not recorded.
+  - The multi-step case still works: an id read from a ticket (an observation) was
+    seen, so it is kept.
+- **Lands in:** `app/agent/{guardrails,llm,evals}.py`, `docs/site/agent-flow.html`,
+  `docs/guardrails-and-evals.md`.
+- **Verified by:** guardrail tests (an identifier the model never saw is dropped and
+  becomes a question; a task-named id replaces the model's guess; an id from a
+  previous call is kept; a truncated id is not treated as seen), the reported case as
+  a test and as an eval case, and the live run that started this — see the annotation
+  in `docs/site/agent-flow.html`.
+
 ## Not slices (documented limits)
 
 - The trust domain (`acme.com`) and the demo passwords are documentation, not

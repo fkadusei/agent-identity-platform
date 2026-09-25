@@ -858,6 +858,97 @@ _INJECTION_PHRASES = (
     still checked by policy, and an answer is not an approval.
   </div>
 
+  <h3>Identifiers are passed along, never invented <span class="pill ok">S20</span></h3>
+  <p>
+    "The value is never invented" turned out to need saying to the <i>model</i>, not just to the
+    code that fills gaps. Reported from a real run: asked to refund $200 with no order named,
+    the model answered <span class="mono">{"order_id": "order_id", "amount": 200}</span> — the
+    field's own name as its value. The presence check saw a non-empty string, so nothing was
+    missing, and a refund against an order literally called <code>order_id</code> went to a
+    manager for approval.
+  </p>
+  <p>
+    The rule now: an identifier is kept only if the model has <b>seen</b> it — in the task, or in
+    what an earlier call returned. Anything else is a guess, and a guess is not a proposal.
+    "Seen" means the same identifier-<i>shaped</i> token (<code>o-1001</code>, <code>c-100</code>,
+    <code>t-5001</code>), compared as a set rather than searched for in the text — because a
+    retry of the same task against the model found the next hole: the task says "for order ", so
+    a model answering <code>"order_id": "order"</code> had used a word the task contains. It was
+    a word, not an identifier, and it no longer passes.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/guardrails.py</p>
+<pre>def identifier_args(tool: Tool) -&gt; list[str]:
+    """The tool's required arguments that name something that exists in the world.
+
+    The convention is the `_id` suffix — `customer_id`, `order_id`, `ticket_id`.
+    These are facts the model cannot reason its way to; it either saw one or it is
+    guessing, which is the distinction `resolve_identifiers` enforces.
+    """
+    required = (tool.input_schema or {}).get("required") or []
+    return [name for name in required if name.endswith("_id")]
+
+
+def resolve_identifiers(
+    tool: Tool, args: dict, seen: set[str], from_task: dict
+) -&gt; tuple[dict, list[str]]:
+    """Keep only the identifiers the model could have seen — never let it invent one.
+
+    `seen` is the set of identifiers the model has been shown: those written in the
+    task, and those an earlier call returned in this run. A value outside that set
+    is a guess rather than a proposal, so it is replaced by whatever the *task* said
+    (if it said anything — the person's words outrank the model's) and otherwise
+    removed, which routes the call into a question instead of an action against the
+    wrong record.
+
+    Membership of a set, not a search of the text: a model that answers
+    `"order_id": "order"` has used a word that happens to appear in the task, and
+    `"order_id": "order_id"` a field name that does not appear at all. Neither is an
+    identifier, so neither is seen.
+
+    Returns the corrected arguments and the names whose value could not have been
+    seen, so the caller can record that it happened.
+    """
+    kept = dict(args)
+    invented: list[str] = []
+    for name in identifier_args(tool):
+        value = kept.get(name)
+        if value in (None, "") or str(value) in seen:
+            continue
+        invented.append(name)
+        if from_task.get(name) not in (None, ""):
+            kept[name] = from_task[name]
+        else:
+            kept.pop(name, None)
+    return kept, invented</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/agent/llm.py — where it is applied, before the schema check</p>
+<pre>if chosen in tools:
+    tool = tools[decision["tool"]]
+    args = _fill_gaps(tool, dict(decision.get("args") or {}), task)
+    # An identifier the model has not been shown is a guess, not a
+    # proposal (S20): the person may have named it, and if they did their
+    # words win; if they did not, the argument goes back to being missing
+    # and the run asks rather than acting on the wrong record.
+    args, invented = resolve_identifiers(
+        tool, args, _seen_identifiers(task, observations), _extract_args(task)
+    )
+    if invented:
+        audit("llm.identifier_invented", tool=tool.name, args=",".join(invented))
+    missing = check_decision(tool, args)</pre>
+  </div>
+  <div class="callout ok">
+    <b>Three outcomes, and the third is the one that took a bug to find</b>
+    <b style="display:inline">·</b> the id came from the task → kept.
+    <b style="display:inline">·</b> the id came from an earlier tool result → kept, which is
+    what makes a multi-step run work.
+    <b style="display:inline">·</b> the id came from nowhere → <b>dropped</b>, and if the task
+    named one, the task's value replaces it — so the person's words outrank the model's guess.
+    The audit records <code>llm.identifier_invented</code> with the argument name (not the
+    guessed value): the behaviour is the signal, the guess is noise.
+  </div>
+
   <h3>Reading the model's reply</h3>
   <p>
     <code>decide_tool</code> keeps three ways of ending without a tool strictly apart, because
@@ -957,7 +1048,13 @@ if not chosen:
   </p>
   <div class="codeblock">
     <p class="cap">app/agent/llm.py</p>
-<pre>def _extract_args(task: str) -&gt; dict:
+<pre># What an identifier looks like in this platform: a short prefix, a dash, digits
+# (o-1001, c-100, t-5001). The same shape `_extract_args` reads out of a task, so
+# "the task named one" and "this looks like one" cannot drift apart.
+_ID_TOKEN = re.compile(r"\b([oct]-\d+)\b")
+
+
+def _extract_args(task: str) -&gt; dict:
     """Best-effort arguments pulled from the task text.
 
     Small models are unreliable at filling tool arguments, and a missing
@@ -966,7 +1063,7 @@ if not chosen:
     model's formatting.
     """
     args: dict = {}
-    ref = re.search(r"\b([oct]-\d+)\b", task)
+    ref = _ID_TOKEN.search(task)
     if ref:
         value = ref.group(1)
         args[{"o": "order_id", "c": "customer_id", "t": "ticket_id"}[value[0]]] = value
@@ -974,6 +1071,7 @@ if not chosen:
     if amount:
         args["amount"] = float(amount.group(1))
     return args
+
 
 def _fill_gaps(tool, args: dict, task: str) -&gt; dict:
     properties = tool.input_schema.get("properties") or {}
@@ -1484,6 +1582,16 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
         <td class="mono">call_tool's repeat guard</td>
         <td>the second one is not executed — a repeat is a second real action, so the check sits in the node that acts</td>
       </tr>
+      <tr>
+        <td>invents an identifier — or emits the field's name as the value</td>
+        <td class="mono">resolve_identifiers</td>
+        <td>the value is dropped, or replaced by the one the task named; if there was none the run <span class="pill teal">asks</span>. Seen in a real run, and now a test</td>
+      </tr>
+      <tr>
+        <td>names an identifier the person did not (a different order)</td>
+        <td class="mono">the task wins</td>
+        <td>the person's words outrank the model's guess — the run uses what was actually asked for</td>
+      </tr>
     </tbody>
   </table>
 </section>
@@ -1694,6 +1802,48 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
     thing the agent had ever asked for. The loop adds reach, not authority — and the audit
     shows two actions where there used to be one, which is the point.
   </div>
+
+  <h3>And the run that found the hole</h3>
+  <p>
+    Not a designed example — this one was reported by using the thing. A support rep typed a
+    refund with the order left blank, and got this:
+  </p>
+  <table>
+    <thead><tr><th>#</th><th>Who</th><th>What happened</th><th>Recorded</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>1</td><td>a person</td>
+        <td>asks <span class="mono">"Issue a refund of 200 dollars for order "</span> — there is nothing after "order"</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>2</td><td>model</td>
+        <td>answers <span class="mono">{"tool": "refunds.issue", "args": {"order_id": "order_id", "amount": 200}}</span> — the <b>field's own name</b> as the value</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>3</td><td>guardrail (before S20)</td>
+        <td><span class="mono">check_decision</span> saw a present, non-empty string, so nothing was missing. No question, no refusal</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td>4</td><td>policy</td>
+        <td>$200 is above the auto limit → held. A refund for an order called <code>order_id</code> now sat in a manager's queue</td>
+        <td class="mono">tool.approval_required</td>
+      </tr>
+      <tr>
+        <td>5</td><td>guardrail (now)</td>
+        <td><span class="mono">resolve_identifiers</span> asks whether <code>order_id</code> was ever seen. It was not → the value is dropped → the run <b>asks which order</b></td>
+        <td class="mono">llm.identifier_invented + agent.clarification_requested</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Nothing bad resulted — had the manager approved, the tool would have answered
+    <code>unknown order</code> — but a manager's attention was the only thing standing between a
+    guess and an action, and the platform is supposed to be the thing that decides. The case is
+    in the eval suite now, so it cannot come back quietly.
+  </p>
 </section>
 
 <section id="upgrade">
@@ -1880,6 +2030,7 @@ kubectl exec deploy/agent -c agent -- python -m app.agent.evals --live</pre>
       <tr><td><b>require_approval</b></td><td>Policy's third answer. Not a denial — a hold, until a person with the manager role approves that exact request.</td></tr>
       <tr><td><b>clarification</b></td><td>A pause for an argument only a person has, not for a permission. It is bounded (two asks) and the answer is judged by policy like any other argument — answering is not approving.</td></tr>
       <tr><td><b>observation</b></td><td>What one tool call returned, kept in the run's state and shown to the model on the next step. Only calls that <i>happened</i> produce one, which is why a run cannot loop on a denial.</td></tr>
+      <tr><td><b>identifier</b></td><td>An argument that names something real — <code>customer_id</code>, <code>order_id</code>, <code>ticket_id</code>. The model may pass one along if it has seen it, and never invent one (S20).</td></tr>
       <tr><td><b>step</b></td><td>One tool call that happened. Bounded at three (<code>MAX_STEPS</code>); a run that does not ask for more makes exactly one, as it always did.</td></tr>
       <tr><td><b>refused vs error</b></td><td>Refused: the agent declined (the role may not do that). Error: something is broken (the model or a service was unreachable). Different messages because they are different problems.</td></tr>
       <tr><td><b>fail closed</b></td><td>When a control cannot reach its authority, it denies. No tools offered, no approval verified.</td></tr>

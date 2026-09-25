@@ -113,3 +113,85 @@ def test_an_unparseable_reply_is_told_apart_from_a_bad_choice(monkeypatch):
     got = llm.decide_tool("look up c-100", ALLOWED, FORBIDDEN)
     assert got["cause"] == "unparseable"
     assert "could not be understood" in got["reason"]
+
+
+# ---------------------------------------------------------------------------
+# S20 — an identifier the model has not seen is asked for, not acted on
+# ---------------------------------------------------------------------------
+REFUND = {"refunds.issue": TOOLS["refunds.issue"]}
+
+
+def test_an_invented_identifier_becomes_a_question(monkeypatch):
+    """The reported bug, as a test.
+
+    The task names no order, and the model answers with the *field name* as the
+    value — which the presence check alone would have accepted, sending a refund
+    for an order called "order_id" to a manager for approval.
+    """
+    monkeypatch.setattr(
+        llm, "_chat", lambda _p: '{"tool": "refunds.issue", "args": {"order_id": "order_id", "amount": 200}}'
+    )
+    got = llm.decide_tool("Issue a refund of 200 dollars for order ", REFUND)
+    assert got["tool"] == "refunds.issue"
+    assert got["clarify"] is True
+    assert got["missing"] == ["order_id"]
+
+
+def test_the_task_named_the_order_so_the_models_guess_is_replaced(monkeypatch):
+    monkeypatch.setattr(
+        llm, "_chat", lambda _p: '{"tool": "refunds.issue", "args": {"order_id": "o-9999", "amount": 200}}'
+    )
+    got = llm.decide_tool("Issue a refund of 200 dollars for order o-1001", REFUND)
+    assert got["args"]["order_id"] == "o-1001"
+    assert "missing" not in got
+
+
+def test_a_word_from_the_task_is_not_an_identifier(monkeypatch):
+    """Found by retrying against the model, after the first fix.
+
+    The task says "for order " — so a model answering `"order_id": "order"` had used
+    a word the task contains, and passed a check that searched the text. Identifiers
+    are compared as a set of identifier-*shaped* tokens, not as a substring.
+    """
+    monkeypatch.setattr(
+        llm, "_chat", lambda _p: '{"tool": "refunds.issue", "args": {"order_id": "order", "amount": 200}}'
+    )
+    got = llm.decide_tool("Issue a refund of 200 dollars for order ", REFUND)
+    assert got["clarify"] is True
+    assert got["missing"] == ["order_id"]
+
+
+def test_an_identifier_read_in_an_earlier_call_is_allowed(monkeypatch):
+    # The multi-step case: the id came from a tool result, so it was seen (S19).
+    monkeypatch.setattr(
+        llm, "_chat", lambda _p: '{"tool": "crm.customer.read", "args": {"customer_id": "c-100"}}'
+    )
+    observations = [
+        {"tool": "tickets.read", "args": {"ticket_id": "t-1"}, "result": {"customer_id": "c-100"}}
+    ]
+    got = llm.decide_tool(
+        "read the customer from ticket t-1",
+        {"crm.customer.read": TOOLS["crm.customer.read"]},
+        observations=observations,
+    )
+    assert got["tool"] == "crm.customer.read"
+    assert got["args"]["customer_id"] == "c-100"
+    assert "clarify" not in got
+
+
+def test_an_identifier_the_model_saw_nowhere_is_audited(monkeypatch):
+    from agentnhi import set_sink
+
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        llm, "_chat", lambda _p: '{"tool": "refunds.issue", "args": {"order_id": "o-1234", "amount": 5}}'
+    )
+    set_sink(captured.append)
+    try:
+        llm.decide_tool("refund five dollars", REFUND)
+    finally:
+        set_sink(None)
+    events = [r for r in captured if r.get("event") == "llm.identifier_invented"]
+    assert events and events[-1]["args"] == "order_id"
+    # The value is not recorded — the point is the behaviour, not the guess.
+    assert "o-1234" not in str(events[-1])

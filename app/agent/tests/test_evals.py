@@ -31,3 +31,10 @@ def test_the_suite_covers_the_multi_step_path():
     # never triggers, so the case is the guard against the flag silently rotting.
     names = {name for name, _, _ in run_stubbed()}
     assert "the model asks for another step" in names
+
+
+def test_the_suite_covers_the_invented_identifier():
+    # Reported from a real run: a refund against an order called "order_id" reached
+    # an approval. The case is what keeps that from coming back (S20).
+    names = {name for name, _, _ in run_stubbed()}
+    assert "an identifier the model never saw is asked for" in names
