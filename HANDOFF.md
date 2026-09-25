@@ -414,6 +414,12 @@ python3 -m http.server 8081 --directory docs/site    # → http://localhost:8081
 # or just open docs/site/index.html — no build, no CDN, no network
 ```
 
+The 3D architecture stays at `docs/visualization/index.html` (the README and
+`docs/overview.html` point there), but the server's root is `docs/site`, so a
+relative link out of it 404s. `docs/site/visualization` is a **symlink** to
+`../visualization`, which makes the page reachable from the served root at
+`/visualization/index.html` — and still works from `file://` — without copying it.
+
 House rules for a page, enforced by `scripts/check-docs-pages.py` (runs in CI):
 
 - **Self-contained.** Inline CSS/JS, no build step, no CDN, no fonts to fetch.
