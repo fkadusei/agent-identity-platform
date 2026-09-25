@@ -393,7 +393,7 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 | `docs/decisions/` | ADRs 0001–0012 |
 | `docs/guides/` | plain-language user guides |
 | `docs/site/` | the living HTML pages — see "Living documentation" below |
-| `docs/visualization/` | HTML diagrams — the 3D architecture (`index.html`) and the S7 transport plan |
+| `docs/visualization/` | HTML diagrams — the S7 transport plan (`s7-transport-plan.html`); the 3D architecture now lives in the hosted set as `docs/site/architecture.html` |
 | `scripts/` | setup, demo, and the verification suites |
 
 ## Living documentation
@@ -408,6 +408,7 @@ behaviour changed, the page that describes it changes in the same PR*.
 | `index.html` | The whole platform, plain language, twenty sections |
 | `agent-flow.html` | The agent end to end: the graph, the prompt, the guardrails, the tool boundary, the interrupt, the policy decision — including the upgrade (S18–S19), marked built where it is built |
 | `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, and more |
+| `architecture.html` | The interactive 3D architecture — click a component, play the 9-hop trust flow, toggle the defences |
 
 There are no numbers in the list above and nothing to renumber: add a page, link
 it from the one it extends, and it is part of the set.
