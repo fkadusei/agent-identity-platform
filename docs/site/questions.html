@@ -172,6 +172,7 @@ ol.steps>li b{color:var(--ink)}
       <ol>
         <li><a href="#cloud">What is the cloud-provider work?</a></li>
         <li><a href="#multi">What would many agents take?</a></li>
+        <li><a href="#kms">Disk or KMS for the identity keys?</a></li>
       </ol>
     </div>
   </nav>
@@ -833,6 +834,162 @@ tool.reported_error   {"tool": "refunds.issue", "reason": "unknown order"}</pre>
     <b style="display:inline">·</b> Does <b>a sub-agent inherit the parent's authority, or
     less</b>? I would say strictly less, and make it enforceable rather than advisory.
   </div>
+</section>
+
+<section id="kms">
+  <h2><span class="qnum">12</span>Disk or KMS for the identity keys?</h2>
+  <p class="answer">
+    <b>Wherever SPIRE's KeyManager puts them — and that one setting decides whether the identity
+    tier can be a failover pair.</b> Every credential this platform issues is signed by a
+    certificate authority, and that CA's private key has to live somewhere: on a volume, or
+    inside a KMS. Two replicas can only serve the same trust bundle if they sign with the
+    <i>same</i> CA.
+  </p>
+  <p>
+    First, a distinction that trips people up: the registry — the attested agents and
+    registration entries — is <b>already</b> in Postgres, and always is. That half of HA was S1's
+    first half. What switches here is only the <b>key manager</b>: where the signing key lives.
+  </p>
+  <table>
+    <thead><tr><th></th><th><code>disk</code> (default)</th><th><code>aws_kms</code></th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Where the CA key is</td>
+        <td>A file on the server's volume (<code>/run/spire/data/keys.json</code>), on a PVC so a restart keeps the same CA</td>
+        <td>Inside AWS KMS. Created, rotated and <i>used</i> there — <b>the private key never leaves</b></td>
+      </tr>
+      <tr>
+        <td>How many replicas</td>
+        <td><b>One.</b> The file cannot be shared, so two replicas would each mint their own CA — worse than a single server</td>
+        <td><b>2+</b> — every replica signs with the same key, so they serve the same bundle</td>
+      </tr>
+      <tr>
+        <td>What it needs</td>
+        <td>Nothing. No credentials, no network. This is why an unattended demo uses it</td>
+        <td>An AWS account, a KMS key's worth of permissions, and credentials that reach AWS</td>
+      </tr>
+      <tr>
+        <td>What a leaked credential means</td>
+        <td>A file in your cluster reading a key in your cluster</td>
+        <td>Still worth scoping: the recommended setup puts a role in front, so the long-lived credential can only assume it (below)</td>
+      </tr>
+      <tr>
+        <td>Critical path</td>
+        <td>Volume + one pod</td>
+        <td>Volume + pod + AWS KMS reachability and credentials</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    Both modes are blocks in one template, and the mode is a flag from the environment — so
+    there is no second config file to drift:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the two blocks, from the SPIRE server config template</p>
+<pre>KeyManager "aws_kms" {
+  plugin_data {
+    region                         = "&lt;region&gt;"
+    key_identifier_value           = "&lt;shared id&gt;"
+    enable_tag_based_key_discovery = true
+  }
+}
+KeyManager "disk" {
+  plugin_data {
+    keys_path = "/run/spire/data/keys.json"
+  }
+}</pre>
+  </div>
+  <h3>How to switch</h3>
+  <p>
+    Both directions are the same two steps: say so in <code>.env</code>, then run the setup
+    script. Only the content of the first step differs.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — the KMS direction</p>
+<pre># 1. the AWS side, once: a user whose only power is to assume a role, and the role
+./scripts/setup-aws-kms-role.sh --region eu-west-1 [--external-id] [--dry-run]
+
+# 2. .env — written by the script above where it can be; this is what it sets
+SPIRE_KEY_MANAGER=aws_kms
+SPIRE_KMS_REGION=eu-west-1
+SPIRE_KMS_SERVER_ID=acme-com      # MUST be identical on every replica, and no dots
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+
+# 3. deploy it: renders the KMS block, stages the credentials, scales to 2 replicas,
+#    and gates on both replicas presenting the same trust bundle
+./scripts/setup.sh</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">commands — back to disk</p>
+<pre># .env: SPIRE_KEY_MANAGER=disk   — then the same command
+./scripts/setup.sh
+# setup.sh also deletes the KMS credential Secret, key policy and config, so
+# switching back does not leave usable credentials in the cluster</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">scripts/setup.sh</p>
+<pre>KEY_MANAGER="${SPIRE_KEY_MANAGER:-disk}"
+KMS_DISK=""
+KMS_AWS=""
+case "$KEY_MANAGER" in
+  disk)    KMS_DISK=1 ;;
+  aws_kms) KMS_AWS=1 ;;
+  *) die "SPIRE_KEY_MANAGER=$KEY_MANAGER is not supported yet (disk | aws_kms)" ;;
+esac</pre>
+  </div>
+  <div class="callout warn">
+    <b>Two things that decide whether the switch actually works</b>
+    <b style="display:inline">·</b> <b>The shared identifier.</b> The plugin's default
+    identifier is a per-server <i>file</i>, which each replica would create for itself — one
+    identifier each, one key each, a different CA each. <code>SPIRE_KMS_SERVER_ID</code> must be
+    the same on every replica, and it cannot contain dots, which is why the trust domain's own
+    name is written <code>acme-com</code> here.
+    <b style="display:inline">·</b> <b>Switching changes the CA.</b> A KMS-backed server starts
+    with a new CA (the disk one is a different key), and the demo rotates CAs every ~12 hours, so
+    the gate compares the <i>whole</i> bundle rather than one certificate — otherwise it would
+    keep matching across a change and pass the check that exists to catch it. Treat the switch as
+    a maintenance window, not a flip.
+  </div>
+  <h3>Role-based access, which is the recommended shape</h3>
+  <table>
+    <thead><tr><th>Principal</th><th>Has</th><th>Why it is built that way</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>IAM user <code>spire-kms-base</code></td>
+        <td><b>only</b> <code>sts:AssumeRole</code> on the role below</td>
+        <td>This is the credential that sits in <code>.env</code>. If it leaks, it can try to assume one role and nothing else</td>
+      </tr>
+      <tr>
+        <td>IAM role <code>spire-kms</code></td>
+        <td>The KMS permissions that actually sign</td>
+        <td>The plugin assumes it, and the AWS SDK <b>refreshes</b> the assumed-role credentials itself — so an expired session does not stop identity from starting, unlike static keys</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>
+    The plugin creates and rotates its own keys — there is nothing to pre-create — so the role
+    needs the permissions to list, describe, create, sign with and schedule deletion of KMS keys.
+    That last one is why it should be a dedicated principal: a principal that can schedule key
+    deletion can destroy an identity tier.
+  </p>
+  <div class="callout ok">
+    <b>Measured, with KMS in <code>us-east-1</code></b>
+    Every SVID issuance is one <code>Sign</code>. From inside the cluster, fetching an identity
+    took <b>5 ms</b> (X.509-SVID, p50) and <b>18 ms</b> (JWT-SVID, p50) — and the running cost is
+    that request count against your region's KMS price. Checked against a live key: the plugin
+    created its own P-256 signing keys, both replicas served a <b>byte-identical trust bundle</b>,
+    and deleting a replica left the survivor issuing SVIDs with <b>no workload restarted</b>. The
+    base credential behaved too — its own <code>kms:ListAliases</code> was denied, because it may
+    only assume the role.
+  </div>
+  <p>
+    <b>Why the demo still defaults to disk:</b> running the CA in KMS makes identity depend on
+    short-lived cloud credentials and a network path to a region — a dependency the demo would
+    carry on every start for a benefit (two replicas instead of one) that a laptop cluster does
+    not need. It is one line in <code>.env</code> away, and it is the mode a real deployment
+    wants.
+  </p>
 </section>
 
 <div class="foot">
