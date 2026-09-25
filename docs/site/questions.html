@@ -162,6 +162,7 @@ ol.steps>li b{color:var(--ink)}
       <ol>
         <li><a href="#one-agent">Is there one agent, or many?</a></li>
         <li><a href="#agent-now">What can it do now that it couldn't before?</a></li>
+        <li><a href="#approval">When something needs an approval, how does that work?</a></li>
         <li><a href="#why-ask">Why didn't it ask for the order?</a></li>
         <li><a href="#why-allowed">Why did a wrong order come back "allowed"?</a></li>
       </ol>
@@ -457,8 +458,114 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
   </div>
 </section>
 
+<section id="approval">
+  <h2><span class="qnum">07</span>When something needs an approval, how does that work?</h2>
+  <p class="answer">
+    <b>Yes — there is a real queue, and it is a Postgres table.</b> A request that policy judges
+    too risky is written down, the run <i>pauses</i>, and it stays paused until a different
+    person decides. The queue is what the manager's Approvals tab reads, and its depth is what
+    scales the API.
+  </p>
+  <h3>The path of one held action</h3>
+  <ol class="steps">
+    <li><b>Policy says so.</b> The tool server asks OPA, which answers <code>require_approval</code>
+      for this caller, tool and arguments — e.g. a refund above $50 and no more than $500 — and
+      returns <b>428</b> to the agent. Nothing has been executed.</li>
+    <li><b>The agent writes the request down.</b> It calls the API to create an approval, over a
+      SPIFFE hop, and only the agent's workload identity is allowed to do that — creating an
+      approval is the step that makes a high-risk action possible.</li>
+    <li><b>The run pauses.</b> The graph's <code>await_decision</code> node raises an
+      <i>interrupt</i>, the run is checkpointed in Postgres, and the requester gets the approval
+      id. The run can be resumed by any replica, and it survives a restart.</li>
+    <li><b>A person decides.</b> A manager (the Keycloak role) sees it in the queue and approves
+      or denies, optionally with a note. The requester cannot decide their own request.</li>
+    <li><b>The run resumes, and is judged again.</b> The requester resumes it; the agent calls
+      the tool with the approval id; the tool server <b>verifies</b> that the approval matches
+      this exact request — six fields — and only then executes.</li>
+  </ol>
+  <h3>The queue itself</h3>
+  <p>
+    One row per request: the tool, its arguments as canonical JSON, the person it is for, the
+    agent that asked, the reason, the tenant, the status, who decided it and when.
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/approvals/store.py — the table</p>
+<pre>CREATE TABLE IF NOT EXISTS approvals (
+    id          text PRIMARY KEY,
+    tool        text NOT NULL,
+    args        jsonb NOT NULL,
+    "user"      text NOT NULL,
+    agent       text NOT NULL,
+    reason      text NOT NULL,
+    tenant      text NOT NULL DEFAULT '',
+    status      text NOT NULL,
+    approver    text,
+    note        text,
+    created_at  double precision NOT NULL,
+    decided_at  double precision
+);</pre>
+  </div>
+  <p>
+    There are two backends behind one interface: <b>Postgres</b> when a database is configured
+    (durable, shared by all replicas, and what the demo runs), and <b>in-memory</b> for tests and
+    single-process runs. The queue a person sees is <i>their tenant's</i> pending rows; the
+    number the autoscaler sees counts <b>every tenant</b>, because queue depth is a property of
+    the platform, not of one tenant or one replica.
+  </p>
+  <div class="callout ok">
+    <b>Three things that make it more than a to-do list</b>
+    <b style="display:inline">·</b> <b>Bound to the exact request.</b> Verification compares the
+    approval id, the tool, its arguments, the person, the agent and the tenant — so an approval
+    for a $60 refund cannot be replayed for $600, or for someone else.
+    <b style="display:inline">·</b> <b>Separation of duties, in SQL.</b> The decision is a single
+    statement whose <code>WHERE</code> clause requires the row to still be pending, to be in the
+    approver's tenant, and to <i>not</i> belong to them. Two managers clicking at once cannot both
+    win, and nobody can approve their own request — enforced by the database, not by the UI.
+    <b style="display:inline">·</b> <b>An approval is not authorization.</b> Policy runs again on
+    the resumed call, and the tool server verifies rather than trusts.
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/approvals/store.py — the decision, and why it cannot race</p>
+<pre>'UPDATE approvals SET status = %s, approver = %s, note = %s, decided_at = %s '
+"WHERE id = %s AND status = 'pending' AND tenant = %s AND \"user\" <> %s "
+'RETURNING id, tool, args, "user", agent, reason, tenant, status, approver, note, '
+"created_at, decided_at",</pre>
+  </div>
+  <h3>The stack, piece by piece</h3>
+  <table>
+    <thead><tr><th>Piece</th><th>Its job in approvals</th></tr></thead>
+    <tbody>
+      <tr><td><b>OPA</b> (Rego)</td><td>Decides <i>whether</i> an action needs approval: the thresholds and the role rules live in policy, and the answer carries the reason a person reads</td></tr>
+      <tr><td><b>FastAPI</b> (the API)</td><td>The queue's endpoints: create (agent only), list for my tenant, decide (manager role), and verify (tool server only)</td></tr>
+      <tr><td><b>Postgres</b></td><td>The queue itself — durable, tenant-scoped, and the place the no-self-approval rule is enforced</td></tr>
+      <tr><td><b>LangGraph</b> (+ its Postgres checkpointer)</td><td>The pause and resume: <code>create_approval</code> writes the request, <code>await_decision</code> interrupts, and the checkpoint means the run outlives a restart</td></tr>
+      <tr><td><b>Keycloak</b></td><td>Who may decide: the <code>manager</code> realm role, verified from the token</td></tr>
+      <tr><td><b>SPIFFE</b></td><td>Who may create one (the agent, named) and who may verify one (the tool server, named) — both proved at the application layer, not assumed from the network</td></tr>
+      <tr><td><b>Prometheus + adapter + HPA</b></td><td>The backlog gauge, refreshed at scrape time from the store, surfaced as the <code>approvals_pending</code> metric — the API scales out on queue depth, not just CPU</td></tr>
+      <tr><td><b>The web app</b></td><td>The manager's Approvals tab, and the requester's card, which polls so it updates the moment someone else decides</td></tr>
+    </tbody>
+  </table>
+  <div class="codeblock">
+    <p class="cap">commands — see the queue, and what scales on it</p>
+<pre># the manager's queue, tenant-scoped
+curl -s --cacert .edge/ca.crt "https://localhost:8443/approvals?status=pending" \
+  -H "authorization: Bearer $MANAGER_TOKEN"
+
+# the platform's queue depth, and the autoscaler that follows it
+kubectl --context kind-agent-platform -n agent-platform get hpa api</pre>
+  </div>
+  <div class="callout warn">
+    <b>Two details worth knowing when demoing it</b>
+    The gauge is read from the store <i>at scrape time</i> rather than incremented in memory —
+    with two API replicas, only the replica that handled a change would otherwise move its own
+    number, and the autoscaler reads the maximum across them. And the queue keeps its history:
+    a decided approval stays a row (with its approver and note) rather than disappearing, which
+    is why the audit can answer "who let this through".
+  </div>
+</section>
+
 <section id="why-ask">
-  <h2><span class="qnum">07</span>Why didn't it ask for the order?</h2>
+  <h2><span class="qnum">08</span>Why didn't it ask for the order?</h2>
   <p class="answer">
     <b>Because the model supplied one — it answered with the field's own name as the value.</b>
     The agent asks when a required argument is <i>missing</i>; a guess is not missing, so
@@ -515,7 +622,7 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
 </section>
 
 <section id="why-allowed">
-  <h2><span class="qnum">08</span>Why did a wrong order come back <i>allowed</i>?</h2>
+  <h2><span class="qnum">09</span>Why did a wrong order come back <i>allowed</i>?</h2>
   <p class="answer">
     <b>Because "allowed" is policy's answer, not the tool's.</b> Policy allowed the call — the
     amount was under the auto-approval limit — and the tool then discovered the order does not
@@ -562,7 +669,7 @@ tool.reported_error   {"tool": "refunds.issue", "reason": "unknown order"}</pre>
 </section>
 
 <section id="cloud">
-  <h2><span class="qnum">09</span>What is the cloud-provider work?</h2>
+  <h2><span class="qnum">10</span>What is the cloud-provider work?</h2>
   <p class="answer">
     <b>Letting the platform talk to a model outside the building — and deciding whether it
     should.</b> The plumbing is in place; two defects in the hosted branch stop it working, and
@@ -607,7 +714,7 @@ tool.reported_error   {"tool": "refunds.issue", "reason": "unknown order"}</pre>
 </section>
 
 <section id="multi">
-  <h2><span class="qnum">10</span>What would many agents — and sub-agents — take?</h2>
+  <h2><span class="qnum">11</span>What would many agents — and sub-agents — take?</h2>
   <p class="answer">
     <b>There is no agent record anywhere.</b> An agent exists by appearing in four registries
     owned by four different systems, and "registration" is a rule about <i>when an identity may
