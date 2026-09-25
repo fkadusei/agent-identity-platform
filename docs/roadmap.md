@@ -23,7 +23,7 @@ threat in the threat model addressed. The repo is public.
 - [x] `docs/threat-model.md`, `docs/data-handling.md`, `docs/glossary.md`,
       `CONTRIBUTING.md`
 - [x] `docs/real-world-adoption.md` (finalized in Phase 3)
-- [x] `docs/visualization/index.html` — interactive 3D architecture (light/dark)
+- [x] `docs/site/architecture.html` — interactive 3D architecture (light/dark)
 - [x] `README.md`, `HANDOFF.md`, `LICENSE`
 - [x] Cross-links with `enterprise-agent-nhi`
 - [x] Git repo created and pushed
