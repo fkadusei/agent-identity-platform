@@ -36,6 +36,33 @@ two API replicas each pod held a *different* subset of the events (measured: 8 a
 trail survives a restart — verified on kind by posting events, restarting the API,
 and reading them back from both pods.
 
+## What a run keeps, and for how long
+
+The audit trail is not the only place a read leaves a mark. Since the agent can
+take more than one step (S19), a run's **checkpoint holds what each tool
+returned**, in order, and the previous result is shown to the model on the next
+step. So a `privacy.pii.read` as the first step of a two-step run leaves the
+personal data in the run's state — in Postgres, for as long as the run exists —
+and sends it back into the prompt for the second decision.
+
+That is a wider footprint than the audit, which deliberately records *that* a read
+happened and not what it returned. It is **accepted as documented behaviour**
+rather than prevented (threat T11), and four things bound it today:
+
+- the data is synthetic (ADR-0006), so there is no real person in the checkpoint;
+- the model is **local by default**, so re-exposing a result does not move it
+  off-site — that is the hop that would, if the gateway were pointed at a cloud
+  provider;
+- a run's state is not a store: it lives as long as the run, in the same Postgres
+  as everything else ([`data-stores.md`](data-stores.md));
+- the read itself still needs the `privacy` role and a manager's approval, on
+  every attempt.
+
+The control that would close the cloud case is a policy question, not a bug fix:
+*may a run that read personal data continue only on a local model?* That is
+**S17**, and it is not built. Until it is, the answer to "does personal data reach
+the model?" is: only the model you already chose, which is local by default.
+
 ## Refusals before the tool server
 
 The agent is only offered the tools your role may call (`allowed_tools()` from the
