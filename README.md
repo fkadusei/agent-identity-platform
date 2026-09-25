@@ -56,7 +56,7 @@ $1000 and it is refused; ask as dana and it is refused with a clear reason.
 `./status.sh` tells you if it is up; `./stop.sh` stops it.
 
 Other ways in: the **Roles** tab shows *your tenant's* role → tool matrix (read from the
-policy); [`docs/site/architecture.html`](docs/site/architecture.html) is an
+policy); [`docs/visualization/index.html`](docs/visualization/index.html) is an
 interactive 3D architecture (double-click it, no server needed).
 
 ## Architecture
