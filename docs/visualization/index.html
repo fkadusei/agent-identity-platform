@@ -90,7 +90,7 @@
 
   /* ---------- legend (bottom-left) ---------- */
   #legend{ position:fixed; left:16px; bottom:16px; background:var(--panel); border:1px solid var(--border);
-    border-radius:8px; padding:10px 12px; font-size:10.5px; color:var(--dim); z-index:5;
+    border-radius:8px; padding:10px 12px; font-size:10.5px; color:var(--dim); z-index:7;
     backdrop-filter:var(--panel-blur); box-shadow:var(--shadow); }
   #legend h4{ font-size:10px; color:var(--text); margin-bottom:6px; letter-spacing:.6px; }
   #legend .row{ display:flex; align-items:center; gap:7px; margin:3px 0; }
@@ -110,6 +110,17 @@
   #infoClose{ position:absolute; top:8px; right:10px; border:none; background:none; color:var(--dim);
     font-size:14px; padding:2px 6px; cursor:pointer; }
   #infoClose:hover{ color:var(--text); }
+
+  /* ---------- defences list (right, scrollable; shown in defence mode) ----------
+     The five attacks live here rather than in the centred caption: a long caption
+     grows upward and covers the diagram, a side panel does not. */
+  #defences{ position:fixed; top:64px; right:16px; width:340px; max-height:calc(100vh - 220px);
+    overflow-y:auto; background:var(--panel); border:1px solid var(--border); border-radius:8px;
+    padding:14px; display:none; z-index:6; backdrop-filter:var(--panel-blur); box-shadow:var(--shadow); }
+  #defences h4{ font-size:12px; font-weight:600; color:var(--red); margin-bottom:10px; }
+  #defences .item{ margin:0 0 10px; font-size:11px; color:var(--dim); }
+  #defences .item b{ display:block; color:var(--text); font-weight:600; margin-bottom:2px; }
+  #defences .item div{ white-space:pre-line; line-height:1.55; }
 </style>
 </head>
 <body>
@@ -156,6 +167,11 @@
   <p id="infoDesc"></p>
   <div class="cfgLabel">Config in repo:</div>
   <code id="infoCfg"></code>
+</div>
+
+<div id="defences">
+  <h4>⚠ Defences — every attack is blocked</h4>
+  <div id="defList"></div>
 </div>
 
 <div id="bottombar">
@@ -759,6 +775,20 @@ viewBtn.addEventListener("click", () => {
   }
 });
 
+/* Build the defence list once; the panel is shown only while defences are on. */
+const defList = $("defList");
+SCENE_DATA.attacks.forEach((a) => {
+  const item = document.createElement("div");
+  item.className = "item";
+  const head = document.createElement("b");
+  head.textContent = a.badge + " · " + a.tag;
+  const body = document.createElement("div");
+  body.textContent = a.caption;
+  item.appendChild(head);
+  item.appendChild(body);
+  defList.appendChild(item);
+});
+
 defBtn.addEventListener("click", () => {
   defMode = !defMode;
   defBtn.classList.toggle("active", defMode);
@@ -766,11 +796,15 @@ defBtn.addEventListener("click", () => {
   nodeById["rogue"].group.visible = defMode;
   if (defMode) {
     stopPlayback(); highlightStep(-1);
+    selectNode(null);   // clear any node card, and show the list below
     flowEdges.forEach((e) => { e.tube.material.opacity = 0.16; e.halo.material.opacity = 0.04; });
+    $("defences").style.display = "block";
     setCaption("⚠ Defences — every attack is blocked",
-      SCENE_DATA.attacks.map((a) => a.badge + " · " + a.caption).join("\n"), "#ff5d5d");
+      "Five attacks are drawn in the scene, each stopped at the ✗.\nThe list on the right explains each one.",
+      "#ff5d5d");
   } else {
     flowEdges.forEach((e) => { e.tube.material.opacity = 0.55; e.halo.material.opacity = 0.10; });
+    $("defences").style.display = "none";
     currentStep = -1; idleCaption();
   }
 });
@@ -794,7 +828,12 @@ function selectNode(id) {
     prev.glow.material.opacity = currentThemeLight ? 0.21 : 0.3;
   }
   selectedId = id;
-  if (!id) { $("info").style.display = "none"; return; }
+  if (!id) {
+    $("info").style.display = "none";
+    if (defMode) $("defences").style.display = "block";
+    return;
+  }
+  $("defences").style.display = "none";
   const n = nodeById[id];
   n.edges.material.color.setHex(0xffffff);
   n.glow.material.userData.baseOpacity = 0.55;
