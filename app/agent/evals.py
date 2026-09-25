@@ -130,12 +130,19 @@ CASES: list[Case] = [
     ),
     Case(
         "the model asks for another step",
-        "Refund the order from ticket t-1",
+        # The hint is the point: the task genuinely cannot be done in one call, so
+        # the only question the case asks is whether the model *says* it needs a
+        # second one. Without the hint a model may reasonably ask for the missing
+        # amount instead, which measures something else.
+        "Refund the order from ticket t-1. You will need to read the ticket first.",
         ("tickets.read", "refunds.issue"),
         '{"tool": "tickets.read", "args": {"ticket_id": "t-1"},'
         ' "reason": "read the ticket first", "more": true}',
         "tickets.read",
-        "read the ticket first",
+        # Deliberately loose: the model's own wording varies ("read the ticket
+        # first", "read the ticket to understand the context"), and what this case
+        # measures is the tool and the flag, not the phrasing.
+        "ticket",
         expect_more=True,
     ),
     Case(

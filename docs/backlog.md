@@ -727,11 +727,22 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
     grew a queue of decisions, which is what makes a multi-step run testable.
 - **Lands in:** `app/agent/{deps,llm,graph,live,evals}.py`, the web app (the path
   a multi-step run took), `docs/site/agent-flow.html`, `docs/guardrails-and-evals.md`.
+- **One thing learned worth keeping:** a prose instruction did not work. The prompt
+  first said *"if you will need another call after seeing this one's result, add
+  `more: true`"*, and `qwen3-warden-ctx16k` ignored it on every run — while stating in
+  its own `reason` that it needed the ticket before it could refund. Moving the same
+  field into the reply template —
+  `{"tool": …, "args": {…}, "reason": …, "more": true if you will need another call after this one}`
+  — made it emit `"more": true` for two-step tasks and `false` for single-step ones.
+  Show a small model the shape of the answer; do not describe it in a sentence.
 - **Verified by:** graph tests (a single-step run is unchanged — one model call,
   one tool call, `ok`; a second step sees the first result; the budget stops a
   model that would never stop; a recorded repeat is refused; an approval in the
   middle is a pause and the loop continues after it), the stubbed evals in CI (12
-  cases now), and the live suites after the rebuild.
+  cases now), and live: a three-step run against the cluster — read ticket t-5001,
+  list that customer's orders, quote the damaged one — with the budget stopping it
+  at three, and the repeat guard firing when the model tried a call it had already
+  made.
 
 ## Not slices (documented limits)
 

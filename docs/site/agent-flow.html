@@ -723,10 +723,9 @@ return graph.compile(checkpointer=checkpointer or InMemorySaver())</pre>
         'tools fits, reply with {"tool": null, "reason": "&lt;why&gt;"}.\n'
         "If a required argument is not in the task, still name the tool and leave "
         "that argument out — never invent one; the user will be asked for it.\n"
-        "If you will need another call after seeing this one's result (for example "
-        'reading a ticket before refunding its order), add "more": true.\n'
         "Otherwise reply with ONLY JSON of the form "
-        '{"tool": "&lt;name&gt;", "args": {&lt;arguments&gt;}, "reason": "&lt;short reason&gt;"}.'
+        '{"tool": "&lt;name&gt;", "args": {&lt;arguments&gt;}, "reason": "&lt;short reason&gt;", '
+        '"more": true if you will need another call after this one}.'
     )
     return "".join(parts)</pre>
   </div>
@@ -734,6 +733,15 @@ return graph.compile(checkpointer=checkpointer or InMemorySaver())</pre>
     Each line of the manifest is generated from the catalogue, so the prompt cannot drift
     from what exists:
   </p>
+  <div class="callout warn">
+    <b>The <code>more</code> flag is only in the template, and that was learned the hard way</b>
+    The first version of this prompt <i>described</i> the flag in a sentence — "if you will need
+    another call after seeing this one's result, add <code>"more": true</code>" — and the model
+    ignored it on every run, while saying in its own <code>reason</code> that it needed the
+    ticket before it could refund. Moving the field into the reply template made it emit
+    <code>"more": true</code> for two-step tasks and <code>false</code> for one-step ones. Show a
+    small model the shape of the answer; do not describe it.
+  </div>
   <div class="codeblock">
     <p class="cap">app/agent/llm.py</p>
 <pre>def _tool_manifest(tools: dict) -&gt; str:

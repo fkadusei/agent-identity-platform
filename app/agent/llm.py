@@ -77,10 +77,9 @@ def _prompt(
         'tools fits, reply with {"tool": null, "reason": "<why>"}.\n'
         "If a required argument is not in the task, still name the tool and leave "
         "that argument out — never invent one; the user will be asked for it.\n"
-        "If you will need another call after seeing this one's result (for example "
-        'reading a ticket before refunding its order), add "more": true.\n'
         "Otherwise reply with ONLY JSON of the form "
-        '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>"}.'
+        '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>", '
+        '"more": true if you will need another call after this one}.'
     )
     return "".join(parts)
 
