@@ -647,7 +647,10 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Also worth deciding when it lands:** whether a cloud model may see the personal data
   the agent can read under approval. Local-by-default keeps that data on-premises today;
   making it a *policy* question ("this tool or tenant may only use a local model") would
-  suit this platform's approach, and is a larger piece than the two fixes.
+  suit this platform's approach, and is a larger piece than the two fixes. **S19 made
+  this concrete**: a second step feeds the previous result back into the prompt, so a
+  run that read PII as step 1 would send it to whichever model the gateway points at —
+  see **S22**, which is the documentation side of the same fact.
 - **Lands in:** `app/gateway/app.py`, `scripts/use-model.sh`, `docs/llm-gateway.md`.
 - **Verified by:** a stub OpenAI-compatible provider in-cluster (so the path can be
   exercised without anyone's cloud key), unit tests for both defects, and the live evals
@@ -796,6 +799,32 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Lands in:** `app/tools/enforcement.py`, the web app, `docs/site/{index,agent-flow}.html`.
 - **Verified by:** an enforcement test that both events are recorded in order and
   that a normal answer raises none; the reported task replayed live.
+
+## S22 — Document what the loop stores and re-exposes — **open**
+
+- **What:** two consequences of S19's multi-step loop that are behaviour rather
+  than defects, and are not yet written where they belong.
+- **Why they matter, and why they are one slice:** they are the same fact seen from
+  two sides — a run that makes several calls keeps more than it used to.
+  - A run's **checkpoint now holds what each tool returned**, in order. Before the
+    loop, a run's state held the last result; now a `privacy.pii.read` inside a
+    multi-step run leaves the personal data in the run's state, in Postgres, for as
+    long as the run exists. Same data, wider footprint, and it is *not* the audit —
+    the audit deliberately records that a read happened, not what it returned.
+  - A **result is fed back into the next prompt** on a second step, so whatever a
+    PII tool returned is shown to the model. With a local model nothing leaves the
+    building; the moment the gateway points at a cloud provider, this is the hop
+    that would carry it off-site.
+- **Where it lands:** `docs/threat-model.md` (a threat entry with its mitigation or
+  its accepted risk) and `docs/privacy.md` (the storage and retention question), and
+  a sentence on `docs/site/agent-flow.html` §9 where the loop is described.
+- **Decision needed, not work:** whether to accept both as documented behaviour, or
+  constrain them — e.g. do not retain observation contents for PII tools, and/or let
+  policy decide that a run which read PII may only continue with a local model. That
+  second option is the concrete form of **S17**'s policy question, which is why this
+  is worth settling first.
+- **Verified by:** the docs naming the concrete case (a `privacy.pii.read` as step 1
+  of a two-step run) and stating plainly which of the two options was chosen.
 
 ## Not slices (documented limits)
 
