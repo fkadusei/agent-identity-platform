@@ -21,7 +21,31 @@
   as "it happened"; the agent-upgrade work is complete. **S17** (cloud providers) is
   the one open slice.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-09-24
+- **Last updated:** 2026-09-25
+
+## Resuming work in a fresh session
+
+A new session needs **none** of the previous conversation. In order:
+
+1. **Read this file and [`docs/backlog.md`](docs/backlog.md).** The slice entries
+   carry what each change was, why, and how it was verified — that is the memory.
+2. **Check the tree is what you think it is:** `git log --oneline -1`, `git status`,
+   and `./scripts/check-images.sh` (the cluster must be stamped at HEAD; see the
+   gotcha below).
+3. **Run the suites before changing anything** (next section), so a failure is
+   theirs and not yours.
+4. **Take the next item from "Immediate next task"** and follow the house rhythm:
+   branch → PR → the ten required checks → squash merge → rebuild the six images
+   from a clean HEAD → verify on the cluster.
+5. **If a change alters behaviour a page describes, change the page in the same
+   PR** — `scripts/check-docs-pages.py` enforces it, including that quoted code
+   still matches its source.
+
+What a fresh session does *not* have is the reasoning from the conversation that
+produced the code. That is exactly why decisions are written where they belong —
+ADRs, backlog entries, the pages, commit messages — rather than only in chat. When
+a session ends with something only in the transcript, write it down first; the next
+one will not have this one's memory.
 
 ## Resume in 60 seconds
 
@@ -51,9 +75,11 @@ Then open **https://localhost:8443**. Demo users:
 ## Test everything
 
 ```sh
-.venv/bin/python -m pytest -q          # app: 200 passed (23 Postgres tests skip)
-sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed
+.venv/bin/python -m pytest -q          # app: 244 passed (23 Postgres tests skip)
+sdk/.venv/bin/python -m pytest sdk -q  # SDK: 34 passed (quiet config: no summary line,
+                                       #   so check the exit code or count the dots)
 docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/   # policy: 45 passed
+python3 scripts/check-docs-pages.py    # the pages: nav, links, and every quoted line
 ```
 
 The Postgres-backed tests **skip** without a database. To run them:
@@ -162,14 +188,30 @@ End-to-end, on the cluster:
 
 ## Immediate next task
 
-Phases 1–3 are complete and every threat is addressed. Next, pick from the open
-backlog in [`docs/backlog.md`](docs/backlog.md) — each slice has a stable ID with
-what it is, why, where it lands and how we would verify it. One is open:
+Phases 1–3 are complete, every threat is addressed, and **S1–S21 are done**. What
+remains is one open slice and three loose ends — all four are small and each is
+written up where it lands:
 
-- **S17 — provider-agnostic models.** Two defects in the hosted-provider branch,
-  both found by reading it; plus the open question of whether a cloud model may see
-  the personal data the agent can read under approval. The interesting half is that
-  policy question, not the bug fixes.
+1. **S17 — provider-agnostic models** (the only open slice). Two defects in the
+   hosted-provider branch, both found by reading it: the forwarder sends no model,
+   and it forwards a JSON hint a strict provider may reject. The *interesting* half
+   is the policy question: may a cloud model see the personal data the agent can
+   read under approval? Local-only means it cannot, today.
+2. **Two S19 consequences worth documenting** — they are behaviour, not bugs, and
+   they belong in [`docs/threat-model.md`](docs/threat-model.md) and
+   [`docs/privacy.md`](docs/privacy.md):
+   - a run's **checkpoint now holds what each tool returned**, so a PII read inside
+     a multi-step run leaves the data in the run's state, not only in the response;
+   - a **high-risk result is fed back into the next prompt** on a second step, so
+     whatever a PII tool returned is shown to the model. It sharpens item 1: it is
+     the concrete case the cloud-model question turns on.
+3. **`demo-roles.sh` is flaky** (roughly one run in five, right after a restart):
+   the client scripts use `timeout=10` on the login/admin calls while the model call
+   gets 60, so a cold first call can time out. A one-line hardening — raise them, or
+   retry once — settles it. See Known issues.
+4. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
+   live key, and documented in [`docs/ha.md`](docs/ha.md) and question 12 of the
+   pages. No action unless you want HA identity on by default.
 
 Done, kept for the record:
  **S1** (SPIRE's registry is durable, and the KeyManager is
@@ -240,6 +282,11 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 
 ## Known issues / gotchas
 
+- **`demo-roles.sh` can time out once, right after a restart.** The client scripts
+  use `timeout=10` on the login and admin calls (`scripts/roles_client.py` and its
+  siblings) while the model call gets 60s, so a cold first call loses the race. It
+  passed 5–6 runs in a row once warm, and re-running clears it. Fix (not done):
+  raise those timeouts, or retry once. Seen intermittently; not a correctness bug.
 - **Keycloak is durable now** (S2): its realm and users live in Postgres, the
   realm is imported by a Job with `--override=false`, and `setup.sh` no longer
   recreates it — so accounts enrolled at runtime survive a re-run. Consequence,
@@ -362,7 +409,8 @@ behaviour changed, the page that describes it changes in the same PR*.
 | Page | Covers |
 |---|---|
 | `index.html` | The whole platform, plain language, twenty sections |
-| `agent-flow.html` | The agent end to end: the graph, the prompt, the guardrails, the tool boundary, the interrupt, the policy decision — plus the proposed upgrade, marked as proposed |
+| `agent-flow.html` | The agent end to end: the graph, the prompt, the guardrails, the tool boundary, the interrupt, the policy decision — including the upgrade (S18–S19), marked built where it is built |
+| `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, and more |
 
 There are no numbers in the list above and nothing to renumber: add a page, link
 it from the one it extends, and it is part of the set.
