@@ -550,6 +550,20 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
     </tbody>
   </table>
 
+  <div class="callout info">
+    <b>There is one agent, and the platform is built for exactly one</b>
+    One agent workload, one SPIFFE ID — <code>spiffe://acme.com/ns/agent-platform/sa/agent</code>
+    — held by two replicas that are interchangeable: a run's state is checkpointed in Postgres,
+    so either replica can resume it, and many runs run at once, all as the same agent acting for
+    different people. Policy trusts exactly that ID (<code>is_trusted if input.agent ==
+    trusted_agent</code> in <code>policy/authz.rego</code>), so a second agent would be refused
+    as an untrusted workload until it is registered <i>and</i> the policy names it. Everything
+    else is already keyed per agent — the gateway's rate and cost limits, the audit's
+    <code>spiffe_id</code> — which is what would make that a policy and manifest change rather
+    than a redesign. It has not been written down until now; see
+    <a href="agent-flow.html">the agent, end to end</a> for the flow itself.
+  </div>
+
   <h3>How a pod gets an identity</h3>
   <ol class="steps">
     <li>The <b>SPIRE agent</b> runs on each node (a DaemonSet) and proves to the SPIRE server

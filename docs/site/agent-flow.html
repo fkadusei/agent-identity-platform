@@ -199,6 +199,15 @@ svg .etext.warn{fill:var(--amber)}
     around it is the authority.
   </div>
 
+  <div class="callout warn">
+    <b>There is one agent</b>
+    Everything on this page describes a single agent workload — one SPIFFE ID, one graph,
+    one tool catalogue, held by two interchangeable replicas. Many runs happen at once, all
+    as the same agent acting for different people. Policy trusts exactly that one ID, so a
+    second agent is a policy change, not a config flag; the overview page has the detail
+    under <i>Workload identity</i>.
+  </div>
+
   <h3>The cast, and who may talk to whom</h3>
   <svg viewBox="0 0 920 430" width="100%" role="img" aria-label="The agent sits between the API and three things it needs: the model (through the gateway), the policy engine, and the tool server. A human interrupt is shown between the policy decision and the tool call.">
     <defs>

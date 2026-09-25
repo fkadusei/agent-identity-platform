@@ -799,6 +799,16 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 
 ## Not slices (documented limits)
 
+- **There is exactly one agent, by construction.** One workload, one SPIFFE ID
+  (`spiffe://acme.com/ns/agent-platform/sa/agent`), held by two interchangeable
+  replicas — runs are checkpointed in Postgres, so either can resume, and many run
+  at once as the same agent. `policy/authz.rego` trusts that ID and no other
+  (`is_trusted if input.agent == trusted_agent`), so a second agent is refused as an
+  untrusted workload until it is registered *and* the policy names it. The seams are
+  already per-agent — policy reads `input.agent`, the gateway keys its limits on the
+  proven caller, the audit records `spiffe_id` — so a second agent would be a policy
+  and manifest change (a set of trusted agents, and probably per-agent role → tool
+  matrices), not a redesign. Noted here because it was nowhere until it was asked.
 - The trust domain (`acme.com`) and the demo passwords are documentation, not
   configuration to change.
 - The mesh proxy is a native sidecar, so `kubectl exec` may need `-c <container>`.
