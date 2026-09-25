@@ -120,6 +120,40 @@ def test_a_missing_record_is_a_result_not_an_error():
     assert result.result == {"error": "unknown order"}
 
 
+def test_the_tools_own_answer_reaches_the_trail():
+    """`tool.allowed` records the decision, not what came back.
+
+    Reported from a real run: a refund of $20 against an order that does not exist
+    was allowed and answered `unknown order` — and the trail showed only
+    `tool.allowed`, so "did the refund happen?" had no answer in the audit. The
+    outcome stays OK (see above); the answer is recorded alongside it.
+    """
+    from agentnhi import set_sink
+
+    captured: list[dict] = []
+    set_sink(captured.append)
+    try:
+        enforcer().call("token", "refunds.issue", {"order_id": "o-nope", "amount": 10})
+    finally:
+        set_sink(None)
+    events = [r for r in captured if r.get("event") in ("tool.allowed", "tool.reported_error")]
+    assert [e["event"] for e in events] == ["tool.allowed", "tool.reported_error"]
+    assert events[-1]["reason"] == "unknown order"
+    assert events[-1]["tool"] == "refunds.issue"
+
+
+def test_a_normal_answer_is_not_reported_as_a_problem():
+    from agentnhi import set_sink
+
+    captured: list[dict] = []
+    set_sink(captured.append)
+    try:
+        enforcer().call("token", "refunds.issue", {"order_id": "o-1001", "amount": 10})
+    finally:
+        set_sink(None)
+    assert not [r for r in captured if r.get("event") == "tool.reported_error"]
+
+
 def test_tool_error_is_reported_not_raised(monkeypatch):
     # The invariant: a *failure* downstream (the vendor is down, a 500, a timeout)
     # is reported as an error outcome, not raised out of the request. Induced

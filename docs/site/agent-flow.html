@@ -1256,6 +1256,18 @@ def _fill_gaps(tool, args: dict, task: str) -&gt; dict:
     <i>error</i>, not a refusal, because "the vendor is down" and "you may not" are not the
     same message to a person.
   </div>
+  <div class="callout warn">
+    <b>And a fifth thing: the tool can answer that it could not do the work</b>
+    <i>Allow</i> is policy's answer, not the tool's. Reported from a real run: a $20 refund
+    against an order that does not exist was <b>allowed</b> —
+    <span class="pill ok">allow</span> is exactly what policy said — and the tool answered
+    <code>unknown order</code>. The screen said "allowed" and the result was an error, which
+    reads as success. Two changes, and neither reverses the underlying decision (a record that
+    is not there is an answer, not a failure — there is a test that says so):
+    the call is now reported as <b>allowed — but nothing happened</b>, and the tool's own
+    answer is recorded (<code>tool.reported_error</code>). Before, the trail held only
+    <code>tool.allowed</code>, so "did the refund actually happen?" had no answer in the audit.
+  </div>
 </section>
 
 <section id="interrupt">

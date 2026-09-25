@@ -537,6 +537,10 @@ function ResultCard({
   const asking = outcome.status === "clarification_required";
   // A multi-step run carries what each call returned, in order.
   const path: any[] = outcome.observations || [];
+  // The tool ran and answered that it could not do the work — an order that does
+  // not exist, say. Policy allowed the call, and reporting only "allowed" made a
+  // nothing-happened look like a success (reported from a real run).
+  const toolSaid: string | undefined = outcome.result?.error;
   const [decided, setDecided] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<string, string>>({});
 
@@ -559,8 +563,10 @@ function ResultCard({
 
   return (
     <div className="card result">
-      <div className={`status ${outcome.status}`}>
-        {STATUS_LABEL[outcome.status] ?? outcome.status}
+      <div className={`status ${outcome.status}${toolSaid ? " reported" : ""}`}>
+        {toolSaid
+          ? "allowed — but nothing happened"
+          : STATUS_LABEL[outcome.status] ?? outcome.status}
       </div>
 
         <div className="facts resultfacts">
@@ -605,6 +611,11 @@ function ResultCard({
             <>
               Paused, waiting for <b>{(outcome.missing || []).join(", ")}</b> — nothing
               has been sent to the tool
+            </>
+          ) : toolSaid ? (
+            <>
+              The call was allowed and the tool answered <b>{toolSaid}</b> — nothing
+              was done
             </>
           ) : (
             <>
@@ -703,7 +714,7 @@ function ResultCard({
 
       {!held && outcome.result && Object.keys(outcome.result).length > 0 && (
         <>
-          <h3>Result</h3>
+          <h3>{toolSaid ? "The tool's answer" : "Result"}</h3>
           <pre>{JSON.stringify(outcome.result, null, 2)}</pre>
         </>
       )}
