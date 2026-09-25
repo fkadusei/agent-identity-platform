@@ -182,6 +182,22 @@ class ToolEnforcer:
             reason=decision.reason,
             policy_version=decision.policy_version,
         )
+        # The tool ran and its answer is that it could not do the work — an order
+        # that does not exist, say. That is deliberately *not* an error outcome
+        # (see test_a_missing_record_is_a_result_not_an_error): the call was
+        # allowed, and the answer belongs to the tool. But the answer has to be in
+        # the trail, or "did it actually happen?" cannot be answered from the
+        # audit — `tool.allowed` records the decision, not what came back, and a
+        # refund against a nonexistent order looked exactly like a refund.
+        if isinstance(result, dict) and result.get("error"):
+            audit(
+                "tool.reported_error",
+                spiffe_id=delegation.workload,
+                sub=delegation.user,
+                tenant=delegation.tenant or "",
+                tool=tool_name,
+                reason=str(result["error"])[:200],
+            )
         return ToolResult(
             Outcome.OK,
             tool_name,

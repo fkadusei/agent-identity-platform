@@ -17,8 +17,9 @@
   beyond the original plan. The 2026-09-16 gateway outage is fixed — see S13 and
   S15 in [`docs/backlog.md`](docs/backlog.md). **S18** taught the agent to ask for a
   missing argument instead of refusing, **S19** lets it take more than one bounded
-  step, and **S20** stops it inventing an identifier; the agent-upgrade work is
-  complete. **S17** (cloud providers) is the one open slice.
+  step, **S20** stops it inventing an identifier, and **S21** stops "allowed" reading
+  as "it happened"; the agent-upgrade work is complete. **S17** (cloud providers) is
+  the one open slice.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-09-24
 
@@ -184,8 +185,9 @@ Postgres restart), **S13** (stop blaming the model for infrastructure faults),
 **S14** (the scripts pin their cluster context), **S15** (the gateway must not
 serve an expired SVID), **S16** (a hung process restarts itself), **S18** (the
 agent asks for a missing argument instead of refusing), **S19** (the agent
-takes more than one bounded step) and **S20** (the agent passes identifiers along
-instead of inventing them).
+takes more than one bounded step), **S20** (the agent passes identifiers along
+instead of inventing them) and **S21** (a tool's own "no" is reported and
+recorded, instead of a bare "allowed").
 
 ## The repository is public
 

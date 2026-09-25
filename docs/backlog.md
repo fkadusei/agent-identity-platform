@@ -776,6 +776,27 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   a test and as an eval case, and the live run that started this — see the annotation
   in `docs/site/agent-flow.html`.
 
+## S21 — "Allowed" must not read as "it happened" — **done**
+
+- **What:** a $20 refund against an order that does not exist was allowed by policy,
+  the tool answered `unknown order`, and the screen said **allowed** with an error in
+  the result. Reported by using the platform.
+- **Why it matters:** `allow` is policy's answer, not the tool's. The outcome was
+  *deliberate* — a record that is not there is an answer the caller can read, not a
+  failure (S13, and there is a test that says so) — but the presentation made a
+  nothing-happened look like a success, and the audit held only `tool.allowed`, so
+  "did the refund actually happen?" could not be answered from the trail at all.
+- **Built, without reversing that decision:**
+  - the tool's own negative answer is **audited**: `tool.reported_error`, with the
+    tool and the message (`unknown order`), right after `tool.allowed`. The outcome
+    stays `OK`, so the earlier decision and its test are untouched.
+  - the UI stops letting "allowed" stand alone: the chip reads **allowed — but
+    nothing happened** (amber), the step says the call was allowed and the tool
+    answered, and the result block is headed "The tool's answer".
+- **Lands in:** `app/tools/enforcement.py`, the web app, `docs/site/{index,agent-flow}.html`.
+- **Verified by:** an enforcement test that both events are recorded in order and
+  that a normal answer raises none; the reported task replayed live.
+
 ## Not slices (documented limits)
 
 - The trust domain (`acme.com`) and the demo passwords are documentation, not

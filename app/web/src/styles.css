@@ -280,6 +280,9 @@ textarea { resize: vertical; min-height: 84px; line-height: 1.6; }
    about a permission being settled. */
 .status.clarification_required { color: var(--hue-agent); background: var(--hue-agent-soft); border-color: var(--hue-agent-line); }
 .status.denied, .status.error, .status.refused { color: var(--red); background: var(--red-soft); border-color: var(--red-line); }
+/* Policy allowed the call and the tool answered that it could not do the work:
+   amber, because "allowed" alone reads as success and nothing happened. */
+.status.reported { color: var(--amber); background: var(--amber-soft); border-color: var(--amber-line); }
 
 .reason { color: var(--ink-dim); margin: 8px 0; }
 .hint { color: var(--muted); font-size: 13.5px; }
