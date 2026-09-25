@@ -15,4 +15,12 @@ def test_the_suite_covers_the_refusal_paths():
     # If these disappear, the suite has quietly stopped testing what matters.
     assert "PII is refused for a support rep" in names
     assert "an injection attempt is refused before the model" in names
-    assert "a required argument is missing" in names
+    assert "a forbidden tool is refused even with an argument missing" in names
+
+
+def test_the_suite_covers_the_asking_path():
+    # The one case that is not a refusal. It used to be one — a missing argument
+    # ended the run — and was rewritten deliberately when the agent learned to
+    # ask instead (S18), not adjusted until it passed.
+    names = {name for name, _, _ in run_stubbed()}
+    assert "a required argument is asked for, not guessed" in names

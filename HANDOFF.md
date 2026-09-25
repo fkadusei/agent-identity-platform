@@ -15,9 +15,11 @@
   the threat model addressed**. The platform runs end to end on a 3-node
   Kubernetes cluster (kind) and has grown a set of production-hardening slices
   beyond the original plan. The 2026-09-16 gateway outage is fixed — see S13 and
-  S15 in [`docs/backlog.md`](docs/backlog.md).
+  S15 in [`docs/backlog.md`](docs/backlog.md). **S18** taught the agent to ask for a
+  missing argument instead of refusing; S17 (cloud providers) and S19 (a bounded
+  multi-step loop) are open.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-09-22
+- **Last updated:** 2026-09-24
 
 ## Resume in 60 seconds
 
@@ -159,17 +161,20 @@ End-to-end, on the cluster:
 ## Immediate next task
 
 Phases 1–3 are complete and every threat is addressed. Next, pick from the open
-backlog in [`docs/backlog.md`](docs/backlog.md) (S1–S16) — each slice has a stable
-ID with what it is, why, where it lands and how we would verify it:
+backlog in [`docs/backlog.md`](docs/backlog.md) — each slice has a stable ID with
+what it is, why, where it lands and how we would verify it. Two are open:
 
-- **Nothing.** Every slice on the board is done, including **S1**'s shared-KeyManager
-  half, which was verified against a live AWS KMS (role-based access, two replicas, a
-  replica deleted mid-flight, an unchanged trust bundle, no workload restarts). The
-  demo stays on the `disk` KeyManager by default: KMS mode is one `.env` line away but
-  makes identity depend on short-lived credentials. What remains are documented limits,
-  not slices — see the end of [`docs/backlog.md`](docs/backlog.md).
+- **S19 — the agent takes more than one step.** S18 taught the agent to *ask* for
+  a missing argument; S19 lets a run go round the loop more than once, with a step
+  budget, so "refund the order from the last ticket" becomes answerable. The
+  design (completion as a state, one new `call_tool → plan` edge, policy untouched)
+  is written up in the backlog entry.
+- **S17 — provider-agnostic models.** Two defects in the hosted-provider branch,
+  both found by reading it; plus the open question of whether a cloud model may see
+  the personal data the agent can read under approval.
 
-Done, kept for the record: **S1** (SPIRE's registry is durable, and the KeyManager is
+Done, kept for the record:
+ **S1** (SPIRE's registry is durable, and the KeyManager is
 switchable with the KMS path verified against a live account), **S2** (Keycloak replicated against
 Postgres), **S3** (a persistent Postgres volume), **S4** (Keycloak hardened —
 no `start-dev`, no Trivy exception), **S5** (guardrails + evals,

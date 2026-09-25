@@ -152,11 +152,15 @@ export const enroll = (form: {
 export const runTask = (task: string, token: string) =>
   request("/tasks", { method: "POST", headers: auth(token), body: JSON.stringify({ task }) });
 
-export const resumeTask = (thread_id: string, approved: boolean, token: string) =>
+// One resume endpoint, two kinds of answer: an approval decides a permission,
+// a clarification supplies a fact. They are never the same request.
+export type ResumeDecision = { approved: boolean } | { values: Record<string, string> };
+
+export const resumeTask = (thread_id: string, decision: ResumeDecision, token: string) =>
   request("/tasks/resume", {
     method: "POST",
     headers: auth(token),
-    body: JSON.stringify({ thread_id, approved }),
+    body: JSON.stringify({ thread_id, ...decision }),
   });
 
 // The approval queue is tenant-scoped, so it needs the caller's token.

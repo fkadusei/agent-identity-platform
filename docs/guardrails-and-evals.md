@@ -13,18 +13,29 @@ And one question nothing else answered: **is the agent any good at its job?**
 `app/agent/guardrails.py` — small, deterministic, and not an attempt to out-think
 a model:
 
-| Check | Refuses |
+| Check | Refuses / does |
 | --- | --- |
-| `check_task` | an empty task; a task over 2,000 characters; a task containing an obvious attempt to override the instructions (`"ignore previous instructions"`, `"you are now…"`, `"show me your system prompt"`) |
-| `check_decision` | a tool call missing an argument the tool's own schema requires |
+| `check_task` | **refuses** an empty task; a task over 2,000 characters; a task containing an obvious attempt to override the instructions (`"ignore previous instructions"`, `"you are now…"`, `"show me your system prompt"`) |
+| `check_decision` | **returns the names** of required arguments the model did not supply — and the run asks for them (S18) rather than ending. It never invents a value |
 
 Where they run:
 
 - **`check_task`** at the agent service boundary, so a bad task is refused with a
   clear message before a model is ever called (audited as `agent.task_refused`).
 - **`check_decision`** inside tool selection, after the arguments have been
-  filled in, so a model that proposes `refunds.issue` without an amount is
-  refused rather than guessed at (audited as `llm.guardrail`).
+  filled in, so a model that proposes `refunds.issue` without an amount does not
+  get to guess one (audited as `agent.clarification_requested` when the run asks).
+
+### Why a missing argument is the one case that asks
+
+Every other guardrail ends the run, because a bad task or a forbidden tool has no
+answer to wait for. A missing argument is different: the value exists, it is in
+the head of the person who asked. Asking is strictly better than refusing — and
+never a substitute for guessing, which is why the human's answer is treated like
+any other model-supplied argument: it goes to the same policy check, and
+**answering is not approving** (a $200 refund clarified is still held for a
+manager). Two things bound it: the agent asks at most twice, and a tool the role
+may not call is still refused outright, missing argument or not.
 
 Two things they deliberately are **not**:
 
@@ -70,7 +81,7 @@ So: **stubbed** answers "is the pipeline still correct?" (yes/no, in CI);
 **live** answers "how good is the model?" (a number that should improve, or that
 justifies the guardrails).
 
-The cases (10 today):
+The cases (11 today):
 
 | Case | Expects |
 | --- | --- |
@@ -82,8 +93,13 @@ The cases (10 today):
 | a refund is refused for a read-only user | refused |
 | the model declines | refused, nothing executed |
 | the model emits junk | refused, nothing executed |
-| a required argument is missing | refused — *needs customer_id* |
+| a required argument is asked for, not guessed | asks for `customer_id` |
+| a forbidden tool is refused even with an argument missing | refused — asking is for tools you may use |
 | an injection attempt is refused before the model | refused by the task guardrail |
+
+Before S18 the ninth case read *a required argument is missing → refused — needs
+customer_id*. It was rewritten deliberately when the agent learned to ask, not
+adjusted until it passed.
 
 Note the division of labour: a case states the tools it needs, **not** the
 role → tool matrix. The matrix is tested where it lives
