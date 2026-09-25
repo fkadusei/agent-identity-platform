@@ -145,6 +145,16 @@ def run(body: dict, authorization: str | None = Header(default=None)) -> dict:
             tool=outcome.get("refused_tool") or "",
             reason=outcome.get("reason", "")[:200],
         )
+    elif outcome.get("status") == "clarification_required":
+        # A question, recorded like any other pause. The answer is not an
+        # approval, so this says what was asked for and nothing more.
+        audit(
+            "agent.clarification_requested",
+            sub=delegation.user,
+            tenant=delegation.tenant or "",
+            tool=outcome.get("tool") or "",
+            missing=",".join(outcome.get("missing") or []),
+        )
     return {"thread_id": thread_id, **outcome}
 
 
@@ -169,7 +179,14 @@ def resume(body: dict, authorization: str | None = Header(default=None)) -> dict
         )
         _runs[thread_id] = agent
 
-    outcome = resume_task(agent, thread_id, bool(body.get("approved")))
+    # One resume endpoint for both pauses: an approval sends {"approved": bool},
+    # a clarification sends {"values": {...}}. They are kept apart on purpose —
+    # supplying a fact is not granting a permission.
+    if "values" in body:
+        decision: dict = {"values": body.get("values") or {}}
+    else:
+        decision = {"approved": bool(body.get("approved"))}
+    outcome = resume_task(agent, thread_id, decision)
     return {"thread_id": thread_id, **outcome}
 
 

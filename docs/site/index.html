@@ -890,7 +890,9 @@ approval_refund_limit := 500   # <= this (and > auto): needs approval; above: de
         a disallowed tool are three different messages, not one. A <b>tool error</b> is
         neither: asking to refund an order that does not exist answers
         <code>unknown order</code>, because the platform was allowed to try and the vendor
-        said no (slice S13).
+        said no (slice S13). And a <b>question</b> is none of these: since S18, a task that is
+        missing an argument the tool requires pauses and asks for it, rather than ending
+        (see <a href="agent-flow.html">the agent, end to end</a>).
       </p>
     </div>
   </div>

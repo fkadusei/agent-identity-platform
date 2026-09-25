@@ -276,6 +276,9 @@ textarea { resize: vertical; min-height: 84px; line-height: 1.6; }
 }
 .status.ok { color: var(--green); background: var(--green-soft); border-color: var(--green-line); }
 .status.approval_required { color: var(--amber); background: var(--amber-soft); border-color: var(--amber-line); }
+/* A question is the agent's own colour: it is about what the agent needs, not
+   about a permission being settled. */
+.status.clarification_required { color: var(--hue-agent); background: var(--hue-agent-soft); border-color: var(--hue-agent-line); }
 .status.denied, .status.error, .status.refused { color: var(--red); background: var(--red-soft); border-color: var(--red-line); }
 
 .reason { color: var(--ink-dim); margin: 8px 0; }
@@ -329,6 +332,14 @@ pre {
 .ev.warn { color: var(--amber); }
 .ev.bad { color: var(--red); }
 .approval { margin-top: 10px; }
+/* The clarification card: one field per argument the agent is asking for. */
+.clarify .decided { margin-bottom: 10px; }
+.clarify .fields { justify-content: flex-start; align-items: flex-end; }
+.clarify .field {
+  display: flex; flex-direction: column; gap: 4px;
+  font-size: 12.5px; color: var(--muted);
+}
+.clarify .field input { min-width: 200px; }
 
 /* --- auth + admin ---------------------------------------------------------- */
 .authcard {

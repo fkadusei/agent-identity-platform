@@ -35,10 +35,19 @@ def test_an_ordinary_task_is_allowed():
     check_task("Issue a refund of 200 dollars for order o-1001")
 
 
-def test_a_decision_missing_a_required_argument_is_refused():
-    with pytest.raises(GuardrailError, match="needs customer_id"):
-        check_decision(TOOLS["crm.customer.read"], {})
+def test_a_decision_missing_a_required_argument_names_it():
+    # Not a refusal since S18: the caller asks for it instead. What matters is
+    # that the missing name is reported, never guessed at.
+    assert check_decision(TOOLS["crm.customer.read"], {}) == ["customer_id"]
 
 
-def test_a_decision_with_its_arguments_is_allowed():
-    check_decision(TOOLS["crm.customer.read"], {"customer_id": "c-100"})
+def test_a_decision_with_its_arguments_has_nothing_to_ask_for():
+    assert check_decision(TOOLS["crm.customer.read"], {"customer_id": "c-100"}) == []
+
+
+def test_an_empty_value_counts_as_missing():
+    # "" is no answer. Whitespace is a value as far as this guardrail goes: it
+    # checks presence, not quality, and the tool sees what the person typed.
+    draft = TOOLS["tickets.reply.draft"]
+    assert check_decision(draft, {"ticket_id": "t-1", "body": ""}) == ["body"]
+    assert check_decision(draft, {"ticket_id": "t-1", "body": "  "}) == []

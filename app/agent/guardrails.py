@@ -9,6 +9,10 @@ it is the control. These guardrails cover the two edges policy never sees:
 They are deliberately small and deterministic. The point is not to out-think a
 model — it is to refuse the obvious cases cheaply, audibly, and without relying on
 a 3B model to ignore a bad instruction.
+
+A decision missing a required argument is the one case that is not a refusal: the
+value exists, it is just held by the person who asked for the work, so the run
+asks for it (S18) rather than inventing one.
 """
 from __future__ import annotations
 
@@ -54,16 +58,15 @@ def check_task(task: str) -> None:
             )
 
 
-def check_decision(tool: Tool, args: dict) -> None:
-    """Refuse a tool call whose arguments do not fit the tool's own schema.
+def check_decision(tool: Tool, args: dict) -> list[str]:
+    """Return the required arguments the model did not supply (empty means fine).
 
-    The model proposes; this is where the proposal is checked against the
-    catalogue's contract before anything is sent to the tool server.
+    A missing argument is not a fault, and it is not a guess to be made: it is a
+    value only the person asking for the work may have. Since S18 the caller asks
+    for it instead of ending the run — so this returns the names rather than
+    raising, and the graph decides. What must never happen is inventing the
+    value, which is what makes "same argument, supplied by a human" safe to treat
+    exactly like one the model produced.
     """
     required = (tool.input_schema or {}).get("required") or []
-    missing = [name for name in required if args.get(name) in (None, "")]
-    if missing:
-        raise GuardrailError(
-            f"{tool.name} needs {', '.join(missing)} and the model did not supply "
-            "them — refusing rather than guessing"
-        )
+    return [name for name in required if args.get(name) in (None, "")]

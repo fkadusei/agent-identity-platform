@@ -72,6 +72,7 @@ const shortId = (id: string) => id.split("/").filter(Boolean).slice(-2).join("/"
 const STATUS_LABEL: Record<string, string> = {
   ok: "allowed",
   approval_required: "held for approval",
+  clarification_required: "waiting for an answer",
   denied: "denied",
   refused: "refused",
   error: "error",
@@ -405,7 +406,7 @@ function Console({
     setError("");
     try {
       await decideApproval(outcome.approval_id, approved, session.token);
-      setOutcome(await resumeTask(outcome.thread_id, approved, session.token));
+      setOutcome(await resumeTask(outcome.thread_id, { approved }, session.token));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -419,7 +420,21 @@ function Console({
     setBusy(true);
     setError("");
     try {
-      setOutcome(await resumeTask(outcome.thread_id, true, session.token));
+      setOutcome(await resumeTask(outcome.thread_id, { approved: true }, session.token));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Supplying a missing argument. This is information, not permission: the run
+  // continues to the same policy check it would have reached anyway.
+  const clarify = async (values: Record<string, string>) => {
+    setBusy(true);
+    setError("");
+    try {
+      setOutcome(await resumeTask(outcome.thread_id, { values }, session.token));
     } catch (e) {
       setError(String(e));
     } finally {
@@ -490,6 +505,7 @@ function Console({
           canApprove={canApprove}
           onDecide={decide}
           onResume={resume}
+          onClarify={clarify}
         />
       )}
     </section>
@@ -505,6 +521,7 @@ function ResultCard({
   canApprove,
   onDecide,
   onResume,
+  onClarify,
 }: {
   asked: string;
   session: Session;
@@ -514,9 +531,12 @@ function ResultCard({
   canApprove: boolean;
   onDecide: (approved: boolean) => void;
   onResume: () => void;
+  onClarify: (values: Record<string, string>) => void;
 }) {
   const held = outcome.status === "approval_required";
+  const asking = outcome.status === "clarification_required";
   const [decided, setDecided] = useState<string | null>(null);
+  const [answers, setAnswers] = useState<Record<string, string>>({});
 
   // While held, watch the approval so the requester's card updates the moment
   // someone else decides (e.g. a manager in another tab).
@@ -559,12 +579,26 @@ function ResultCard({
         </li>
         {outcome.tool && (
           <li>
-            It called <code>{outcome.tool}</code>
+            {asking ? (
+              <>
+                It chose <code>{outcome.tool}</code> but will not invent the argument
+                it needs
+              </>
+            ) : (
+              <>
+                It called <code>{outcome.tool}</code>
+              </>
+            )}
           </li>
         )}
         <li>
           {outcome.status === "error" ? (
             <>The run stopped — {outcome.reason}</>
+          ) : asking ? (
+            <>
+              Paused, waiting for <b>{(outcome.missing || []).join(", ")}</b> — nothing
+              has been sent to the tool
+            </>
           ) : (
             <>
               Policy decided <b>{STATUS_LABEL[outcome.status] ?? outcome.status}</b>
@@ -628,6 +662,35 @@ function ResultCard({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {asking && (
+        <div className="approval clarify">
+          <p className="decided">
+            The agent needs <b>{(outcome.missing || []).join(", ")}</b> before it can
+            call <code>{outcome.tool}</code>. Answering is not approving — the call
+            still goes to policy afterwards.
+          </p>
+          <div className="row fields">
+            {(outcome.missing || []).map((field: string) => (
+              <label key={field} className="field">
+                <span>{field}</span>
+                <input
+                  value={answers[field] ?? ""}
+                  placeholder={field}
+                  onChange={(e) => setAnswers({ ...answers, [field]: e.target.value })}
+                />
+              </label>
+            ))}
+            <button
+              className="primary"
+              disabled={busy || (outcome.missing || []).some((f: string) => !answers[f])}
+              onClick={() => onClarify(answers)}
+            >
+              {busy ? "Sending…" : "Send answer"}
+            </button>
+          </div>
         </div>
       )}
 

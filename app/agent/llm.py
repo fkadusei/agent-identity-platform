@@ -19,7 +19,7 @@ import httpx
 
 from agentnhi import audit
 
-from app.agent.guardrails import GuardrailError, check_decision
+from app.agent.guardrails import check_decision
 
 
 def _tool_manifest(tools: dict) -> str:
@@ -49,6 +49,8 @@ def _prompt(task: str, tools: dict, unavailable: dict | None = None) -> str:
     parts.append(
         "If the task needs a tool that is not permitted, or none of the available "
         'tools fits, reply with {"tool": null, "reason": "<why>"}.\n'
+        "If a required argument is not in the task, still name the tool and leave "
+        "that argument out — never invent one; the user will be asked for it.\n"
         "Otherwise reply with ONLY JSON of the form "
         '{"tool": "<name>", "args": {<arguments>}, "reason": "<short reason>"}.'
     )
@@ -247,12 +249,21 @@ def decide_tool(
         if chosen in tools:
             tool = tools[decision["tool"]]
             args = _fill_gaps(tool, dict(decision.get("args") or {}), task)
-            try:
-                check_decision(tool, args)
-            except GuardrailError as exc:
-                audit("llm.guardrail", tool=tool.name, reason=str(exc)[:200])
-                return {"tool": None, "args": {}, "reason": str(exc), "refused": True,
-                        "refused_tool": tool.name}
+            missing = check_decision(tool, args)
+            if missing:
+                # A required argument the task does not contain. This is the one
+                # gap worth asking about rather than refusing (S18): the value is
+                # in a person's head, and the person is right there. The tool is
+                # kept, so the question is about *this* call and the human's
+                # answer is checked by the same policy as anything else — an
+                # answer is not an approval.
+                return {
+                    "tool": tool.name,
+                    "args": args,
+                    "missing": missing,
+                    "clarify": True,
+                    "reason": f"{tool.name} needs {', '.join(missing)}",
+                }
             return {"tool": tool.name, "args": args, "reason": decision.get("reason", "")}
         audit("llm.invalid_tool", tool=str(decision.get("tool"))[:80])
     except Exception as exc:  # noqa: BLE001 - never block the run on the model

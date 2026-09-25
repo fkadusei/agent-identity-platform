@@ -653,6 +653,73 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   exercised without anyone's cloud key), unit tests for both defects, and the live evals
   against a real provider.
 
+## S18 — The agent asks instead of refusing (clarification) — **done**
+
+- **What:** when the model named a tool it may use but could not supply a required
+  argument, the run ended as a refusal. The value usually exists — it is in the
+  head of the person who asked — so the run now pauses and asks for it.
+- **Why:** "refusing rather than guessing" is the right rule and the wrong end.
+  Nothing was executed either way, so the only thing this changes is whether the
+  person gets a question or a dead end. It is the first half of the agent-upgrade
+  work; the second half (a bounded observation loop, **S19**) builds on it.
+- **Built:**
+  - `check_decision` **returns** the missing required names instead of raising. A
+    missing argument is not a fault to refuse, and not a guess to make: the run
+    pauses. Every other guardrail still ends the run, because a bad task or a
+    forbidden tool has no answer to wait for.
+  - `decide_tool` returns the decision as a *clarification* — tool kept, `missing`
+    named, `clarify: True` — and the prompt now tells the model to leave an
+    argument out rather than invent one. A tool the role may not call is still
+    refused outright, missing argument or not.
+  - The graph gains `ask_clarification`, an `interrupt` following the same rule as
+    `await_decision` (pure, because the interrupt re-executes on resume), a
+    self-loop bounded at **two** asks, and — when the budget is spent — a
+    **refusal**, not an error: nothing is broken, the agent simply will not invent
+    an identifier. `MAX_ASKS` is the bound.
+  - `_shape` reads the status from the interrupt payload's own `type`, so
+    `approval_required` and `clarification_required` pause identically and mean
+    different things. `resume_task` takes a decision (`{"approved": …}` or
+    `{"values": …}`) instead of a boolean; the service maps the two request shapes
+    and audits `agent.clarification_requested`.
+  - The UI grows a question card: one field per missing argument, and the words
+    "answering is not approving" next to it.
+- **The property that makes it safe:** the answer is untrusted input. It is merged
+  into the arguments and judged by the same policy as one the model produced — a
+  clarified $200 refund is still held for a manager, a clarified `bulk.` argument
+  is still denied. Answering supplies a fact; it never grants anything. There is a
+  test for exactly this (`test_an_answer_is_not_an_approval`).
+- **Lands in:** `app/agent/{guardrails,llm,graph,service,evals}.py`, the web app,
+  `docs/guardrails-and-evals.md`, `docs/site/agent-flow.html`.
+- **Verified by:** graph tests against `ScriptedDeps` (asked vs refused vs
+  proceeded, the answer reaching the same enforcement path, a partial answer asked
+  for again, the budget ending in a refusal, and an answer still going on to need
+  approval), the stubbed evals in CI (11 cases; the old "a required argument is
+  missing → refused" case rewritten deliberately), and the live paths
+  (demo, attacks, tenancy) unchanged.
+
+## S19 — The agent takes more than one step (bounded loop) — **open**
+
+- **What:** a task that needs two calls — "refund the order from the last ticket"
+  — cannot be done at all today, because the graph makes exactly one tool call and
+  ends.
+- **Why:** the second half of the agent-upgrade work, and the one that makes the
+  agent useful for anything but single-hop requests. S18 landed first so a
+  multi-step run can be multi-*turn* before it is multi-*step*.
+- **Design, agreed before building:**
+  - completion is a **state**, not a property of "no tool": the reply may carry an
+    `answer`, which becomes `status: "answered"`. The alternative — a `finish`
+    tool — was considered and deferred: it would put a no-op into the catalogue,
+    require a grant in `policy/authz.rego`, and add a `tool.allowed` event to every
+    finished run. Isolating completion behind one transition keeps that open as a
+    later change.
+  - one new edge, `call_tool → plan`, with an observation in state and a step
+    budget (three). Policy and the enforcement point are untouched: the loop
+    changes what is *attempted*, never what is *permitted*.
+- **Lands in:** `app/agent/{graph,llm,evals}.py`, the web app (a step trace), and
+  the pages that describe the flow.
+- **Verified by:** graph tests (the loop stops at the budget, the same call is not
+  repeated), a multi-step eval case, and the existing suites.
+
 ## Not slices (documented limits)
 
 - The trust domain (`acme.com`) and the demo passwords are documentation, not
