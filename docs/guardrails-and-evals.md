@@ -67,24 +67,27 @@ everything and CI should not depend on a model.
 ### Reading the live output
 
 The live runner measures whichever model the gateway is configured with — today
-`qwen3-warden-ctx16k` (see `docs/llm-gateway.md`) — which scored **7 of the 9**
-cases it measured before S19 added a tenth. The failures are the interesting part,
-and none of them is the platform:
+`qwen3-warden-ctx16k` (see `docs/llm-gateway.md`). It lands around **6–7 of the 10**
+cases, varying run to run, and the failures are the interesting part — none of them
+is the platform:
 
-- **asked for PII it may not have, it declines** rather than naming the forbidden
-  tool. The outcome is right — nothing was executed — but the *message* differs
-  from the case, which asserts the refusal that only the stubbed run can pin.
-  (An earlier model instead **substituted** a different allowed tool, which is the
-  behaviour the role → tool filter and policy exist to catch — and the reason the
-  tool server, not the model, is the control.)
+- **asked for PII it may not have, it declines** — or substitutes a different
+  allowed tool — rather than naming the forbidden one. The outcome is right (nothing
+  was executed), but the *message* differs from the case, which asserts the refusal
+  that only the stubbed run can pin.
 - **asked for an argument the task does not contain, it invents one** instead of
   leaving it out, so no clarification is triggered. This is the honest limit of
-  S18: the agent can only ask when the model admits what it does not know. What
-  the invention cannot do is *achieve* anything — a guessed identifier has to
-  exist, and a guessed amount is still judged by policy — so the ask is an
-  improvement in the conversation, never a control. Verified directly: a
-  model-invented `order_id` went through a manager approval and the tool answered
-  `unknown order`.
+  S18: the agent can only ask when the model admits what it does not know. What the
+  invention cannot do is *achieve* anything — a guessed identifier has to exist, and
+  a guessed amount is still judged by policy — so the ask is an improvement in the
+  conversation, never a control. Verified directly: a model-invented `order_id` went
+  through a manager approval and the tool answered `unknown order`.
+- **asked whether it needs a second step, it now says yes** — `tickets.read` with
+  `"more": true` — but only since the flag was put *in the JSON template* instead of
+  described in a sentence. A prose instruction ("add `more: true` if you will need
+  another call") was ignored by this model run after run; the same field shown inside
+  the reply template is emitted every time. Worth knowing before writing the next
+  instruction: show the field, do not describe it.
 
 So: **stubbed** answers "is the pipeline still correct?" (yes/no, in CI);
 **live** answers "how good is the model?" (a number that should improve, or that
