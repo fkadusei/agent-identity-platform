@@ -146,6 +146,7 @@
   <button class="ctl" id="viewBtn">▦ View: 3D</button>
   <button class="ctl" id="autoBtn" title="Stop or resume the slow idle rotation">⟳ Auto-rotate: on</button>
   <button class="ctl" id="defBtn">⚠ Defences</button>
+  <button class="ctl" id="resetBtn" title="Clear the current step, selection and defences, and return the camera home">↺ Reset</button>
   <div id="hint">Left-drag rotate · wheel zoom · right-drag pan.<br>Click any node for its repo config.</div>
 </div>
 
@@ -558,8 +559,10 @@ const attackAnims = SCENE_DATA.attacks.map((a, i) => {
 
 /* ================= mini orbit controls (r149 UMD-safe) ================= */
 const controls = (() => {
-  const target = new THREE.Vector3(0, 1.0, 0);
-  const cur = { r: 30, phi: 1.1, theta: 0.55 }, goal = { r: 30, phi: 1.1, theta: 0.55 };
+  const HOME = { r: 30, phi: 1.1, theta: 0.55, y: 1.0 };
+  const target = new THREE.Vector3(0, HOME.y, 0);
+  const cur = { r: HOME.r, phi: HOME.phi, theta: HOME.theta };
+  const goal = { r: HOME.r, phi: HOME.phi, theta: HOME.theta };
   const panGoal = target.clone();
   const pointers = new Map();
   let pinch = 0, moved = 0, lastInteract = -10, elapsed = 0, onTap = null;
@@ -612,6 +615,11 @@ const controls = (() => {
     idle: () => elapsed - lastInteract > 4 && pointers.size === 0,
     tick: (dt) => { elapsed += dt; },
     setOnTap: (fn) => { onTap = fn; },
+    // Return the camera to where the page opened: the damping animates it back.
+    reset: () => {
+      goal.r = HOME.r; goal.phi = HOME.phi; goal.theta = HOME.theta;
+      panGoal.set(0, HOME.y, 0);
+    },
     update: (dt, autoOrbit) => {
       if (autoOrbit) goal.theta += dt * 0.05;
       const k = 1 - Math.pow(0.0001, dt);              // exponential damping
@@ -807,6 +815,19 @@ defBtn.addEventListener("click", () => {
     $("defences").style.display = "none";
     currentStep = -1; idleCaption();
   }
+});
+
+/* Put the diagram back the way the page opened, so the flow can be walked from
+   the top again: no step, no selected node, no defences, and the camera home. */
+$("resetBtn").addEventListener("click", () => {
+  stopPlayback();
+  if (defMode) defBtn.click();   // off: restores the edges and hides the list
+  if (is2D) viewBtn.click();     // back to the 3D view
+  selectNode(null);              // clear any node card
+  currentStep = -1; stepT = 0;
+  highlightStep(-1);             // every hop back to its resting brightness
+  controls.reset();
+  idleCaption();
 });
 
 /* ========================= picking (raycast on tap) ========================= */
