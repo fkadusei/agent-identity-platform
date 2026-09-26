@@ -61,6 +61,48 @@ curl -s --cacert $CA $API/auth/config      # signup toggle + agent SPIFFE ID
 ./scripts/attack-tests.sh               # all six attacks blocked
 ```
 
+### Reach it from another machine (a second host on the LAN)
+
+By default the edge is published **host-only**, so another computer cannot reach
+it. To let one in — a Windows or Linux box, or a VM standing in for one:
+
+```bash
+# 1. Publish the edge on every interface. start.sh replaces a host-only forward
+#    if BIND_ADDR has changed; ./stop.sh then start is the manual equivalent.
+BIND_ADDR=0.0.0.0 ./start.sh
+
+# 2. On the client, point the certificate's name at this host. The leaf covers
+#    localhost and agent-platform.local (setup.sh), so use the latter — the
+#    ingress routes it to the same api.
+#      Windows: C:\Windows\System32\drivers\etc\hosts   (edit as Administrator)
+#      Linux:   /etc/hosts
+#        <this-host-ip>   agent-platform.local
+
+# 3. Trust the edge CA on the client. It is gitignored, so copy it over:
+#      Windows: import .edge/ca.crt into "Trusted Root Certification Authorities"
+#      Linux:   sudo cp ca.crt /usr/local/share/ca-certificates/agent-platform-edge-ca.crt
+#               sudo update-ca-certificates
+#      curl (any OS):  curl --cacert ca.crt https://agent-platform.local:8443/healthz
+```
+
+Then open **https://agent-platform.local:8443**.
+
+- **Do not use the IP in a browser.** The certificate's SAN has no IP, so TLS
+  fails; use the name, or add the IP to `subjectAltName` in `setup.sh` and
+  regenerate.
+- **Open the firewall** on the host running the forward (macOS: System Settings →
+  Network → Firewall; Linux: `sudo ufw allow 8443/tcp`).
+- **A VM as the client:** in NAT mode the host is reachable at `10.0.2.2`
+  (VirtualBox) or the VMnet gateway (VMware); in **bridged** mode the VM has its
+  own LAN IP and sees the host directly.
+- **The app runs inside the VM:** use bridged networking so the VM has a LAN IP,
+  or add a hypervisor port-forward (host 8443 → guest 8443) when on NAT.
+- **The docs link in the app** is `http://localhost:8081/index.html`, which on a
+  remote client means *its* localhost. Serve the docs on all interfaces
+  (`python3 -m http.server 8081 --bind 0.0.0.0 --directory docs/site`) and change
+  the link to this host's name if you want them reachable remotely.
+- Everything is synthetic; a LAN user signs in with the demo accounts.
+
 ## 3. Routine health checks
 
 ```bash

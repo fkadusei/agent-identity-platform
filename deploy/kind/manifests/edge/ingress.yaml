@@ -29,9 +29,24 @@ spec:
   tls:
     - hosts:
         - localhost
+        - agent-platform.local
       secretName: agent-platform-tls
   rules:
     - host: localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 8080
+    # A second machine reaches the same backend by name. The leaf's SAN already
+    # carries agent-platform.local (setup.sh), so TLS verifies there too; point
+    # agent-platform.local at this host in the client's hosts file. See
+    # docs/operator-guide.md, "Reach it from another machine".
+    - host: agent-platform.local
       http:
         paths:
           - path: /
