@@ -78,6 +78,11 @@ main{padding:34px 40px 120px;max-width:980px}
 .tools button{flex:1;font:inherit;font-size:.76rem;padding:6px 8px;cursor:pointer;color:var(--muted);
   background:var(--surface2);border:1px solid var(--line);border-radius:9px}
 .tools button:hover{color:var(--accent);border-color:var(--accent-line)}
+/* The palette switch lives in the corner, not the sidebar. */
+#theme{position:fixed;top:14px;right:16px;z-index:60;font:inherit;font-size:.78rem;
+  padding:7px 12px;cursor:pointer;color:var(--muted);background:var(--surface);
+  border:1px solid var(--line3);border-radius:9px;box-shadow:var(--shadow)}
+#theme:hover{color:var(--accent);border-color:var(--accent-line)}
 .filter{width:100%;font:inherit;font-size:.8rem;padding:8px 10px;color:var(--ink);
   background:var(--bg2);border:1px solid var(--line);border-radius:9px;margin-bottom:12px}
 nav ol{list-style:none;margin:0;padding:0}
@@ -155,13 +160,14 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
   box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
 .totop.show{opacity:1;pointer-events:auto}
 .mark{background:linear-gradient(180deg,transparent 62%,rgb(143 180 255/.25) 0)}
-@media print{aside,.tools,.filter,.totop,.codeblock .copy,.progress{display:none}
+@media print{aside,.tools,#theme,.filter,.totop,.codeblock .copy,.progress{display:none}
   .wrap{display:block} main{max-width:none;padding:0}
   .codeblock pre{background:#f4f6fb;color:#101826;border-color:#ccd6e6}}
 </style>
 </head>
 <body>
 <div class="progress" id="progress"></div>
+<button id="theme" type="button" title="Switch between the dark and light palettes">Light</button>
 <div class="wrap">
 <aside>
   <div class="brandline">
@@ -172,7 +178,6 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
   <a href="questions.html" style="display:block;font-size:.8rem;padding:7px 9px;margin-bottom:8px;border:1px dashed var(--line3);border-radius:9px;color:var(--ink2);text-decoration:none">Questions, answered &rarr;</a>
   <a href="../visualization/index.html" style="display:block;font-size:.8rem;padding:7px 9px;margin-bottom:12px;border:1px dashed var(--line3);border-radius:9px;color:var(--ink2);text-decoration:none">Architecture, in 3D &rarr;</a>
   <div class="tools">
-    <button id="theme" type="button" title="Switch between the dark and light palettes">Light</button>
     <button id="expand" type="button" title="Open every section so the whole document prints or searches as one">Expand all</button>
   </div>
   <input class="filter" id="filter" type="search" placeholder="Filter sections…" aria-label="Filter sections" />

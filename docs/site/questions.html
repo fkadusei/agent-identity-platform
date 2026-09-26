@@ -66,6 +66,11 @@ main{padding:34px 40px 120px;max-width:980px}
 .tools{display:flex;gap:8px;margin:0 0 12px}
 .tools button{flex:1;font:inherit;font-size:.76rem;padding:6px 8px;cursor:pointer;color:var(--muted);background:var(--surface2);border:1px solid var(--line);border-radius:9px}
 .tools button:hover{color:var(--accent);border-color:var(--accent-line)}
+/* The palette switch lives in the corner, not the sidebar. */
+#theme{position:fixed;top:14px;right:16px;z-index:60;font:inherit;font-size:.78rem;
+  padding:7px 12px;cursor:pointer;color:var(--muted);background:var(--surface);
+  border:1px solid var(--line3);border-radius:9px;box-shadow:var(--shadow)}
+#theme:hover{color:var(--accent);border-color:var(--accent-line)}
 .backlink{display:block;font-size:.8rem;padding:7px 9px;margin-bottom:8px;border:1px dashed var(--line3);border-radius:9px;color:var(--ink2)}
 .backlink:hover{border-color:var(--accent-line);color:var(--accent);text-decoration:none}
 .filter{width:100%;font:inherit;font-size:.8rem;padding:8px 10px;color:var(--ink);background:var(--bg2);border:1px solid var(--line);border-radius:9px;margin-bottom:12px}
@@ -121,13 +126,14 @@ ol.steps>li b{color:var(--ink)}
 .totop{position:fixed;right:18px;bottom:18px;font:inherit;font-size:.78rem;padding:9px 13px;cursor:pointer;color:var(--ink2);background:var(--surface2);border:1px solid var(--line3);border-radius:999px;box-shadow:var(--shadow);opacity:0;pointer-events:none;transition:opacity .2s}
 .totop.show{opacity:1;pointer-events:auto}
 .qnum{font:700 .78rem/1 var(--mono);color:var(--faint);margin-right:8px}
-@media print{aside,.tools,.filter,.totop,.codeblock .copy,.progress,.backlink{display:none}
+@media print{aside,.tools,#theme,.filter,.totop,.codeblock .copy,.progress,.backlink{display:none}
   .wrap{display:block}main{max-width:none;padding:0}
   .codeblock pre{background:#f4f6fb;color:#101826;border-color:#ccd6e6}}
 </style>
 </head>
 <body>
 <div class="progress" id="progress"></div>
+<button id="theme" type="button" title="Switch between the dark and light palettes">Light</button>
 <div class="wrap">
 <aside>
   <div class="brandline">
@@ -137,7 +143,6 @@ ol.steps>li b{color:var(--ink)}
   <a class="backlink" href="index.html">← Platform overview</a>
   <a class="backlink" href="agent-flow.html">← The agent, end to end</a>
   <div class="tools">
-    <button id="theme" type="button">Light</button>
     <button id="expand" type="button">Expand all</button>
   </div>
   <input class="filter" id="filter" type="search" placeholder="Filter questions…" aria-label="Filter questions" />
