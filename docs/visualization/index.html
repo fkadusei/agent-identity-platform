@@ -121,6 +121,7 @@
   #defences .item{ margin:0 0 10px; font-size:11px; color:var(--dim); }
   #defences .item b{ display:block; color:var(--text); font-weight:600; margin-bottom:2px; }
   #defences .item div{ white-space:pre-line; line-height:1.55; }
+  #defences .item .tech{ margin-top:4px; color:var(--code-ink); }
 </style>
 </head>
 <body>
@@ -791,9 +792,13 @@ SCENE_DATA.attacks.forEach((a) => {
   const head = document.createElement("b");
   head.textContent = a.badge + " · " + a.tag;
   const body = document.createElement("div");
-  body.textContent = a.caption;
+  body.textContent = a.caption.split("\n")[0];
+  const tech = document.createElement("div");
+  tech.className = "tech";
+  tech.textContent = a.caption.split("\n")[1] || "";
   item.appendChild(head);
   item.appendChild(body);
+  if (tech.textContent) item.appendChild(tech);
   defList.appendChild(item);
 });
 
