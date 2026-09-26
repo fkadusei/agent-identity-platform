@@ -179,6 +179,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#cloud">What is the cloud-provider work?</a></li>
         <li><a href="#multi">What would many agents take?</a></li>
         <li><a href="#kms">Disk or KMS for the identity keys?</a></li>
+        <li><a href="#policy">How do I inspect the OPA policy and make edits?</a></li>
       </ol>
     </div>
   </nav>
@@ -996,6 +997,115 @@ esac</pre>
     not need. It is one line in <code>.env</code> away, and it is the mode a real deployment
     wants.
   </p>
+</section>
+
+<section id="policy">
+  <h2><span class="qnum">13</span>How do I inspect the OPA policy and make edits?</h2>
+  <p class="answer">
+    Policy is code, and it lives in one file: <code>policy/authz.rego</code> (package
+    <code>agentnhi.authz</code>). The running engine does not read that file — it loads a
+    <b>bundle</b> built from it and stamped with a revision. So there are three ways in: read the
+    file, ask the live OPA, or read a decision's <code>policy_version</code>.
+  </p>
+
+  <h3>The file, and the two layers worth knowing</h3>
+  <p>
+    The role → tool matrix sits in two parts, on purpose:
+  </p>
+  <ul>
+    <li><code>default_role_tools</code> — the matrix for every tenant;</li>
+    <li><code>tenant_role_tools</code> — per-tenant overrides that <b>replace</b> the default for
+      a role entirely. A role the tenant does not mention falls back to the default.</li>
+  </ul>
+  <p>
+    That second layer is the S8 demonstration: the <i>same</i> role name with different power,
+    decided by which customer you belong to.
+  </p>
+
+  <h3>Inspect the running policy</h3>
+  <p>
+    OPA answers a data API. Port-forward it and send an input document — the same shape the tool
+    server sends:
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — ask the live policy for a decision</p>
+    <pre>kubectl -n agent-platform port-forward svc/opa 8181:8181 &amp;
+curl -s localhost:8181/v1/data/agentnhi/authz \
+  -d '{"input":{"agent":"spiffe://acme.com/ns/agent-platform/sa/agent",
+        "user":"alice","roles":["support_rep"],"tenant":"acme",
+        "tool":"refunds.issue","amount":200}}'</pre>
+  </div>
+  <p>and it answers with the decision, its reason, and the revision that produced it:</p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the reply, trimmed</p>
+    <pre>{"decision": "require_approval",
+ "reason": "requires manager approval: refund of 200 is above the auto-approval limit of 50",
+ "policy_version": "1b8f8ff"}</pre>
+  </div>
+  <p>
+    Query <code>/v1/data/agentnhi/authz/role_matrix</code> instead for the whole matrix a tenant
+    gets — the same thing the Roles &amp; tools page shows. The two layers are visible in one
+    line: the same role name, two tenants.
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — support_rep for acme vs globex</p>
+    <pre>support_rep, tenant "acme":
+  crm.customer.read   crm.orders.list   refunds.issue
+  refunds.quote       tickets.read      tickets.reply.draft
+
+support_rep, tenant "globex":
+  crm.customer.read   crm.orders.list   refunds.quote
+  tickets.read        tickets.reply.draft</pre>
+  </div>
+
+  <h3>Make an edit</h3>
+  <ol class="steps">
+    <li>
+      <b>Change the file.</b> Add a tool to a role in <code>default_role_tools</code>, or add a
+      tenant override in <code>tenant_role_tools</code>. The policy file, not a data document, is
+      deliberate: changing a customer's powers is then a reviewed, signed policy release.
+    </li>
+    <li>
+      <b>Add a test.</b> <code>policy/tests/authz_test.rego</code> is the review surface. It has
+      data-hygiene guards — an override may only name a real role and a real tool — so a typo
+      fails the suite rather than quietly denying.
+    </li>
+    <li>
+      <b>Run the tests</b> — the same command CI runs:
+      <div class="codeblock">
+        <p class="cap">commands — the policy suite</p>
+        <pre>docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/
+# PASS: 45/45</pre>
+      </div>
+    </li>
+    <li>
+      <b>Roll it out.</b> <code>./scripts/setup.sh</code> rebuilds the bundle (revision = the git
+      short SHA), re-creates the <code>opa-bundle</code> ConfigMap, and <b>restarts OPA</b>. Every
+      decision from then on reports the new revision. To choose the revision yourself:
+      <code>POLICY_REVISION=v42 ./scripts/build-bundle.sh</code>.
+    </li>
+    <li>
+      <b>Verify.</b> Query OPA again and watch <code>policy_version</code> change;
+      <code>./scripts/role-tools.sh</code> walks the matrix end to end; the audit event carries
+      the revision too.
+    </li>
+  </ol>
+
+  <div class="callout warn">
+    <b>Why OPA must restart, not just the ConfigMap change</b>
+    The bundle files are mounted into the pod with <code>subPath</code>, and a <code>subPath</code>
+    mount does not update in place. A ConfigMap change on its own leaves the old policy running —
+    the most confusing way to be wrong, because the file looks new and the decisions do not.
+    <code>setup.sh</code> restarts OPA for exactly this reason.
+  </div>
+  <div class="callout info">
+    <b>Every decision names the rule that made it</b>
+    The revision is stamped into the bundle as <code>data.agentnhi.policy_version</code> and
+    returned with every decision — in the decision itself, the <code>tool.allowed</code> audit
+    event, the <code>policy.decision</code> trace span, and OPA's decision logs. So a decision
+    recorded months ago can be read next to the exact rule that produced it. Run directly
+    (<code>opa test policy/</code>), the version falls back to <code>"dev"</code>.
+  </div>
 </section>
 
 <div class="foot">
