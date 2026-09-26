@@ -305,7 +305,7 @@ const cssColor = (hex) => "#" + hex.toString(16).padStart(6, "0");
 /* Theme-aware palettes for the 3D scene (keep accents, adjust bg/labels). */
 const PALETTES = {
   dark:  { bg: 0x0d1117, text: "#e6edf3", dim: "#8b949e", light: false },
-  light: { bg: 0xeef1f6, text: "#1b2430", dim: "#5b6675", light: true }
+  light: { bg: 0xd9e0ea, text: "#1b2430", dim: "#4a5566", light: true }
 };
 /* Darker accent variants used for UI text on the light background. */
 const INK = { "#4da3ff": "#1f6fd6", "#b088ff": "#7a4fd0", "#4dffb8": "#0f8a5c", "#ffb84d": "#b5761a", "#ff5d5d": "#d33a3a" };
@@ -322,6 +322,7 @@ function registerSprite(sprite, role, accent) {
 }
 function registerAdditive(mat, baseOpacity) {
   mat.userData.baseOpacity = baseOpacity;
+  mat.userData.baseColor = "#" + mat.color.getHexString();
   additiveMats.push(mat);
   return mat;
 }
@@ -651,16 +652,21 @@ function applyTheme(theme) {
 
   themeSprites.forEach((s) => {
     const role = s.userData.role;
-    if (role === "accent") s.material.color.set(s.userData.accent);
+    if (role === "accent") s.material.color.set(pal.light ? ink(s.userData.accent) : s.userData.accent);
     else if (role === "dim") s.material.color.set(pal.dim);
     else s.material.color.set(pal.text);
   });
   additiveMats.forEach((m) => {
     m.blending = pal.light ? THREE.NormalBlending : THREE.AdditiveBlending;
-    m.opacity = pal.light ? m.userData.baseOpacity * 0.7 : m.userData.baseOpacity;
+    m.opacity = pal.light ? m.userData.baseOpacity * 0.85 : m.userData.baseOpacity;
+    // The bright accents wash out on the light background, so the edges, glows
+    // and pulses use their darker ink there — and a white glow becomes dark, or
+    // it would be invisible on a near-white scene.
+    const base = m.userData.baseColor;
+    m.color.set(pal.light ? (base === "#ffffff" ? pal.text : ink(base)) : base);
     m.needsUpdate = true;
   });
-  nodeMats.forEach((m) => { m.emissiveIntensity = pal.light ? 0.16 : 0.22; });
+  nodeMats.forEach((m) => { m.emissiveIntensity = pal.light ? 0.12 : 0.22; });
 }
 function resolveTheme(choice) {
   if (choice === "auto") {
