@@ -74,7 +74,11 @@ else
   fi
   pkill -f "port-forward.*svc/ingress-nginx-controller" 2>/dev/null || true
   sleep 1
-  kubectl -n ingress-nginx port-forward --address "$BIND_ADDR" \
+  # nohup so the forward outlives the shell that started it: without it a
+  # non-interactive run gets SIGHUP when that shell exits and the edge silently
+  # disappears. `nohup` cannot see the `kubectl` function lib.sh defines, so the
+  # context is passed explicitly — the same KUBE_CONTEXT the wrapper would add.
+  nohup kubectl --context "$KUBE_CONTEXT" -n ingress-nginx port-forward --address "$BIND_ADDR" \
     svc/ingress-nginx-controller 8443:443 >/tmp/agent-platform-port-forward.log 2>&1 &
   echo $! > "$PIDFILE"
   echo "$BIND_ADDR" > "$ADDRFILE"
