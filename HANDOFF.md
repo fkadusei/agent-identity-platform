@@ -424,6 +424,9 @@ The 3D architecture stays at `docs/visualization/index.html` (the README and
 relative link out of it 404s. `docs/site/visualization` is a **symlink** to
 `../visualization`, which makes the page reachable from the served root at
 `/visualization/index.html` — and still works from `file://` — without copying it.
+The trip back is the same trick in reverse: the visualizations carry a `← Home`
+link to `../index.html`, and `docs/index.html` is a **symlink** to
+`site/index.html`, so it resolves both from the served root and from `file://`.
 
 House rules for a page, enforced by `scripts/check-docs-pages.py` (runs in CI):
 
