@@ -389,7 +389,7 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 | `docs/decisions/` | ADRs 0001–0012 |
 | `docs/guides/` | plain-language user guides |
 | `docs/site/` | the living HTML pages — see "Living documentation" below |
-| `docs/visualization/` | HTML diagrams — the 3D architecture (`index.html`) and the S7 transport plan |
+| `docs/visualization/` | HTML diagrams — the 3D architecture (`index.html`), the real run in time (`run-in-time.html`), and the S7 transport plan |
 | `scripts/` | setup, demo, and the verification suites |
 
 ## Living documentation
