@@ -66,6 +66,18 @@ curl -s --cacert $CA $API/auth/config      # signup toggle + agent SPIFFE ID
 By default the edge is published **host-only**, so another computer cannot reach
 it. To let one in — a Windows or Linux box, or a VM standing in for one:
 
+The certificate's name is `agent-platform.local`, and **nothing resolves it for
+you** — add a hosts entry on whichever machine is browsing. On *this* host, point
+it at loopback so the name works locally too (the default `localhost:8443` keeps
+working either way):
+
+```
+# macOS/Linux: /etc/hosts    Windows: C:\Windows\System32\drivers\etc\hosts
+127.0.0.1   agent-platform.local
+```
+
+On a client, point the same name at this host's LAN IP instead (step 2 below).
+
 ```bash
 # 1. Publish the edge on every interface. start.sh replaces a host-only forward
 #    if BIND_ADDR has changed; ./stop.sh then start is the manual equivalent.
@@ -92,6 +104,10 @@ Then open **https://agent-platform.local:8443**.
   regenerate.
 - **Open the firewall** on the host running the forward (macOS: System Settings →
   Network → Firewall; Linux: `sudo ufw allow 8443/tcp`).
+- **A browser that still says `DNS_PROBE_POSSIBLE`** cached the failure before the
+  hosts entry existed: flush DNS (macOS: `sudo dscacheutil -flushcache; sudo
+  killall -HUP mDNSResponder`) and clear the browser's host cache
+  (`chrome://net-internals/#dns` → *Clear host cache*), or restart it.
 - **A VM as the client:** in NAT mode the host is reachable at `10.0.2.2`
   (VirtualBox) or the VMnet gateway (VMware); in **bridged** mode the VM has its
   own LAN IP and sees the host directly.
