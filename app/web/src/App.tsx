@@ -188,10 +188,20 @@ export default function App() {
         <span className="mark" aria-hidden="true">AI</span>
         <div>
           <h1>Agent Identity Platform</h1>
-          <p className="sub">
-            A support copilot with a cryptographic identity — no API keys, policy
-            on every action, human approval for high-risk ones.
-          </p>
+        <p className="sub">
+          A support copilot with a cryptographic identity — no API keys, policy
+          on every action, human approval for high-risk ones.
+        </p>
+        <p className="doclink">
+          <a
+            className="link"
+            href="http://localhost:8081/index.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Architecture &amp; docs ↗
+          </a>
+        </p>
         </div>
       </div>
 
@@ -287,10 +297,6 @@ function Login({
         <button className="primary" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
       </form>
       {error && <div className="error">{error}</div>}
-      <p className="hint">
-        Demo accounts — <b>alice</b>/alice123 (support rep), <b>manager</b>/manager123
-        (approver), <b>admin</b>/admin123 (platform admin).
-      </p>
       {signupEnabled && (
         <p className="hint">
           No account?{" "}
@@ -776,9 +782,9 @@ function Approvals({
           {canApprove ? (
             <>
               Nothing pending. <b>This is where you act.</b> To get something to
-              approve, sign in as <b>alice</b> (or <b>bella</b>, or <b>priya</b> for
-              PII) in another tab and ask for something that needs approval — a
-              refund of 200, say. It will appear here.
+              approve, sign in as a support rep (or a privacy user, for PII) in
+              another tab and ask for something that needs approval — a refund of
+              200, say. It will appear here.
             </>
           ) : (
             <>Nothing pending. A held action appears here while the agent waits.</>

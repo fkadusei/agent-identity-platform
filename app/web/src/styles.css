@@ -124,6 +124,7 @@ h1 {
   margin: 2px 0 0; font-size: 20px; font-weight: 650; letter-spacing: -0.015em;
 }
 .sub { color: var(--muted); margin: 5px 0 0; max-width: 52ch; font-size: 14px; }
+.doclink { margin: 6px 0 0; font-size: 13.5px; }
 
 /* --- labelled facts --------------------------------------------------------
    Structured data (who, which tenant, which tool, when) as a row of chips rather
