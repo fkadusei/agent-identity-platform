@@ -408,6 +408,11 @@ behaviour changed, the page that describes it changes in the same PR*.
 There are no numbers in the list above and nothing to renumber: add a page, link
 it from the one it extends, and it is part of the set.
 
+**A `QA:` question is a request to document.** When the owner asks a question
+prefixed `QA:`, answer it and append it to `questions.html` (next `qnum`, a nav
+entry, the answer checked against the code or the running cluster) — the page is
+the log.
+
 To read them:
 ```sh
 python3 -m http.server 8081 --directory docs/site    # → http://localhost:8081
