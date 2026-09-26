@@ -278,7 +278,7 @@ const SCENE_DATA = {
       explain: "An authenticated manager approves or denies it \u2014 and cannot approve their own request. Only then does the agent carry on.\nTechnical: the decision is written to the approvals store; the run resumes idempotently." },
     { from: "agent", to: "gateway", color: 0x4da3ff, css: "#4da3ff",
       label: "9. The model call goes through a guarded door",
-      explain: "The agent never holds the key to the AI model. It asks a gateway that does, over a connection both sides must prove themselves on.\nTechnical: SPIFFE mTLS to the LLM gateway, which holds the provider key, enforces per-agent rate/cost limits, and is the only egress." }
+      explain: "The agent never holds the key to the AI model. It asks a gateway that does, over a connection both sides must prove themselves on.\nTechnical: SPIFFE mTLS to the LLM gateway, which holds the provider key, enforces per-agent rate/cost limits, and is the only egress.\nLast boundary, not last in time: the agent consults the model first to choose its tool, and again after each result." }
   ],
 
   /* Faint static edges: everything emits one identity-keyed audit record (thin orange). */
