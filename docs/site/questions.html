@@ -180,6 +180,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#multi">What would many agents take?</a></li>
         <li><a href="#kms">Disk or KMS for the identity keys?</a></li>
         <li><a href="#policy">How do I inspect the OPA policy and make edits?</a></li>
+        <li><a href="#rfc8693">What is RFC 8693, and how does this project use it?</a></li>
       </ol>
     </div>
   </nav>
@@ -1105,6 +1106,109 @@ support_rep, tenant "globex":
     event, the <code>policy.decision</code> trace span, and OPA's decision logs. So a decision
     recorded months ago can be read next to the exact rule that produced it. Run directly
     (<code>opa test policy/</code>), the version falls back to <code>"dev"</code>.
+  </div>
+</section>
+
+<section id="rfc8693">
+  <h2><span class="qnum">14</span>What is RFC 8693, and how does this project use it?</h2>
+  <p class="answer">
+    RFC 8693 is <b>OAuth 2.0 Token Exchange</b>: a client presents a token it holds and gets a
+    <i>new</i> token back — usually narrower, for a different audience. It is the standard behind
+    the one sentence this project turns on: <i>the agent acts on the user's behalf without ever
+    holding the user's credentials</i>.
+  </p>
+
+  <h3>The grant, in this project</h3>
+  <p>
+    The whole exchange is one call to Keycloak's token endpoint, in
+    <code>sdk/agentnhi/exchange.py</code>. The three URNs it needs:
+  </p>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/exchange.py</p>
+    <pre>TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
+ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token"
+JWT_BEARER_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"</pre>
+  </div>
+  <p>and the request it sends:</p>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/exchange.py</p>
+    <pre>data: dict[str, str] = {
+    "grant_type": TOKEN_EXCHANGE_GRANT,
+    "client_id": client_id,
+    "subject_token": subject_token,
+    "subject_token_type": ACCESS_TOKEN_TYPE,
+    "requested_token_type": ACCESS_TOKEN_TYPE,
+}</pre>
+  </div>
+  <p>
+    Read it as the RFC reads it: <code>subject_token</code> is the user's access token
+    (<code>subject_token_type=access_token</code>), and the caller wants an access token back
+    (<code>requested_token_type=access_token</code>). The caller authenticates as
+    <code>client_id</code> — here, the <b>agent's SPIFFE ID</b> — with a
+    <code>client_assertion</code>: the agent's JWT-SVID, presented as <code>jwt-bearer</code>.
+    There is no client secret; the workload's own identity is the credential. The demo lets
+    Keycloak's audience mapper set the result's <code>aud</code>, which is how Standard Token
+    Exchange V2 expresses authorization (ADR-0002).
+  </p>
+
+  <h3>What comes back, and why it is "delegation"</h3>
+  <p>
+    The result is a token that still names the human as its subject, but records the agent as the
+    actor and is audienced to exactly one service:
+  </p>
+  <table>
+    <thead><tr><th>Claim</th><th>Value here</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr><td><code>sub</code></td><td>the support rep</td><td>The human it is <i>for</i></td></tr>
+      <tr><td><code>azp</code></td><td>the agent's SPIFFE ID</td><td>The workload acting <i>on their behalf</i></td></tr>
+      <tr><td><code>aud</code></td><td>the tool server</td><td>The only place the token is valid</td></tr>
+    </tbody>
+  </table>
+  <p>
+    That is the RFC's delegation model: the subject is preserved and the actor is recorded. RFC
+    8693 names the actor in an <code>act</code> claim; the SDK reads that if present and falls
+    back to Keycloak's <code>azp</code>:
+  </p>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/tokens.py</p>
+    <pre>act = claims.get("act") or {}
+workload = act.get("sub") or claims.get("azp") or "?"</pre>
+  </div>
+
+  <h3>What the tool server checks — and what a forwarded token fails</h3>
+  <p>
+    The resource server verifies three things (<code>TokenVerifier</code>): signature and issuer;
+    the <b>audience</b>, which must be <i>this</i> service — that is what makes a token captured
+    for one service useless at another; and the <b>issued-to</b> (<code>azp</code>), which must be
+    the workload we expect. So the exchange is not a nicety: it is why the agent's token cannot be
+    replayed, and why no hop forwards the token it received.
+  </p>
+
+  <h3>Two shapes the SDK supports</h3>
+  <ul>
+    <li><b>Client assertion</b> — a workload proving identity with its SVID. This is the agent's
+      exchange, and the only one live in the demo.</li>
+    <li><b>Client secret</b> — a service exchanging for a <i>downstream</i> audience. The SDK
+      supports it for a real vendor integration; the demo's sandbox is a vendor stand-in scoped by
+      an <code>X-Tenant</code> header, not a token.</li>
+  </ul>
+
+  <h3>The two SPIRE builds it forced</h3>
+  <p>
+    Keycloak requires a <code>jti</code> on a <code>private_key_jwt</code> assertion, and SPIRE
+    does not mint one — and SPIRE caches JWT-SVIDs, so a repeated exchange reuses the same
+    <code>jti</code> and Keycloak correctly rejects it ("token reuse detected"). The fix is a
+    <code>jti</code> CredentialComposer plugin on the SPIRE server and a SPIRE agent with the
+    JWT-SVID cache disabled. Both disappear once an authorization server supports SPIFFE client
+    authentication natively (ADR-0002).
+  </p>
+
+  <div class="callout info">
+    <b>What this project does <i>not</i> use from the RFC</b>
+    <code>actor_token</code>/<code>actor_token_type</code> (the actor is the authenticated client
+    itself), the RFC 8707 <code>resource</code> indicator (audience comes from the mapper), and
+    refresh tokens. The RFC is a toolbox; this project uses the one grant, two token-type URNs, and
+    the client-assertion auth — nothing more.
   </div>
 </section>
 
