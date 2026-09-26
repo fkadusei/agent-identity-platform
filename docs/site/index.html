@@ -144,6 +144,9 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
   border-radius:999px;display:grid;place-items:center;font:700 .8rem/1 var(--sans);
   color:var(--accent);background:var(--accent-soft);border:1px solid var(--accent-line)}
 .steps>li b{color:var(--ink)}
+.seq{margin:18px 0}
+.seq svg{display:block;width:100%;height:auto}
+.seq figcaption{color:var(--muted);font-size:.85rem;margin-top:8px}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;margin:16px 0}
 .tile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r2);padding:14px 16px}
 .tile h4{margin:0 0 6px;color:var(--ink)}
@@ -429,6 +432,72 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
     central scenario: a support agent is asked to refund an order. Each step shows the real
     request and the real response, trimmed to the interesting fields.
   </p>
+
+  <figure class="seq">
+    <svg viewBox="0 0 960 845" width="100%" role="img" aria-label="Sequence diagram of one run in the order it happens: the person signs in; the API forwards the task to the agent; the agent asks policy which tools are allowed, then asks the model through the gateway which tool to use; it fetches an SVID and exchanges the person's token for a tool-scoped one; the tool server asks policy; a high-risk call is held and a manager approves it; the run resumes, the tool acts, and the result is returned and audited.">
+      <defs>
+        <marker id="m-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+        <marker id="m-g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+        <marker id="m-v" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker>
+        <marker id="m-r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--red)"/></marker>
+      </defs>
+      <rect x="55" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="95" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">person</text>
+      <rect x="155" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="195" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">api</text>
+      <rect x="265" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="305" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">agent</text>
+      <rect x="375" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="415" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">gateway</text>
+      <rect x="475" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="515" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">keycloak</text>
+      <rect x="575" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="615" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">spire</text>
+      <rect x="680" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="720" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">tools</text>
+      <rect x="785" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="825" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">opa</text>
+      <rect x="878" y="10" width="80" height="28" rx="8" fill="var(--surface2)" stroke="var(--line)"/><text x="918" y="29" text-anchor="middle" font-size="11" fill="var(--ink)">sandbox</text>
+      <line x1="95" y1="38" x2="95" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="195" y1="38" x2="195" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="305" y1="38" x2="305" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="415" y1="38" x2="415" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="515" y1="38" x2="515" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="615" y1="38" x2="615" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="720" y1="38" x2="720" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="825" y1="38" x2="825" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="918" y1="38" x2="918" y2="838" stroke="var(--line3)" stroke-dasharray="3 5"/>
+      <line x1="0" y1="148" x2="960" y2="148" stroke="var(--line2)" stroke-dasharray="2 4"/><text x="6" y="104" font-size="9" fill="var(--faint)" letter-spacing="1">IDENTITY</text>
+      <line x1="0" y1="348" x2="960" y2="348" stroke="var(--line2)" stroke-dasharray="2 4"/><text x="6" y="254" font-size="9" fill="var(--faint)" letter-spacing="1">PLAN</text>
+      <line x1="0" y1="544" x2="960" y2="544" stroke="var(--line2)" stroke-dasharray="2 4"/><text x="6" y="442" font-size="9" fill="var(--faint)" letter-spacing="1">ACT</text>
+      <line x1="0" y1="640" x2="960" y2="640" stroke="var(--line2)" stroke-dasharray="2 4"/><text x="6" y="590" font-size="9" fill="var(--faint)" letter-spacing="1">APPROVAL</text>
+      <text x="6" y="732" font-size="9" fill="var(--faint)" letter-spacing="1">RESULT</text>
+      <line x1="95" y1="66" x2="195" y2="66" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="145" y="61" text-anchor="middle" font-size="10" fill="var(--ink2)">1. sign in</text>
+      <line x1="195" y1="98" x2="515" y2="98" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="355" y="93" text-anchor="middle" font-size="10" fill="var(--ink2)">2. password grant</text>
+      <line x1="515" y1="130" x2="195" y2="130" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="355" y="125" text-anchor="middle" font-size="10" fill="var(--ink2)">3. user token (roles, tenant)</text>
+      <line x1="95" y1="162" x2="195" y2="162" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="145" y="157" text-anchor="middle" font-size="10" fill="var(--ink2)">4. POST /tasks</text>
+      <line x1="195" y1="194" x2="305" y2="194" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="250" y="189" text-anchor="middle" font-size="10" fill="var(--ink2)">5. run(task, token)</text>
+      <line x1="305" y1="226" x2="825" y2="226" stroke="var(--green)" marker-end="url(#m-g)"/><text x="565" y="221" text-anchor="middle" font-size="10" fill="var(--ink2)">6. allowed tools?</text>
+      <line x1="305" y1="262" x2="415" y2="262" stroke="var(--violet)" marker-end="url(#m-v)"/><text x="360" y="257" text-anchor="middle" font-size="10" fill="var(--ink2)">7. plan — which tool?</text>
+      <path d="M415 282 h28 v18 h-28" fill="none" stroke="var(--violet)" marker-end="url(#m-v)"/><text x="450" y="296" font-size="10" fill="var(--ink2)">8. → provider (the key lives here)</text>
+      <line x1="415" y1="330" x2="305" y2="330" stroke="var(--violet)" marker-end="url(#m-v)"/><text x="360" y="325" text-anchor="middle" font-size="10" fill="var(--ink2)">9. {tool, args}</text>
+      <line x1="305" y1="366" x2="615" y2="366" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="460" y="361" text-anchor="middle" font-size="10" fill="var(--ink2)">10. JWT-SVID (aud=tools)</text>
+      <line x1="305" y1="398" x2="515" y2="398" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="410" y="393" text-anchor="middle" font-size="10" fill="var(--ink2)">11. exchange → tool token</text>
+      <line x1="305" y1="430" x2="720" y2="430" stroke="var(--green)" marker-end="url(#m-g)"/><text x="512" y="425" text-anchor="middle" font-size="10" fill="var(--ink2)">12. call tool (scoped token)</text>
+      <line x1="720" y1="462" x2="825" y2="462" stroke="var(--green)" marker-end="url(#m-g)"/><text x="772" y="457" text-anchor="middle" font-size="10" fill="var(--ink2)">13. decide</text>
+      <line x1="825" y1="494" x2="720" y2="494" stroke="var(--green)" marker-end="url(#m-g)"/><text x="772" y="489" text-anchor="middle" font-size="10" fill="var(--ink2)">14. require_approval</text>
+      <line x1="720" y1="526" x2="305" y2="526" stroke="var(--red)" marker-end="url(#m-r)"/><text x="512" y="521" text-anchor="middle" font-size="10" fill="var(--ink2)">15. 428 — held</text>
+      <line x1="305" y1="558" x2="195" y2="558" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="250" y="553" text-anchor="middle" font-size="10" fill="var(--ink2)">16. create approval</text>
+      <line x1="95" y1="590" x2="195" y2="590" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="145" y="585" text-anchor="middle" font-size="10" fill="var(--ink2)">17. manager approves</text>
+      <line x1="195" y1="622" x2="305" y2="622" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="250" y="617" text-anchor="middle" font-size="10" fill="var(--ink2)">18. resume</text>
+      <line x1="305" y1="654" x2="720" y2="654" stroke="var(--green)" marker-end="url(#m-g)"/><text x="512" y="649" text-anchor="middle" font-size="10" fill="var(--ink2)">19. call again (approval_id)</text>
+      <line x1="720" y1="686" x2="918" y2="686" stroke="var(--green)" marker-end="url(#m-g)"/><text x="819" y="681" text-anchor="middle" font-size="10" fill="var(--ink2)">20. do the work</text>
+      <line x1="918" y1="718" x2="720" y2="718" stroke="var(--green)" marker-end="url(#m-g)"/><text x="819" y="713" text-anchor="middle" font-size="10" fill="var(--ink2)">21. result</text>
+      <line x1="720" y1="750" x2="305" y2="750" stroke="var(--green)" marker-end="url(#m-g)"/><text x="512" y="745" text-anchor="middle" font-size="10" fill="var(--ink2)">22. result</text>
+      <line x1="305" y1="782" x2="195" y2="782" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="250" y="777" text-anchor="middle" font-size="10" fill="var(--ink2)">23. outcome</text>
+      <line x1="195" y1="814" x2="95" y2="814" stroke="var(--accent)" marker-end="url(#m-b)"/><text x="145" y="809" text-anchor="middle" font-size="10" fill="var(--ink2)">24. the result</text>
+    </svg>
+    <figcaption>
+      One run, in the order it actually happens. Notice what is <b>not</b> in the trust-flow
+      order: the model is consulted <b>first</b> (7–9) to choose the tool, and the token
+      exchange (11) happens only once a tool is chosen. The colour follows the trust-flow
+      diagram — blue is identity and delegation, green is the tools and policy, violet is the
+      model boundary, red is a held action. The run can loop (S19): after step 22 the agent may
+      plan again with the result. Every stage writes an audit event to the API.
+    </figcaption>
+  </figure>
 
   <ol class="steps">
     <li>
