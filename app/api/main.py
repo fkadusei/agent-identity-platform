@@ -384,6 +384,12 @@ if _WEB_DIR.is_dir():
     def index() -> FileResponse:
         return FileResponse(_WEB_DIR / "index.html")
 
+    @app.get("/favicon.svg")
+    def favicon() -> FileResponse:
+        # The browser asks for this at the site root; the UI is served from here,
+        # so the icon has to be too (only /assets and / are mounted otherwise).
+        return FileResponse(_WEB_DIR / "favicon.svg", media_type="image/svg+xml")
+
 
 def main() -> None:
     """Serve the api: SPIFFE mTLS for machine callers, plain for the browser (S7)."""
