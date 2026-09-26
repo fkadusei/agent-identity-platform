@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Agent Identity Platform — 3D Architecture</title>
+<title>Agent Identity Platform — one run, in time</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <!-- Apply persisted theme BEFORE first paint to avoid a flash. Tiny inline head script. -->
 <script>
@@ -129,8 +129,8 @@
 <canvas id="scene"></canvas>
 
 <div id="header">
-  <h1>Agent Identity Platform — SPIFFE · OAuth token exchange · OPA · human-in-the-loop</h1>
-  <p>Click a component. Play the flow. Toggle defences.</p>
+  <h1>Agent Identity Platform — one run, in the order it happens</h1>
+  <p>Click a component. Play one run, step by step. Toggle defences.</p>
 </div>
 
 <div id="theme" role="group" aria-label="Theme">
@@ -149,7 +149,7 @@
   <button class="ctl" id="autoBtn" title="Stop or resume the slow idle rotation">⟳ Auto-rotate: on</button>
   <button class="ctl" id="defBtn">⚠ Defences</button>
   <button class="ctl" id="resetBtn" title="Clear the current step, selection and defences, and return the camera home">↺ Reset</button>
-  <a href="run-in-time.html" style="font:inherit;font-size:12px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;color:var(--text);background:var(--panel);text-decoration:none;text-align:left;backdrop-filter:var(--panel-blur)">↔ One run, in time</a>
+  <a href="index.html" style="font:inherit;font-size:12px;padding:8px 10px;border:1px solid var(--border);border-radius:6px;color:var(--text);background:var(--panel);text-decoration:none;text-align:left;backdrop-filter:var(--panel-blur)">↔ Trust-flow view</a>
   <div id="hint">Left-drag rotate · wheel zoom · right-drag pan.<br>Click any node for its repo config.</div>
 </div>
 
@@ -161,6 +161,7 @@
   <div class="row"><span class="sw" style="background:var(--orange)"></span>Data &amp; oversight</div>
   <div class="row"><span class="ln" style="border-color:var(--blue)"></span>Identity</div>
   <div class="row"><span class="ln" style="border-color:var(--green)"></span>Authorized</div>
+  <div class="row"><span class="ln" style="border-color:var(--purple)"></span>Model call</div>
   <div class="row"><span class="ln dash" style="border-color:var(--red)"></span>Blocked</div>
   <div class="row"><span class="ln" style="border-color:var(--orange); opacity:.5"></span>Audit</div>
 </div>
@@ -182,7 +183,7 @@
   <div id="caption">
     <div id="capTitle">Customer-support &amp; refunds copilot</div>
     <div id="capBody">A support rep delegates to an AI agent carrying a SPIFFE identity — no API keys, every tool call authorized by policy, high-risk actions approved by a human, tokens never forwarded, everything audited.
-Press ▶ to walk the 9-hop trust flow, or ⚠ to see how attacks are blocked.</div>
+Press ▶ to walk one run, step by step, or ⚠ to see how attacks are blocked.</div>
   </div>
 </div>
 
@@ -221,6 +222,9 @@ const SCENE_DATA = {
       config: "—" },
 
     /* ---- AGENT ---- */
+    { id: "api", plane: "agent", x: -7.2, z: 0, label: "API",
+      desc: "The browser's entry point and the run's front door: it serves the UI, takes the task, and forwards it to the agent over a SPIFFE hop — presenting its own identity, never a shared secret.",
+      config: "app/api/" },
     { id: "agent", plane: "agent", x: -3, z: 0, size: 1.2, label: "Agent runtime (LangGraph)",
       desc: "Stateful workflow; the LLM proposes which tool to use, policy decides whether. Pauses (interrupts) for approvals and resumes. Holds zero secrets.",
       config: "app/agent/" },
@@ -251,35 +255,81 @@ const SCENE_DATA = {
       config: "sdk/agentnhi/" }
   ],
 
-  /* Numbered trust flow, played one hop at a time. blue = identity, green = authorized. */
+  /* One run, in the order it actually happens, played one step at a time.
+     blue = identity & delegation · purple = the model boundary · green = tools & policy · red = held. */
   flows: [
-    { from: "user", to: "keycloak", color: 0x4da3ff, css: "#4da3ff",
+    { from: "user", to: "api", color: 0x4da3ff, css: "#4da3ff", lift: 0.5,
       label: "1. The support rep signs in",
-      explain: "She proves who she is and gets a short-lived badge saying so. Her password never reaches the agent.\nTechnical: OIDC authorization-code + PKCE; Keycloak issues a user access token." },
-    { from: "spire", to: "agent", color: 0x4da3ff, css: "#4da3ff",
-      label: "2. The agent is given its own identity",
-      explain: "The agent holds no password or key. The cluster proves which workload it is, and it is issued a short-lived ID card.\nTechnical: SPIRE attests the Kubernetes workload (namespace + service account) and issues an X.509/JWT SVID, rotated automatically." },
-    { from: "agent", to: "keycloak", color: 0x4da3ff, css: "#4da3ff", lift: 1.4,
-      label: "3. The agent borrows the rep's authority \u2014 narrowly",
-      explain: "The agent trades the rep's badge for a smaller one: still on behalf of the rep, but usable only at the tools, and only for minutes.\nTechnical: RFC 8693 token exchange, authenticated by the agent's SVID; the result is audience-scoped (aud=mcp-tools) with sub=rep, azp=agent." },
-    { from: "agent", to: "mcp", color: 0x4dffb8, css: "#4dffb8",
-      label: "4. The agent asks for a tool",
-      explain: "It calls the tool it wants, presenting that narrow badge.\nTechnical: the tool server verifies the signature, the audience (aud), and who the token was issued to (azp)." },
-    { from: "mcp", to: "opa", color: 0x4dffb8, css: "#4dffb8",
-      label: "5. The rules decide",
-      explain: "Before anything happens the rules are checked: may this agent, acting for this person, use this tool? If no rule says yes, the answer is no.\nTechnical: OPA evaluates (agent, user, roles, tenant, tool, args) \u2192 allow / deny / require_approval; deny-by-default." },
-    { from: "mcp", to: "sim", color: 0x4dffb8, css: "#4dffb8", lift: 1.6,
-      label: "6. The tool does the work \u2014 with its own badge",
-      explain: "If it is allowed, the tool talks to the system behind it using its own credentials \u2014 not the ones it was handed.\nTechnical: the tool server performs its own exchange for the downstream audience; the inbound token is never forwarded." },
-    { from: "agent", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 2.4,
-      label: "7. A risky action waits for a person",
-      explain: "For something high-risk, like a large refund, the agent stops and asks a manager. Nothing has happened yet.\nTechnical: the run pauses on a LangGraph interrupt; a pending approval is recorded, bound to the exact tool, arguments, user and agent." },
-    { from: "approver", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 3.0,
-      label: "8. A manager decides",
-      explain: "An authenticated manager approves or denies it \u2014 and cannot approve their own request. Only then does the agent carry on.\nTechnical: the decision is written to the approvals store; the run resumes idempotently." },
-    { from: "agent", to: "gateway", color: 0x4da3ff, css: "#4da3ff",
-      label: "9. The model call goes through a guarded door",
-      explain: "The agent never holds the key to the AI model. It asks a gateway that does, over a connection both sides must prove themselves on.\nTechnical: SPIFFE mTLS to the LLM gateway, which holds the provider key, enforces per-agent rate/cost limits, and is the only egress.\nLast boundary, not last in time: the agent consults the model first to choose its tool, and again after each result." }
+      explain: "She proves who she is; the API does the OIDC grant at Keycloak. Her password never reaches the agent.\nTechnical: POST /auth/login — the API performs the password grant and returns a user token (sub=rep, roles, tenant)." },
+    { from: "api", to: "keycloak", color: 0x4da3ff, css: "#4da3ff", lift: 1.2,
+      label: "2. The API does the grant",
+      explain: "The API, not the browser, holds the client secret and talks to Keycloak.\nTechnical: OpenID Connect password grant; the client secret is a Kubernetes Secret, never in the browser." },
+    { from: "keycloak", to: "api", color: 0x4da3ff, css: "#4da3ff", lift: 1.6,
+      label: "3. A user token comes back",
+      explain: "Short-lived, carrying the roles the platform will act on and the tenant.\nTechnical: a JWT access token, ~5 minutes; the UI keeps it in sessionStorage for the tab's lifetime." },
+    { from: "user", to: "api", color: 0x4da3ff, css: "#4da3ff", lift: 1.5,
+      label: "4. The rep sends a task",
+      explain: "One sentence — \u201crefund the order from the last ticket\u201d.\nTechnical: POST /tasks with the bearer token." },
+    { from: "api", to: "agent", color: 0x4da3ff, css: "#4da3ff", lift: 0.6,
+      label: "5. The API forwards it \u2014 a SPIFFE hop",
+      explain: "The API does not do the work; it hands the task to the agent, presenting its own certificate and a JWT that names it.\nTechnical: SPIFFE mTLS + a JWT-SVID audienced to the agent, so the agent knows which workload is calling." },
+    { from: "agent", to: "opa", color: 0x4dffb8, css: "#4dffb8", lift: 0.7,
+      label: "6. Which tools may this role use?",
+      explain: "Before the model is even asked, the agent asks policy which tools this person's role permits — in their tenant.\nTechnical: OPA tools_for_roles(roles, tenant); fail-closed, so an unreachable policy offers nothing." },
+    { from: "opa", to: "agent", color: 0x4dffb8, css: "#4dffb8", lift: 1.2,
+      label: "7. The allowed tool set",
+      explain: "Only those tools are offered to the model — and the forbidden ones are named, so it does not substitute one.\nTechnical: the catalogue filtered by the policy result; the same policy enforces at call time." },
+    { from: "agent", to: "gateway", color: 0xb088ff, css: "#b088ff", lift: 0.6,
+      label: "8. Plan: the model chooses the tool",
+      explain: "The agent asks a gateway, not the provider. The gateway holds the model key; the agent holds none.\nTechnical: SPIFFE mTLS + a JWT-SVID naming the agent; the gateway resolves the model, enforces per-agent limits, and is the only egress." },
+    { from: "gateway", to: "agent", color: 0xb088ff, css: "#b088ff", lift: 1.1,
+      label: "9. The decision comes back",
+      explain: "A tool and its arguments \u2014 or a refusal, or a request for a missing argument.\nTechnical: JSON {tool, args, more}; the model only proposes, it never authorizes." },
+    { from: "agent", to: "spire", color: 0x4da3ff, css: "#4da3ff", lift: 0.7,
+      label: "10. The agent fetches an SVID",
+      explain: "To authenticate the token exchange, the agent needs its own short-lived identity.\nTechnical: the Workload API issues a JWT-SVID (audience = Keycloak), rotated automatically." },
+    { from: "agent", to: "keycloak", color: 0x4da3ff, css: "#4da3ff", lift: 2.0,
+      label: "11. It exchanges the rep's token",
+      explain: "The rep's token is for the API's audience; the agent trades it for one scoped to the tools.\nTechnical: RFC 8693 token exchange, authenticated by the agent's SVID; result aud=tools, sub=rep, azp=agent." },
+    { from: "keycloak", to: "agent", color: 0x4da3ff, css: "#4da3ff", lift: 2.4,
+      label: "12. A tool-scoped token",
+      explain: "Still on the rep's behalf, but usable only at the tools, and only for minutes.\nTechnical: audience-bound (aud=tools); the agent never forwards the inbound user token." },
+    { from: "agent", to: "mcp", color: 0x4dffb8, css: "#4dffb8", lift: 0.6,
+      label: "13. The agent calls the tool",
+      explain: "It presents the narrow token and its own workload identity.\nTechnical: the tool server verifies signature, audience (aud) and issued-to (azp)." },
+    { from: "mcp", to: "opa", color: 0x4dffb8, css: "#4dffb8", lift: 0.7,
+      label: "14. The tool server asks policy",
+      explain: "The enforcement point decides, on the caller's identity and role \u2014 never on what the model said.\nTechnical: OPA evaluates (agent, user, roles, tenant, tool, args) \u2192 allow / deny / require_approval." },
+    { from: "opa", to: "mcp", color: 0x4dffb8, css: "#4dffb8", lift: 1.2,
+      label: "15. require approval",
+      explain: "A $200 refund is above the auto-approval limit, so the rules say a human must decide.\nTechnical: the decision carries the reason and the policy revision that produced it." },
+    { from: "mcp", to: "agent", color: 0xff5d5d, css: "#ff5d5d", lift: 0.6,
+      label: "16. Held \u2014 nothing happened",
+      explain: "The tool server refuses to act without a recorded approval, and says so.\nTechnical: HTTP 428; the agent pauses on a LangGraph interrupt." },
+    { from: "agent", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 2.2,
+      label: "17. The agent records an approval",
+      explain: "A real, tenant-scoped row bound to this tool, these arguments, this user and this agent.\nTechnical: the agent exchanges for an API-audience token and POSTs /approvals over a SPIFFE hop." },
+    { from: "approver", to: "approvals", color: 0x4da3ff, css: "#4da3ff", lift: 2.8,
+      label: "18. A manager approves",
+      explain: "An authenticated manager decides \u2014 and cannot approve their own request.\nTechnical: the decision is written to the store; the run resumes idempotently." },
+    { from: "agent", to: "mcp", color: 0x4dffb8, css: "#4dffb8", lift: 1.5,
+      label: "19. The run resumes and calls again",
+      explain: "The agent retries the same call, now carrying the approval id.\nTechnical: the tool server re-checks that a matching, verified approval exists before it acts." },
+    { from: "mcp", to: "sim", color: 0x4dffb8, css: "#4dffb8", lift: 1.5,
+      label: "20. The tool does the work",
+      explain: "With its own downstream credentials \u2014 the inbound token is never forwarded.\nTechnical: the tool server performs its own exchange for the vendor audience." },
+    { from: "sim", to: "mcp", color: 0x4dffb8, css: "#4dffb8", lift: 2.0,
+      label: "21. The vendor's answer",
+      explain: "The refund is issued; a record that is not there is a readable answer, never a silent success.\nTechnical: the result is audited as tool.reported_error when the tool itself said no." },
+    { from: "mcp", to: "agent", color: 0x4dffb8, css: "#4dffb8", lift: 1.5,
+      label: "22. The result comes back",
+      explain: "One step of the run is done. If the model asked for more (S19), the agent plans again with this result.\nTechnical: the observation is kept in the run's state; the loop is bounded at three calls." },
+    { from: "agent", to: "api", color: 0x4da3ff, css: "#4da3ff", lift: 0.6,
+      label: "23. The outcome",
+      explain: "The run returns its final result, or the pause it is waiting on.\nTechnical: the agent's response over the SPIFFE hop back to the API." },
+    { from: "api", to: "user", color: 0x4da3ff, css: "#4da3ff", lift: 0.5,
+      label: "24. The rep sees it",
+      explain: "The screen shows the refund \u2014 and the audit trail shows exactly who did what, on whose behalf, and why.\nTechnical: every stage emitted an identity-keyed audit event." }
   ],
 
   /* Faint static edges: everything emits one identity-keyed audit record (thin orange). */
@@ -728,7 +778,7 @@ function setCaption(title, body, css) {
 function idleCaption() {
   setCaption("Customer-support & refunds copilot",
     "A support rep delegates to an AI agent carrying a SPIFFE identity — no API keys, every tool call authorized by policy, high-risk actions approved by a human, tokens never forwarded, everything audited.\n" +
-    "Press ▶ to walk the 9-hop trust flow, or ⚠ to see how attacks are blocked.");
+    "Press ▶ to walk one run, step by step, or ⚠ to see how attacks are blocked.");
 }
 function highlightStep(idx) {
   // The selected hop is the subject: it stays bright and moving, everything else
@@ -736,18 +786,20 @@ function highlightStep(idx) {
   // With no step selected (idx < 0) all hops rest at a readable middle ground.
   flowEdges.forEach((e, i) => {
     const active = i === idx;
-    const tube = idx < 0 ? 0.45 : active ? 1.0 : 0.18;
-    const halo = idx < 0 ? 0.08 : active ? 0.26 : 0.04;
+    const tube = idx < 0 ? 0.3 : active ? 1.0 : 0.14;
+    const halo = idx < 0 ? 0.05 : active ? 0.26 : 0.03;
     e.tube.material.opacity = tube;
     e.halo.material.opacity = halo;
     e.tube.material.userData.baseOpacity = tube;
     e.halo.material.userData.baseOpacity = halo;
+    // The step badges fade with their edge, so a long run is not a wall of numbers.
+    if (e.badge) { e.badge.material.transparent = true; e.badge.material.opacity = idx < 0 ? 0.6 : active ? 1.0 : 0.16; }
   });
 }
 function showStep(i) {
   currentStep = i; stepT = 0;
   const f = SCENE_DATA.flows[i];
-  setCaption("Trust flow — hop " + (i + 1) + " / " + SCENE_DATA.flows.length,
+  setCaption("One run — step " + (i + 1) + " / " + SCENE_DATA.flows.length,
     f.label + "\n" + f.explain, f.css);
   highlightStep(i);
 }
@@ -909,8 +961,8 @@ function animate() {
       if (currentStep + 1 < SCENE_DATA.flows.length) showStep(currentStep + 1);
       else {
         stopPlayback(); highlightStep(-1); currentStep = -1;
-        setCaption("Trust flow complete ✓",
-          "Nine hops, zero static credentials. Every call carried a short-lived, audience-scoped token; every decision was checked by OPA and written to the audit stream.",
+        setCaption("Run complete ✓",
+          "One run, zero static credentials. Every machine hop carried a short-lived, audience-scoped token; the model was consulted through a gateway that holds the only key; every decision was checked by OPA and written to the audit stream.",
           "#4dffb8");
       }
     }
