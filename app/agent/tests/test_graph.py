@@ -56,6 +56,40 @@ def test_approval_required_then_approved_executes():
     assert deps.approvals_created == 1
 
 
+def test_resuming_before_the_decision_does_not_create_a_second_approval():
+    """Reported: pressing "Resume" while the approval was still pending put a
+    second, identical refund into the queue. A premature resume must wait on the
+    same approval, not mint another."""
+    deps = ScriptedDeps(
+        PLAN,
+        [
+            ToolCallResult("approval_required", reason="needs manager"),
+            ToolCallResult("approval_required", reason="needs manager"),
+            ToolCallResult("ok", result={"id": "r-0003"}),
+        ],
+    )
+    agent = build_agent(deps)
+
+    paused = run_task(agent, "refund o-1001", "t-rehold", "user-token")
+    assert paused["status"] == "approval_required"
+    assert deps.approvals_created == 1
+
+    # Resume while nobody has decided: the tool still refuses, so the run waits
+    # on the same approval.
+    again = resume_task(agent, "t-rehold", {"approved": True})
+    assert again["status"] == "approval_required"
+    assert again["approval_id"] == paused["approval_id"]
+    assert deps.approvals_created == 1
+
+    # Once the tool accepts the approval, the same run executes it — once.
+    done = resume_task(agent, "t-rehold", {"approved": True})
+    assert done["status"] == "ok"
+    assert done["result"] == {"id": "r-0003"}
+    assert deps.approvals_created == 1
+    assert deps.calls[1]["approval_id"] == "ap-scripted"
+    assert deps.calls[2]["approval_id"] == "ap-scripted"
+
+
 def test_approval_denied_does_not_execute():
     deps = ScriptedDeps(PLAN, [ToolCallResult("approval_required", reason="needs manager")])
     agent = build_agent(deps)
