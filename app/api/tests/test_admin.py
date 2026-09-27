@@ -28,7 +28,15 @@ class FakeAdmin:
         self.deleted = None
 
     def list_users(self):
-        return [{"id": "u1", "username": "alice", "email": "a@example.com", "enabled": True}]
+        return [
+            {
+                "id": "u1",
+                "username": "alice",
+                "email": "a@example.com",
+                "enabled": True,
+                "attributes": {"tenant": ["acme"]},
+            }
+        ]
 
     def user_role_names(self, user_id):
         return ["support_rep"]
@@ -67,7 +75,14 @@ def test_list_users(client):
     resp = c.get("/admin/users", headers={"Authorization": "Bearer x"})
     assert resp.status_code == 200
     assert resp.json() == [
-        {"id": "u1", "username": "alice", "email": "a@example.com", "enabled": True, "roles": ["support_rep"]}
+        {
+            "id": "u1",
+            "username": "alice",
+            "email": "a@example.com",
+            "enabled": True,
+            "tenant": "acme",
+            "roles": ["support_rep"],
+        }
     ]
 
 

@@ -199,7 +199,7 @@ export const getRoles = (token: string) => request("/roles", { headers: auth(tok
 export const listUsers = (token: string) => request("/admin/users", { headers: auth(token) });
 
 export const createUser = (
-  form: { username: string; email: string; password: string; roles: string[] },
+  form: { username: string; email: string; password: string; tenant: string; roles: string[] },
   token: string,
 ) => request("/admin/users", json("POST", token, form));
 
