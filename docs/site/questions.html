@@ -159,6 +159,7 @@ ol.steps>li b{color:var(--ink)}
       <div class="gtitle">Identity and data</div>
       <ol>
         <li><a href="#users">Where are the users stored?</a></li>
+        <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
         <li><a href="#demo-data">What data does the demo hold?</a></li>
       </ol>
@@ -1360,6 +1361,85 @@ raise HTTPException(status_code=400, detail=result.reason)</pre>
     Replacing the HTTP transport with MCP changes the protocol, the discovery, and where a denial
     or a hold is read from — not who is allowed to do what. The security boundary here was never
     the transport; it is the enforcement core both transports already share.
+  </div>
+</section>
+
+<section id="admin-create">
+  <h2><span class="qnum">16</span>When the admin creates a user, does it land in Keycloak?</h2>
+  <p class="answer">
+    <b>Yes — Keycloak is the user store.</b> The API keeps no user table of its own: the admin's
+    "create user" is a write to Keycloak's Admin API, and the id it returns is Keycloak's id.
+  </p>
+
+  <h3>The endpoint calls Keycloak</h3>
+  <p>
+    <code>POST /admin/users</code> is gated on <code>platform_admin</code>, then hands the work to
+    the identity admin built from the environment:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/api/admin.py</p>
+    <pre>@router.post("/users")
+def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> dict:
+    username = (body.get("username") or "").strip()
+    password = body.get("password") or ""
+    if not username or not password:
+        raise HTTPException(status_code=400, detail="username and password are required")
+    roles = [r for r in (body.get("roles") or []) if r in ASSIGNABLE_ROLES]
+
+    admin = admin_from_env()</pre>
+  </div>
+  <p>
+    <code>IdentityAdmin.create_user</code> then <code>POST</code>s to Keycloak's
+    <code>/users</code>. The payload carries the username, email, an enabled flag, the password as
+    a credential, and — if a tenant was named — the tenant as an identity attribute. A duplicate
+    comes back as Keycloak's <code>409</code>, which the API turns into "that username is already
+    taken":
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/api/identity.py</p>
+    <pre>        if tenant:
+            # The tenant is an identity attribute, mapped into the token by the
+            # realm's `tenant` protocol mapper. Without it the account is
+            # unscoped and policy denies everything.
+            payload["attributes"] = {"tenant": [tenant]}
+        resp = self._request("POST", "/users", json=payload)
+        if resp.status_code == 409:
+            raise ValueError("that username is already taken")
+        resp.raise_for_status()</pre>
+  </div>
+
+  <h3>Which credential writes it</h3>
+  <p>
+    Not the master <code>admin</code>. The API authenticates as a least-privilege
+    <b><code>platform-admin</code></b> service account over client-credentials — it holds
+    <code>manage-users</code> and read-roles on the realm, and nothing else:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/api/identity.py</p>
+    <pre>def admin_from_env() -> IdentityAdmin:
+    settings = Settings.from_env()
+    realm = settings.keycloak_issuer.rstrip("/")
+    return IdentityAdmin(
+        admin_url=os.environ.get("KEYCLOAK_ADMIN_URL", realm.replace("/realms/", "/admin/realms/")),
+        issuer=realm,
+        client_id=os.environ.get("ADMIN_CLIENT_ID", "platform-admin"),
+        client_secret=os.environ.get("ADMIN_CLIENT_SECRET", ""),
+    )</pre>
+  </div>
+
+  <h3>The same is true of everything else about a user</h3>
+  <p>
+    Granting a role (<code>POST /admin/users/{id}/roles</code>), revoking one, enabling or
+    disabling an account, and resetting a password are all writes to Keycloak's Admin API — as is
+    self-service enrollment (<code>POST /enroll</code>), which creates the same record with no
+    role. The app never keeps a copy, which is why there is nothing to sync and nothing that can
+    drift.
+  </p>
+
+  <div class="callout info">
+    <b>See it for yourself</b>
+    <code>./scripts/show-keycloak-users.sh</code> lists the realm straight from Keycloak's Admin
+    API (Q3) — an admin-created user appears there because that is where it was written.
   </div>
 </section>
 
