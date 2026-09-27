@@ -25,11 +25,18 @@ require_admin = require_roles("platform_admin")
 
 
 def _public(user: dict, roles: list[str]) -> dict:
+    # The tenant is a Keycloak user attribute (a list), so the UI can offer the
+    # tenants that are already in use instead of a free-text box — a typo there
+    # silently strands an account in an empty scope.
+    tenant = (user.get("attributes") or {}).get("tenant")
+    if isinstance(tenant, list):
+        tenant = tenant[0] if tenant else ""
     return {
         "id": user.get("id", ""),
         "username": user.get("username", ""),
         "email": user.get("email", ""),
         "enabled": user.get("enabled", True),
+        "tenant": tenant or "",
         "roles": roles,
     }
 

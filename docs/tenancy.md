@@ -66,8 +66,10 @@ indistinguishable from one that does not exist: a decision returns 409.
 
 - **Self-service** (`POST /enroll`): the tenant is taken from `DEFAULT_TENANT`
   (API config), never from the request. A signup cannot choose its own tenant.
-- **Admin-created** (`POST /admin/users`): the admin names the tenant (defaulting
-  to `DEFAULT_TENANT`).
+- **Admin-created** (`POST /admin/users`): the admin picks the tenant from those
+  already in use — the UI reads them off the user list — or names a new one
+  (defaulting to `DEFAULT_TENANT`). A new name is a real but empty scope until
+  data, and (if it should differ) a policy entry, exist for it.
 
 ## See it
 

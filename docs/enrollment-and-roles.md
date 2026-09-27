@@ -27,7 +27,10 @@ Two ways to get an account:
    `DEFAULT_TENANT` — a signup cannot choose its own tenant either
    (see [`tenancy.md`](tenancy.md)).
 2. **Admin-created** — an admin uses the Admin tab's "New user" form
-   (`POST /admin/users`), which can set roles and the tenant immediately.
+   (`POST /admin/users`), which can set roles and the tenant immediately. The
+   tenant is picked from the tenants already in use (read off the user list); a
+   brand-new name is a separate **"New tenant…"** choice, because a tenant no
+   data or policy names is valid but empty.
 
 Self-service is toggled by `SIGNUP_ENABLED` (set in the API manifest). With
 `SIGNUP_ENABLED=0`, `/enroll` returns 403 and only admins can create accounts.
@@ -39,7 +42,8 @@ Sign in as a `platform_admin` and open the **Admin** tab:
 - see every user and their roles;
 - tick/untick `support_rep`, `manager`, `privacy`, `platform_admin`;
 - enable/disable an account, reset a password, or delete a user;
-- create a user with roles.
+- create a user with roles, in a tenant picked from those already in use (or a
+  new one).
 
 Each action calls the API (`/admin/users…`), which checks the caller holds
 `platform_admin` and writes an audit record (`user.role_granted`, …).

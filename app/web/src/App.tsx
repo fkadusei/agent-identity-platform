@@ -94,6 +94,9 @@ export default function App() {
   // `read_only` existed in the policy and the realm but not in either list, so a user
   // holding one of them signed in as "no roles".
   const [assignable, setAssignable] = useState<string[]>([]);
+  // The tenant a new account defaults to, from the API's config rather than a
+  // literal here — the API owns DEFAULT_TENANT, the UI should not guess it.
+  const [defaultTenant, setDefaultTenant] = useState("acme");
   const [mode, setMode] = useState<"login" | "enroll">("login");
   // Set when the token expires under a tab that is already open. The tab is kept
   // (unlike an explicit sign-out) so signing back in returns you to what you were
@@ -131,6 +134,7 @@ export default function App() {
         setSignupEnabled(c.signup_enabled);
         setAgentId(c.agent_id ?? "");
         setAssignable(c.roles ?? []);
+        setDefaultTenant(c.default_tenant ?? "acme");
       })
       .catch(() => {});
   }, []);
@@ -241,7 +245,14 @@ export default function App() {
             {tab === "privacy" && <Privacy session={session} />}
             {tab === "roles" && <Roles session={session} />}
             {tab === "audit" && <Audit session={session} />}
-            {tab === "admin" && isAdmin && <Admin token={session.token} self={session.user} assignable={assignable} />}
+            {tab === "admin" && isAdmin && (
+              <Admin
+                token={session.token}
+                self={session.user}
+                assignable={assignable}
+                defaultTenant={defaultTenant}
+              />
+            )}
           </main>
         </>
       )}
@@ -834,10 +845,12 @@ function Admin({
   token,
   self,
   assignable,
+  defaultTenant,
 }: {
   token: string;
   self: string;
   assignable: string[];
+  defaultTenant: string;
 }) {
   const [users, setUsers] = useState<any[]>([]);
   const [error, setError] = useState("");
@@ -904,6 +917,10 @@ function Admin({
     }
   };
 
+  // The tenants already in use, read off the user list: in practice a tenant
+  // exists once an account belongs to it. A brand-new name is offered separately.
+  const tenants = [...new Set(users.map((u) => String(u.tenant ?? "")).filter(Boolean))].sort();
+
   return (
     <section>
       <div className="row">
@@ -919,12 +936,15 @@ function Admin({
             refresh();
           }}
           assignable={assignable}
+          tenants={tenants}
+          defaultTenant={defaultTenant}
         />
       )}
       <table className="users">
         <thead>
           <tr>
             <th>user</th>
+            <th>tenant</th>
             <th>roles</th>
             <th>status</th>
             <th />
@@ -938,6 +958,9 @@ function Admin({
                 {u.username === self && <span className="you">you</span>}
                 <br />
                 <span className="muted">{u.email}</span>
+              </td>
+              <td>
+                <span className="muted">{u.tenant || "—"}</span>
               </td>
               <td>
                 {assignable.map((r) => (
@@ -975,12 +998,23 @@ function CreateUser({
   token,
   onCreated,
   assignable,
+  tenants,
+  defaultTenant,
 }: {
   token: string;
   onCreated: () => void;
   assignable: string[];
+  tenants: string[];
+  defaultTenant: string;
 }) {
-  const [form, setForm] = useState({ username: "", email: "", password: "", tenant: "acme" });
+  // Existing tenants are the choices; a new name is a deliberate extra step,
+  // because an unknown tenant is a valid but *empty* scope — no data, no policy
+  // — and a typo would strand the account there silently.
+  const NEW = "__new_tenant__";
+  const options = [...new Set([defaultTenant, ...tenants].filter(Boolean))];
+  const [form, setForm] = useState({ username: "", email: "", password: "" });
+  const [tenantChoice, setTenantChoice] = useState(options[0] ?? "");
+  const [newTenant, setNewTenant] = useState("");
   const [roles, setRoles] = useState<string[]>([]);
   const [error, setError] = useState("");
 
@@ -989,11 +1023,16 @@ function CreateUser({
   const toggle = (r: string) =>
     setRoles(roles.includes(r) ? roles.filter((x) => x !== r) : [...roles, r]);
 
+  const tenant = tenantChoice === NEW ? newTenant.trim() : tenantChoice;
+  // The realm enforces length(8); checking here saves a round trip that would
+  // only come back as a Keycloak error.
+  const ready = Boolean(form.username && form.email && form.password.length >= 8 && tenant);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     try {
-      await createUser({ ...form, roles }, token);
+      await createUser({ ...form, tenant, roles }, token);
       onCreated();
     } catch (err) {
       setError(String(err));
@@ -1010,12 +1049,26 @@ function CreateUser({
         value={form.password}
         onChange={set("password")}
       />
-      <input
-        placeholder="tenant"
-        value={form.tenant}
-        onChange={set("tenant")}
+      <select
+        value={tenantChoice}
+        onChange={(e) => setTenantChoice(e.target.value)}
         title="The tenant this account is scoped to"
-      />
+      >
+        {options.map((t) => (
+          <option key={t} value={t}>
+            {t}
+          </option>
+        ))}
+        <option value={NEW}>＋ New tenant…</option>
+      </select>
+      {tenantChoice === NEW && (
+        <input
+          placeholder="new tenant name"
+          value={newTenant}
+          onChange={(e) => setNewTenant(e.target.value)}
+          title="A new tenant is valid and isolated, but has no data or policy until one is added"
+        />
+      )}
       <div>
         {assignable.map((r) => (
           <label key={r} className="role">
@@ -1023,7 +1076,9 @@ function CreateUser({
           </label>
         ))}
       </div>
-      <button className="primary">Create</button>
+      <button className="primary" disabled={!ready}>
+        Create
+      </button>
       {error && <div className="error">{error}</div>}
     </form>
   );

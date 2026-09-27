@@ -68,6 +68,7 @@ def auth_config() -> dict:
         "signup_enabled": signup_enabled(),
         "agent_id": AGENT_SPIFFE_ID,
         "roles": list(PLATFORM_ROLES),
+        "default_tenant": os.environ.get("DEFAULT_TENANT", "acme"),
     }
 
 
