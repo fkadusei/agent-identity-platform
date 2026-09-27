@@ -93,10 +93,11 @@ Two things that will puzzle you otherwise:
 - Browsing `localhost:8080` does not work. `KC_HOSTNAME_STRICT=true` pins the
   console to `http://keycloak:8080`, so the browser has to resolve that name —
   hence the hosts entry, and why the redirect otherwise dead-ends.
-- The realm holds more users than the demo. `carol-*`, `norole` and `survivor`
-  are written by the suites (`demo-roles.sh`, the admin and tenancy tests). The
-  realm is a live database and the tests use it, which is worth saying out loud
-  when demonstrating rather than hiding.
+- The realm holds more users than the demo. `norole` and `survivor` are written
+  by the admin and tenancy tests, and `demo-roles.sh` enrolls a fresh `carol-*`
+  each run. Keycloak is durable, so the demo prunes the older `carol-*` at the
+  end and keeps **two** — the realm is a live database, and the tests use it,
+  which is worth saying out loud when demonstrating rather than hiding.
 
 The console is reachable **only** by port-forward: the ingress routes `/` to the
 API (`deploy/kind/manifests/edge/ingress.yaml`), so no admin console is exposed

@@ -291,9 +291,9 @@ ol.steps>li b{color:var(--ink)}
     It runs <i>inside</i> the API pod, which is the whole trick: in there <code>keycloak</code>
     resolves by service name, so there is no port-forward, no <code>/etc/hosts</code> entry and
     no browser — and it reuses the API's own least-privilege client, so no master admin
-    credential is involved. It reports 19 users today, including the leftover
-    <code>carol-*</code>, <code>norole</code> and <code>survivor</code> that the test suites
-    wrote.
+    credential is involved. Besides the seeded demo users it lists the accounts the suites
+    write: <code>norole</code>, <code>survivor</code>, and two <code>carol-*</code> — the role
+    demo enrolls a fresh one each run and prunes the older ones, so the realm holds two.
   </p>
   <h3>For the console itself</h3>
   <div class="codeblock">
