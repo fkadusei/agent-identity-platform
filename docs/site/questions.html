@@ -171,6 +171,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#approval">When something needs an approval, how does that work?</a></li>
         <li><a href="#why-ask">Why didn't it ask for the order?</a></li>
         <li><a href="#why-allowed">Why did a wrong order come back "allowed"?</a></li>
+        <li><a href="#mcp">If the tools were MCP, what would change?</a></li>
       </ol>
     </div>
     <div class="group">
@@ -1209,6 +1210,156 @@ workload = act.get("sub") or claims.get("azp") or "?"</pre>
     itself), the RFC 8707 <code>resource</code> indicator (audience comes from the mapper), and
     refresh tokens. The RFC is a toolbox; this project uses the one grant, two token-type URNs, and
     the client-assertion auth — nothing more.
+  </div>
+</section>
+
+<section id="mcp">
+  <h2><span class="qnum">15</span>If the tools were replaced with MCP, how would that be different?</h2>
+  <p class="answer">
+    Less than it sounds. MCP is a <b>transport and discovery</b> standard, not an authorization
+    model — so the part that decides <i>who may do what</i> would not move. What changes is how a
+    tool is described, how a call travels on the wire, and where a "no" or a "needs a human" is
+    read from. The one genuinely new capability is <b>federation</b>: MCP lets you add tool servers
+    you do not own, and that is where the trust boundary would need a decision.
+  </p>
+
+  <h3>It is already the decision — and half-built</h3>
+  <p>
+    This is not an undecided what-if: <b>ADR-0005</b> decided that every tool should be exposed as
+    an MCP server, keeping the tool server as the policy enforcement point. The code already
+    honors that — <code>app/tools/mcp_server.py</code> exposes the same catalogue over MCP,
+    delegating to the identical enforcer — and there is a test that asserts it
+    (<code>test_mcp_server.py</code>).
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/tools/http_app.py</p>
+    <pre>"""HTTP transport for the tools — the Phase 1 interface.
+
+The MCP transport (app/tools/mcp_server.py) exposes the same tools over the
+Model Context Protocol; both delegate to the identical enforcement core, so the
+security behaviour is the same either way.
+"""</pre>
+  </div>
+  <p>
+    What is <i>not</i> in place is the wiring. The running <code>tools</code> service serves
+    <code>app.tools.http_app:app</code>, and <code>build_mcp_asgi_app</code> is never mounted
+    anywhere — so the live agent still calls the HTTP transport, one <code>POST</code> per tool:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/live.py</p>
+    <pre>token = self._tool_token()
+client, workload_headers = hop.open_hop(self._tool_server_url, self._tools_id)
+try:
+    resp = client.post(
+        f"{self._tool_server_url}/tools/{tool}",
+        json=body,
+        headers={"Authorization": f"Bearer {token}", **workload_headers},
+        timeout=30,
+    )</pre>
+  </div>
+  <p>
+    So "replacing tools with MCP" is mostly swapping that call for a JSON-RPC
+    <code>tools/call</code> against a transport that already exists — not rebuilding the tools.
+  </p>
+
+  <h3>What changes, and what does not</h3>
+  <table>
+    <thead><tr><th>Concern</th><th>Today — HTTP transport</th><th>With MCP</th></tr></thead>
+    <tbody>
+      <tr><td>Wire</td><td><code>POST /tools/&lt;name&gt;</code></td><td>JSON-RPC <code>tools/call</code></td></tr>
+      <tr><td>Discovery</td><td>the agent builds a prompt manifest, <code>_tool_manifest</code></td><td><code>tools/list</code> returns schemas</td></tr>
+      <tr><td>Schemas</td><td>declared by hand in <code>catalog.py</code></td><td>inferred from the typed handler</td></tr>
+      <tr><td>A denial</td><td>HTTP <code>403</code></td><td>a result with <code>"status": "denied"</code></td></tr>
+      <tr><td>A hold for approval</td><td>HTTP <code>428</code></td><td>a result with <code>"status": "approval_required"</code></td></tr>
+      <tr><td>Who may call</td><td>policy, in the enforcer</td><td>policy, in the enforcer</td></tr>
+      <tr><td>Token check (<code>aud</code> + <code>azp</code>)</td><td>in the enforcer</td><td>unchanged</td></tr>
+      <tr><td>Approval check, audit, own token exchange</td><td>in the enforcer</td><td>unchanged</td></tr>
+    </tbody>
+  </table>
+  <p>
+    The row that carries the real interface difference is the outcome mapping. Over HTTP, the
+    transport turns the enforcer's outcome into a status code the caller reads:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/tools/http_app.py</p>
+    <pre>if result.outcome is Outcome.OK:
+    return {"tool": result.tool, "decision": result.decision, "result": result.result}
+if result.outcome is Outcome.DENIED:
+    raise HTTPException(status_code=403, detail=result.reason)
+if result.outcome is Outcome.APPROVAL_REQUIRED:
+    # 428 Precondition Required: the action is valid but needs a human.
+    raise HTTPException(status_code=428, detail=result.reason)
+raise HTTPException(status_code=400, detail=result.reason)</pre>
+  </div>
+  <p>
+    Over MCP there is no status code to read — a denial and a hold both come back as an ordinary
+    tool result carrying the outcome, so the caller has to inspect the payload instead:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/tools/mcp_server.py</p>
+    <pre>def dispatch(name: str, args: dict) -> dict:
+    result = enforcer.call(
+        _token.get(), name, args, workload_token=_workload_token.get()
+    )
+    if result.outcome is Outcome.OK:
+        return result.result or {}
+    return {"status": result.outcome.value, "reason": result.reason}</pre>
+  </div>
+  <p>
+    That is a concrete consequence: the graph's <code>call_tool</code> maps HTTP
+    <code>200</code>/<code>403</code>/<code>428</code> to
+    <code>ok</code>/<code>denied</code>/<code>approval_required</code>. An MCP client would map
+    the result's <code>status</code> field instead — the same three outcomes, read from a different
+    place.
+  </p>
+
+  <h3>Why authorization does not move</h3>
+  <p>
+    Both transports call the one method that enforces, and the code says so at the point it
+    matters — the workload check is deliberately placed there rather than in either transport:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/tools/enforcement.py</p>
+    <pre># Which workload is calling, proved at the application layer (S7). The
+# transport already required a chain-verified SVID; this says *who*, so a
+# pod that merely holds some identity cannot reach the tool server. The
+# check is here rather than in a transport handler because both the HTTP
+# and the MCP interfaces call this one method.</pre>
+  </div>
+  <p>
+    Everything the security story rests on lives above the transport and would be untouched: the
+    <code>aud</code>/<code>azp</code> token verification, the OPA decision, the verified approval
+    for a high-risk tool, the tenant taken from identity rather than arguments, the audit line
+    either way, and the rule that no hop forwards the token it received. MCP does not
+    authenticate, authorize, or approve anything — those stay with the enforcer and OPA.
+  </p>
+
+  <h3>The part that is actually new: federation</h3>
+  <p>
+    Today every tool is a Python handler in <code>catalog.py</code>, behind our own enforcement
+    point. The thing MCP makes possible that a plain HTTP catalogue did not is dropping in a
+    <b>third-party</b> MCP server you do not own. That is a trust-boundary question, and the
+    project already wrote the rule down in ADR-0005: the invariants (no token forwarding, per-tool
+    policy) must be enforced in <i>every</i> MCP server, from the shared SDK rather than
+    re-implemented. A server we do not control would therefore have to be proxied through the same
+    enforcement core — verify the token, ask OPA, verify the approval, then do our own token
+    exchange — or its trust model becomes ours.
+  </p>
+  <p>
+    Two smaller differences are worth naming. Schemas: MCP infers them from the typed handler, so
+    the description the model sees cannot drift from the code that runs — while the handlers stay
+    written out explicitly, because the project forbids dynamic code execution. Discovery:
+    <code>tools/list</code> is a call of its own, which means the role → tool filter (S8) would
+    move into the MCP server's list handler. Today the agent does that filtering as a UX
+    convenience and the enforcer is the real control; under MCP the convenience simply changes
+    address.
+  </p>
+
+  <div class="callout info">
+    <b>The short version</b>
+    Replacing the HTTP transport with MCP changes the protocol, the discovery, and where a denial
+    or a hold is read from — not who is allowed to do what. The security boundary here was never
+    the transport; it is the enforcement core both transports already share.
   </div>
 </section>
 
