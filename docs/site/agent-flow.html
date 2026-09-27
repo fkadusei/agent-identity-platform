@@ -329,7 +329,9 @@ svg .etext.warn{fill:var(--amber)}
     <b>Four decisions worth noticing in that little diagram</b>
     <b style="display:inline">·</b> <code>create_approval</code> is a separate node from
     <code>await_decision</code>: the interrupt node <i>re-executes</i> when the run resumes, so it
-    must have no side effects. Creating the approval is a side effect; pausing is not.
+    must have no side effects. Creating the approval is a side effect; pausing is not. And a resume
+    before the manager has decided waits on the <i>same</i> approval rather than writing a second
+    one — a double-press used to put two identical refunds in the queue.
     <br>
     <b style="display:inline">·</b> If the model produces nothing usable, the graph ends
     <i>refused</i> or <i>error</i> — it does not substitute another action. A refund request must
@@ -344,7 +346,7 @@ svg .etext.warn{fill:var(--amber)}
     ask stops after one call, exactly as it always did.
   </div>
 
-  <svg viewBox="0 0 900 380" width="100%" role="img" aria-label="The compiled graph: START to plan; plan goes to call_tool or to ask_clarification; call_tool either ends or goes to create_approval, which goes to await_decision; await_decision resumes call_tool when approved and otherwise ends; ask_clarification merges the answer and goes back to call_tool, and ends as refused when the asking budget is spent.">
+  <svg viewBox="0 0 900 380" width="100%" role="img" aria-label="The compiled graph: START to plan; plan goes to call_tool or to ask_clarification; call_tool either ends, waits again on an approval it already holds, or goes to create_approval, which goes to await_decision; await_decision resumes call_tool when approved and otherwise ends; ask_clarification merges the answer and goes back to call_tool, and ends as refused when the asking budget is spent.">
     <rect x="20" y="170" width="82" height="40" rx="9" class="box"/>
     <text x="61" y="194" text-anchor="middle" class="lbl">START</text>
 
@@ -606,7 +608,12 @@ def await_decision(state: AgentState) -&gt; dict:
     <p class="cap">app/agent/graph.py</p>
 <pre>def after_call(state: AgentState) -&gt; str:
     if state.get("status") == "approval_required":
-        return "create_approval"
+        # A call that already carried an approval and is still held means the
+        # *same* hold is open — someone pressed "Resume" before the manager
+        # decided. Wait on that approval again rather than minting a second
+        # row; creating one here is what put two identical refunds in the
+        # approval queue (reported from a real run).
+        return "await_decision" if state.get("approval_id") else "create_approval"
     # Another step only when the model asked for one *and* the last call
     # actually happened (`final` is what call_tool sets), with the budget as
     # the backstop: three real actions is the ceiling for one request,
@@ -652,7 +659,14 @@ graph.add_conditional_edges(
     {"call_tool": "call_tool", "ask_clarification": "ask_clarification", END: END},
 )
 graph.add_conditional_edges(
-    "call_tool", after_call, {"create_approval": "create_approval", "plan": "plan", END: END}
+    "call_tool",
+    after_call,
+    {
+        "create_approval": "create_approval",
+        "await_decision": "await_decision",
+        "plan": "plan",
+        END: END,
+    },
 )
 graph.add_conditional_edges(
     "create_approval", after_create, {"await_decision": "await_decision", END: END}
@@ -1957,7 +1971,12 @@ approval_refund_limit := 500   # &lt;= this (and &gt; auto): needs approval; abo
     <p class="cap">app/agent/graph.py</p>
 <pre>def after_call(state: AgentState) -&gt; str:
     if state.get("status") == "approval_required":
-        return "create_approval"
+        # A call that already carried an approval and is still held means the
+        # *same* hold is open — someone pressed "Resume" before the manager
+        # decided. Wait on that approval again rather than minting a second
+        # row; creating one here is what put two identical refunds in the
+        # approval queue (reported from a real run).
+        return "await_decision" if state.get("approval_id") else "create_approval"
     # Another step only when the model asked for one *and* the last call
     # actually happened (`final` is what call_tool sets), with the budget as
     # the backstop: three real actions is the ceiling for one request,

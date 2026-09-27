@@ -15,7 +15,9 @@
 
 The LLM chooses *what* to attempt; the tool's enforcement point decides whether
 it happens. When policy says `require_approval`, the graph pauses — the run is
-checkpointed — and resumes only when a human decision is recorded. When the model
+checkpointed — and resumes only when a human decision is recorded. Resuming while
+that decision is still pending waits on the *same* approval, rather than creating
+a second (which is what filled the queue with duplicate refunds). When the model
 cannot supply a required argument, the graph pauses the same way and asks for it
 (S18): an answer is information, not authorization, so it is merged into the
 arguments and the call still goes to policy.
@@ -106,6 +108,10 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
             "reason": decision.get("reason", ""),
             "more": bool(decision.get("more")),
             "final": False,
+            # A fresh decision is a fresh action: any approval from an earlier
+            # step belongs to that step, not this one. Clearing it here is what
+            # lets `after_call` tell a re-hold from a new hold.
+            "approval_id": None,
         }
 
     def call_tool(state: AgentState) -> dict:
@@ -211,7 +217,12 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
 
     def after_call(state: AgentState) -> str:
         if state.get("status") == "approval_required":
-            return "create_approval"
+            # A call that already carried an approval and is still held means the
+            # *same* hold is open — someone pressed "Resume" before the manager
+            # decided. Wait on that approval again rather than minting a second
+            # row; creating one here is what put two identical refunds in the
+            # approval queue (reported from a real run).
+            return "await_decision" if state.get("approval_id") else "create_approval"
         # Another step only when the model asked for one *and* the last call
         # actually happened (`final` is what call_tool sets), with the budget as
         # the backstop: three real actions is the ceiling for one request,
@@ -255,7 +266,14 @@ def build_agent(deps: AgentDeps, checkpointer: Any | None = None):
         {"call_tool": "call_tool", "ask_clarification": "ask_clarification", END: END},
     )
     graph.add_conditional_edges(
-        "call_tool", after_call, {"create_approval": "create_approval", "plan": "plan", END: END}
+        "call_tool",
+        after_call,
+        {
+            "create_approval": "create_approval",
+            "await_decision": "await_decision",
+            "plan": "plan",
+            END: END,
+        },
     )
     graph.add_conditional_edges(
         "create_approval", after_create, {"await_decision": "await_decision", END: END}
