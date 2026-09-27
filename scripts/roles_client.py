@@ -96,4 +96,23 @@ print("5. carol signs in again and now carries the role")
 carol = login(username, password)
 print("   -> roles:", carol["roles"])
 
+print("6. prune older carol-* so the realm keeps two")
+# Keycloak is durable (S2), so an enrollment that is never cleaned up would pile
+# up a new account on every run. Keep the account this run made and one other,
+# and delete the rest — the demo is run over and over, and the realm is a live
+# database, not a fixture.
+stale = sorted(
+    (u for u in users if u["username"].startswith("carol-") and u["username"] != username),
+    key=lambda u: u["username"],
+)
+for old in stale[:-1]:
+    httpx.delete(
+        f"{API}/admin/users/{old['id']}",
+        headers=bearer(admin["access_token"]),
+        timeout=30,
+    ).raise_for_status()
+    print(f"   -> deleted {old['username']}")
+kept = sorted([username, *(u["username"] for u in stale[-1:])])
+print("   -> carol-* kept:", ", ".join(kept))
+
 print("\nEnrollment grants nothing; only an admin can authorize.")
