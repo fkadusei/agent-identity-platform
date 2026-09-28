@@ -516,11 +516,17 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
   "tenant": "acme",
   "tools": ["crm.customer.read","crm.orders.list","refunds.issue",
             "refunds.quote","tickets.read","tickets.reply.draft"],
-  "expires_at": 1789954090        // 300 seconds later (the realm's lifespan)
+  "expires_at": 1789954090,         // the access token: 300 seconds (the realm's lifespan)
+  "refresh_token": "…",             // renews it silently; rotated on every use
+  "refresh_expires_at": 1789955890  // the session's real limit (Q19)
 }</pre></div>
-      The token is a bearer credential and lives five minutes. When it expires the UI says
-      so and returns you to the sign-in screen rather than emptying its lists
-      (<a href="#built">§18</a> explains why that sentence is in a document like this).
+      The access token is a bearer credential and lives five minutes — a security property
+      (revocation counts within one lifetime), not a session length. The <i>session</i> does
+      not end with it: the UI renews the token in the background from the refresh token, so
+      an active tab is not sent back to sign-in every five minutes. Only when the refresh
+      window passes (or the session is revoked) does it return you to sign-in rather than
+      showing you empty tables (<a href="#built">§18</a> explains why that sentence is in a
+      document like this).
     </li>
     <li>
       <b>The task is sent.</b> The browser calls <code>POST /tasks</code> with the token and
@@ -1429,8 +1435,9 @@ tenant.                                            A second tenant's data is unr
     realm (the realm is imported once and preserved, which is what keeps enrolled accounts) —
     delete the realm or the database and re-run. OPA reads its bundle at startup and the
     files are mounted with <code>subPath</code>, so a new revision needs a restart, which
-    <code>setup.sh</code> does. And the browser session lives five minutes by design: when it
-    expires the UI says so and returns you to sign-in rather than showing you empty tables.
+    <code>setup.sh</code> does. And the access token lives five minutes, but the session does
+    not: the UI renews it silently from a refresh token, and only returns you to sign-in when
+    the refresh window passes — rather than showing you empty tables.
   </div>
 </section>
 <section id="verified">
