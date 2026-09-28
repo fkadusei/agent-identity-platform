@@ -160,6 +160,7 @@ ol.steps>li b{color:var(--ink)}
       <ol>
         <li><a href="#users">Where are the users stored?</a></li>
         <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
+        <li><a href="#session">Do users have to sign in every five minutes?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
         <li><a href="#demo-data">What data does the demo hold?</a></li>
       </ol>
@@ -1617,6 +1618,59 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     (<code>localhost:16686</code>) holds the traces. All three are port-forwards, none is at the
     edge: <code>kubectl -n agent-platform port-forward svc/grafana 3000:3000</code> and
     <code>svc/jaeger 16686:16686</code>.
+  </div>
+</section>
+
+<section id="session">
+  <h2><span class="qnum">19</span>Do users have to sign in every five minutes?</h2>
+  <p class="answer">
+    Not any more. The <b>access token</b> still lives five minutes — that is a security
+    property, not a bug — but the API now hands back a <b>refresh token</b> too, and the UI
+    renews the token silently in the background. The session lasts as long as the refresh
+    window (Keycloak's default: 30 minutes idle), so an active tab is not thrown back to
+    sign-in every five minutes. Before this change it was exactly that: a five-minute token,
+    no renewal, and a forced sign-in.
+  </p>
+
+  <h3>Why the access token stays short</h3>
+  <p>
+    Revocation and role changes take effect within one token lifetime, so a token that leaks
+    is useless quickly (<code>accessTokenLifespan: 300</code> in the realm). Lengthening it to
+    avoid re-login would trade that away. Renewal keeps both: the token stays short, the
+    session does not.
+  </p>
+
+  <h3>How the renewal works</h3>
+  <p>
+    <code>POST /auth/login</code> returns the session plus a <code>refresh_token</code> and
+    <code>refresh_expires_at</code>. Before the access token expires, the UI calls
+    <code>POST /auth/refresh</code>, which exchanges the refresh token at Keycloak for a new
+    access token — server-side, with no password and no client secret in the browser:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/api/auth.py</p>
+    <pre>        data={
+            "grant_type": "refresh_token",
+            "client_id": os.environ.get("PORTAL_CLIENT_ID", "portal"),
+            "client_secret": os.environ.get("PORTAL_SECRET", ""),
+            "refresh_token": refresh_token,
+        },</pre>
+  </div>
+  <p>
+    Keycloak rotates the refresh token on every use, so the newest one is stored each time.
+    The UI renews about thirty seconds before expiry, and a request that still catches an
+    expired token renews and retries once before giving up — so a page reload after five idle
+    minutes comes back signed in, not on the sign-in screen.
+  </p>
+
+  <div class="callout info">
+    <b>What still ends the session</b>
+    The refresh window passing (default 30 minutes idle), the session being revoked, or an
+    explicit sign-out. Then the UI says so and returns you to sign-in rather than showing you
+    empty tables. In production the browser would use authorization-code + PKCE and keep the
+    refresh token in an <code>httpOnly</code> cookie; here the API does the password grant
+    server-side and the browser holds both tokens in <code>sessionStorage</code> — the same
+    trust boundary, and it dies with the tab.
   </div>
 </section>
 

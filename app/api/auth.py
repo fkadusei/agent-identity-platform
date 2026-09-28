@@ -12,6 +12,7 @@ against Keycloak; the server-side grant here keeps the local demo self-contained
 from __future__ import annotations
 
 import os
+import time
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -72,6 +73,43 @@ def auth_config() -> dict:
     }
 
 
+def _session(username: str, delegation, token: str, data: dict) -> dict:
+    """The session the UI holds: identity, what it may do, and how to renew it.
+
+    The refresh token travels back to the browser so the UI can renew silently —
+    the access token still lives five minutes, but the session no longer ends with
+    it (Q19). The browser already holds the access token, so this is the same trust
+    boundary; a real deployment keeps the refresh token in an httpOnly cookie via
+    the authorization-code flow (docs/enrollment-and-roles.md).
+    """
+    # The tools this caller's roles permit, in their tenant — read from the policy,
+    # so the UI has no second copy of the role -> tool matrix and cannot show a
+    # tool the tenant's matrix does not grant (S8).
+    from app.common.policy import tools_for_roles
+
+    allowed = sorted(
+        tools_for_roles(Settings.from_env().opa_url, delegation.roles, delegation.tenant)
+    )
+    refresh_expires_in = data.get("refresh_expires_in")
+    return {
+        "user": username,
+        "roles": platform_roles(delegation.roles),
+        # Surfaced so callers (the UI, scripts) never need to decode the token.
+        "tenant": delegation.tenant,
+        "tools": allowed,
+        # When the token expires (from the verified claims), so the UI renews before
+        # it does — or drops a stale session — instead of showing errors after a
+        # refresh.
+        "expires_at": delegation.claims.get("exp"),
+        "access_token": token,
+        # Keycloak rotates the refresh token on every use, so this is the newest one.
+        "refresh_token": data.get("refresh_token"),
+        "refresh_expires_at": (
+            int(time.time()) + int(refresh_expires_in) if refresh_expires_in else None
+        ),
+    }
+
+
 @router.post("/auth/login")
 def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
     username = (body.get("username") or "").strip()
@@ -96,7 +134,8 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
         audit("auth.login_failed", user=username)
         raise HTTPException(status_code=401, detail="invalid username or password")
 
-    token = resp.json()["access_token"]
+    data = resp.json()
+    token = data["access_token"]
     # Verify what we just minted (signature + issuer + audience) rather than
     # trusting an unverified decode, then read the roles off the delegation.
     try:
@@ -104,26 +143,47 @@ def login(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
     except TokenRejected as exc:
         raise HTTPException(status_code=502, detail=f"login produced an unusable token: {exc}")
 
-    roles = platform_roles(delegation.roles)
-    # The tools this caller's roles permit, in their tenant — read from the
-    # policy, so the UI has no second copy of the role -> tool matrix and cannot
-    # show a tool the tenant's matrix does not grant (S8).
-    from app.common.policy import tools_for_roles
-
-    allowed = sorted(tools_for_roles(Settings.from_env().opa_url, delegation.roles, delegation.tenant))
     metrics.LOGINS.labels("ok").inc()
-    audit("auth.login", user=username, roles=roles)
-    return {
-        "user": username,
-        "roles": roles,
-        # Surfaced so callers (the UI, scripts) never need to decode the token.
-        "tenant": delegation.tenant,
-        "tools": allowed,
-        # When the token expires (from the verified claims), so the UI can drop a
-        # stale session instead of showing errors after a refresh.
-        "expires_at": delegation.claims.get("exp"),
-        "access_token": token,
-    }
+    session = _session(username, delegation, token, data)
+    audit("auth.login", user=username, roles=session["roles"])
+    return session
+
+
+@router.post("/auth/refresh")
+def refresh(body: dict, verifier: TokenVerifier = Depends(get_verifier)) -> dict:
+    """Renew an access token from the refresh token, without a password.
+
+    The access token still lives five minutes; this is what stops that from meaning
+    "sign in every five minutes". The refresh token is the session's credential, and
+    Keycloak rotates it, so the newest one comes back too.
+    """
+    refresh_token = (body.get("refresh_token") or "").strip()
+    if not refresh_token:
+        raise HTTPException(status_code=400, detail="refresh_token is required")
+
+    settings = Settings.from_env()
+    resp = httpx.post(
+        settings.token_endpoint,
+        data={
+            "grant_type": "refresh_token",
+            "client_id": os.environ.get("PORTAL_CLIENT_ID", "portal"),
+            "client_secret": os.environ.get("PORTAL_SECRET", ""),
+            "refresh_token": refresh_token,
+        },
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        # Expired, revoked, or the session ended elsewhere. Not audited: an expired
+        # session is not an event, and the UI falls back to the sign-in screen.
+        raise HTTPException(status_code=401, detail="the session could not be refreshed")
+
+    data = resp.json()
+    token = data["access_token"]
+    try:
+        delegation = verifier.verify(token)
+    except TokenRejected as exc:
+        raise HTTPException(status_code=502, detail=f"refresh produced an unusable token: {exc}")
+    return _session(delegation.user, delegation, token, data)
 
 
 @router.post("/enroll")

@@ -98,3 +98,69 @@ def test_platform_roles_keeps_every_role_the_platform_has_and_no_builtins():
     }
     kept = platform_roles(["billing", "default-roles-agent-platform", "offline_access"])
     assert kept == ["billing"]
+
+
+def test_refresh_renews_the_session_without_a_password(client, monkeypatch):
+    """The access token lives five minutes; the refresh token is what stops that
+    from meaning "sign in every five minutes" (Q19)."""
+    from agentnhi import Delegation
+    from app.api.authz import get_verifier
+
+    class _Verifier:
+        def verify(self, token, **_):
+            return Delegation(
+                user="alice",
+                workload="spiffe://agent",
+                audience="mcp-tools",
+                roles=("support_rep",),
+                tenant="acme",
+                claims={"exp": 999, "preferred_username": "alice"},
+            )
+
+    app.dependency_overrides[get_verifier] = lambda: _Verifier()
+    monkeypatch.setattr("app.common.policy.tools_for_roles", lambda *a, **k: ["crm.customer.read"])
+    sent: dict = {}
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {
+                "access_token": "new-access",
+                "refresh_token": "rotated",
+                "refresh_expires_in": 1800,
+            }
+
+    def fake_post(url, data=None, timeout=None):
+        sent.update(data or {})
+        return _Resp()
+
+    monkeypatch.setattr("app.api.auth.httpx.post", fake_post)
+
+    resp = client.post("/auth/refresh", json={"refresh_token": "old"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["access_token"] == "new-access"
+    assert body["refresh_token"] == "rotated"  # Keycloak rotates it; return the newest
+    assert body["refresh_expires_at"] > 0
+    assert body["expires_at"] == 999
+    # It used the refresh-token grant, with the refresh token — never a password.
+    assert sent["grant_type"] == "refresh_token"
+    assert sent["refresh_token"] == "old"
+    assert "password" not in sent
+    app.dependency_overrides.clear()
+
+
+def test_refresh_without_a_token_is_refused(client):
+    assert client.post("/auth/refresh", json={}).status_code == 400
+
+
+def test_refresh_that_keycloak_refuses_is_401(client, monkeypatch):
+    class _Resp:
+        status_code = 401
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr("app.api.auth.httpx.post", lambda *a, **k: _Resp())
+    assert client.post("/auth/refresh", json={"refresh_token": "stale"}).status_code == 401

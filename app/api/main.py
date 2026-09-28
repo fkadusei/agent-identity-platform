@@ -4,6 +4,7 @@ Endpoints:
     GET  /roles                    the role -> tool matrix (from policy)
     GET  /auth/config              is self-service signup enabled?
     POST /auth/login               username/password -> token (+roles)
+    POST /auth/refresh             renew the token from the refresh token
     POST /enroll                   self-service account creation (no roles)
     GET  /admin/users              list users and their roles     (platform_admin)
     POST /admin/users              create a user                  (platform_admin)

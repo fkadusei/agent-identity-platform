@@ -137,7 +137,9 @@ curl -s --cacert $CA -X POST $API/admin/users/<id>/roles -H "authorization: Bear
 
 ## What a production deployment adds
 
-- authorization-code + PKCE in the browser instead of the server-side grant;
+- authorization-code + PKCE in the browser instead of the server-side grant, with the
+  refresh token in an `httpOnly` cookie rather than `sessionStorage` (the demo already
+  renews silently from a refresh token — see question 19 on the pages);
 - email verification, rate limiting, and CAPTCHA on `/enroll`;
 - rotation of the admin service-account secret;
 - an IdP / SCIM for lifecycle (joiner-mover-leaver) rather than manual grants.

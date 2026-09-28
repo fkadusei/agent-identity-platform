@@ -9,7 +9,7 @@ const BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 // the session and explains what happened.
 export const SESSION_EXPIRED = "agent-platform:session-expired";
 
-async function request(path: string, init: RequestInit = {}): Promise<any> {
+async function request(path: string, init: RequestInit = {}, retried = false): Promise<any> {
   let res: Response;
   try {
     res = await fetch(BASE + path, {
@@ -27,22 +27,35 @@ async function request(path: string, init: RequestInit = {}): Promise<any> {
         `\`kubectl port-forward svc/api 8080:8080\` still alive?`,
     );
   }
+  const sentHeaders = init.headers as Record<string, string> | undefined;
   // Only an *authenticated* call can expire: a 401 from /auth/login is a wrong
   // password, and signing the user out over it would be nonsense.
-  const carriedToken = Boolean(
-    (init.headers as Record<string, string> | undefined)?.Authorization,
-  );
+  const carriedToken = Boolean(sentHeaders?.Authorization);
   const body = await res.json().catch(() => ({}));
   const detail = typeof body?.detail === "string" ? body.detail : "";
   // The API answers 403 for two unrelated things: a token that is invalid or expired
   // ("invalid token: Signature has expired", measured), and a caller who is properly
-  // authenticated but lacks the role. Only the first should sign anyone out, and the
-  // status code cannot tell them apart — so this matches the messages the API emits
-  // for token problems. (401 is handled too: the API uses it when no token arrived.)
+  // authenticated but lacks the role. Only the first should renew or sign anyone out,
+  // and the status code cannot tell them apart — so this matches the messages the API
+  // emits for token problems. (401 is handled too: the API uses it when no token
+  // arrived.)
   const tokenTrouble =
     res.status === 401 ||
     (res.status === 403 && /invalid token|missing bearer token|expired|not enough segments/i.test(detail));
   if (carriedToken && tokenTrouble) {
+    // The access token has expired. Renew silently from the refresh token and try
+    // again once — that is what keeps a five-minute token from being a five-minute
+    // session. Only when the renewal itself fails do we send the person to sign in.
+    if (!retried) {
+      const renewed = await renewSession();
+      if (renewed) {
+        return request(
+          path,
+          { ...init, headers: { ...sentHeaders, Authorization: `Bearer ${renewed.token}` } },
+          true,
+        );
+      }
+    }
     clearSession();
     window.dispatchEvent(new CustomEvent(SESSION_EXPIRED));
     throw new Error("Your session expired — sign in again to continue.");
@@ -77,18 +90,19 @@ export type Session = {
   tools: string[];
   expiresAt: number;
   token: string;
+  // The access token lives five minutes; the refresh token renews it silently.
+  // Keycloak rotates the refresh token on every use, so this value changes each time.
+  refreshToken: string;
+  refreshExpiresAt: number;
 };
 
 export const authConfig = () => request("/auth/config");
 
-export const login = async (username: string, password: string): Promise<Session> => {
-  const r = await request("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ username, password }),
-  });
-  // The API speaks OAuth and returns `access_token`; the app works with `token`.
-  // Normalise here so callers never accidentally send "Bearer undefined".
-  if (!r?.access_token) throw new Error("login response did not include an access token");
+// One shape for a login and a renewal — both are "here is a session". The API
+// speaks OAuth and returns `access_token`; the app works with `token`. Normalise
+// here so callers never accidentally send "Bearer undefined".
+const normaliseSession = (r: any): Session => {
+  if (!r?.access_token) throw new Error("the session response did not include an access token");
   return {
     user: r.user,
     roles: r.roles ?? [],
@@ -96,14 +110,32 @@ export const login = async (username: string, password: string): Promise<Session
     tools: r.tools ?? [],
     expiresAt: r.expires_at ?? 0,
     token: r.access_token,
+    refreshToken: r.refresh_token ?? "",
+    refreshExpiresAt: r.refresh_expires_at ?? 0,
   };
 };
 
-// --- the session survives a refresh ----------------------------------------
-// sessionStorage, not localStorage: it lives for the tab and dies with it. A
-// stored session whose token has expired is dropped rather than used, so a
-// refresh after the token's 5 minutes lands on the sign-in page instead of a
-// screen full of errors.
+export const login = async (username: string, password: string): Promise<Session> => {
+  const r = await request("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ username, password }),
+  });
+  return normaliseSession(r);
+};
+
+export const refreshSession = async (refreshToken: string): Promise<Session> => {
+  const r = await request("/auth/refresh", {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  return normaliseSession(r);
+};
+
+// --- the session survives a page refresh -----------------------------------
+// sessionStorage, not localStorage: it lives for the tab and dies with it. The
+// access token may have expired between loads — the stored refresh token is what
+// brings the session back, so a page reload renews silently instead of landing on
+// the sign-in screen. A session is dropped only once its refresh window has passed.
 const SESSION_KEY = "agent-platform.session";
 
 export function saveSession(s: Session): void {
@@ -128,9 +160,11 @@ export function loadSession(): Session | null {
     if (!raw) return null;
     const s = JSON.parse(raw) as Session;
     const shaped = s && s.token && Array.isArray(s.roles) && Array.isArray(s.tools);
-    if (!shaped || (s.expiresAt && Date.now() / 1000 > s.expiresAt)) {
-      // Also drops a session stored by an older build, which would otherwise
-      // break the UI that now expects `tools`.
+    // Keep the session while the *refresh* token is valid, even if the access token
+    // has already expired — the App renews it on load. Fall back to the access
+    // token's own expiry for a session stored by an older build.
+    const liveUntil = s?.refreshExpiresAt || s?.expiresAt || 0;
+    if (!shaped || (liveUntil && Date.now() / 1000 > liveUntil)) {
       clearSession();
       return null;
     }
@@ -138,6 +172,32 @@ export function loadSession(): Session | null {
   } catch {
     return null;
   }
+}
+
+// One renewal at a time. The refresh token is rotated on every use, so two
+// concurrent renewals would race and one would be rejected — everyone shares the
+// same promise. Returns null when there is nothing to renew with, or the renewal
+// failed (the refresh window passed, or the session was revoked).
+let renewalInFlight: Promise<Session | null> | null = null;
+
+export async function renewSession(): Promise<Session | null> {
+  const s = loadSession();
+  if (!s?.refreshToken) return null;
+  if (!renewalInFlight) {
+    renewalInFlight = refreshSession(s.refreshToken)
+      .then((next) => {
+        saveSession(next);
+        return next;
+      })
+      .catch(() => {
+        clearSession();
+        return null;
+      })
+      .finally(() => {
+        renewalInFlight = null;
+      });
+  }
+  return renewalInFlight;
 }
 
 export const enroll = (form: {

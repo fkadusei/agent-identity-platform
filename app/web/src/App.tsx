@@ -18,6 +18,7 @@ import {
   login,
   saveSession,
   resetUserPassword,
+  renewSession,
   resumeTask,
   revokeRole,
   runTask,
@@ -98,7 +99,7 @@ export default function App() {
   // literal here — the API owns DEFAULT_TENANT, the UI should not guess it.
   const [defaultTenant, setDefaultTenant] = useState("acme");
   const [mode, setMode] = useState<"login" | "enroll">("login");
-  // Set when the token expires under a tab that is already open. The tab is kept
+  // Set when the session ends under a tab that is already open. The tab is kept
   // (unlike an explicit sign-out) so signing back in returns you to what you were
   // doing, rather than to the console.
   const [notice, setNotice] = useState("");
@@ -107,8 +108,9 @@ export default function App() {
     setSessionState(null);
     setMode("login");
     setNotice(
-      "Your session expired (tokens last 5 minutes). Sign in again and you will come " +
-        "back to this tab — the page was left open, nothing was lost.",
+      "Your session ended. The short-lived token is renewed in the background while " +
+        "you are active, so this means the refresh window passed or the session was " +
+        "revoked. Sign in again and you will come back to this tab — nothing was lost.",
     );
   }, []);
 
@@ -118,13 +120,19 @@ export default function App() {
     return () => window.removeEventListener(SESSION_EXPIRED, expire);
   }, [expire]);
 
-  // ...and expire on time from the session's own deadline, which the API supplies
-  // (`expires_at`). That way the UI does not have to infer an expired session from a
-  // status code at all — the 403 above is a backstop for the token being rejected
-  // before this fires.
+  // ...and renew the access token silently before it expires, from the session's own
+  // deadline (`expires_at`). The token still lives five minutes; the session no
+  // longer does. Only when the renewal fails — the refresh window passed, or the
+  // session was revoked — do we return to the sign-in screen. The 403 handler above
+  // is the backstop for a request that races this (Q19).
   useEffect(() => {
     if (!session) return;
-    const t = setTimeout(expire, Math.max(session.expiresAt * 1000 - Date.now() - 5000, 0));
+    const delay = Math.max(0, (session.expiresAt - 30 - Date.now() / 1000)) * 1000;
+    const t = setTimeout(async () => {
+      const next = await renewSession();
+      if (next) setSession(next);
+      else expire();
+    }, delay);
     return () => clearTimeout(t);
   }, [session, expire]);
 
