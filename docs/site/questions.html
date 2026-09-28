@@ -184,6 +184,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#policy">How do I inspect the OPA policy and make edits?</a></li>
         <li><a href="#show-policy">How do I show someone the policy-as-code side?</a></li>
         <li><a href="#rfc8693">What is RFC 8693, and how does this project use it?</a></li>
+        <li><a href="#prometheus">How do I show someone the Prometheus UI?</a></li>
       </ol>
     </div>
   </nav>
@@ -1556,6 +1557,66 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     surface: the <b>Roles &amp; tools</b> page. The receipt: every decision carries
     <code>policy_version</code> into the audit, so a decision recorded months ago can be read next
     to the exact rule that produced it.
+  </div>
+</section>
+
+<section id="prometheus">
+  <h2><span class="qnum">18</span>How do I show someone the Prometheus UI?</h2>
+  <p class="answer">
+    One port-forward, then open <b>http://localhost:9090</b>. Prometheus is not exposed at the
+    edge — like the Keycloak console, Grafana and Jaeger, it is reached from your own machine, not
+    through the ingress.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — forward Prometheus and open it</p>
+    <pre>kubectl -n agent-platform port-forward svc/prometheus 9090:9090
+# open http://localhost:9090</pre>
+  </div>
+  <p>
+    Run a little traffic first — a couple of sign-ins and one task, or <code>./scripts/demo.sh</code>
+    — so the counters are not zero.
+  </p>
+
+  <h3>What to show, in order</h3>
+  <ol class="steps">
+    <li>
+      <b>Status → Targets.</b> Four targets, all <code>up</code>: the api <i>twice</i> — once per
+      pod — plus <code>opa</code> and <code>otel-collector</code>. The api is scraped per pod on
+      purpose: its counters are per-process, so scraping through the Service would round-robin
+      between replicas and make <code>rate()</code> meaningless.
+    </li>
+    <li>
+      <b>The Graph tab.</b> The platform's own counters are the interesting ones:
+      <table>
+        <thead><tr><th>Query</th><th>What it answers</th></tr></thead>
+        <tbody>
+          <tr><td><code>up</code></td><td>is every scrape target alive right now</td></tr>
+          <tr><td><code>agent_platform_logins_total{result}</code></td><td>logins, success vs failure</td></tr>
+          <tr><td><code>agent_platform_http_requests_total</code></td><td>request rates by method, route and status</td></tr>
+          <tr><td><code>agent_platform_approvals_pending</code></td><td>the approval backlog — read from the store at scrape time, so every replica reports the same queue</td></tr>
+          <tr><td><code>agent_platform_audit_events_total{event}</code></td><td>policy decisions and admin actions, derived from the audit stream</td></tr>
+        </tbody>
+      </table>
+      The audit-derived counters are the point: every service forwards its audit events to the api,
+      so one instrumentation point covers policy decisions across the whole platform — the numbers
+      and the audit log cannot drift apart.
+    </li>
+    <li>
+      <b>The same data without a browser</b> — the query API is what Grafana itself calls:
+      <div class="codeblock">
+        <p class="cap">commands — a raw query</p>
+        <pre>curl -s 'localhost:9090/api/v1/query?query=agent_platform_approvals_pending'</pre>
+      </div>
+    </li>
+  </ol>
+
+  <div class="callout info">
+    <b>Prometheus is the engine; Grafana is the dashboard</b>
+    Prometheus scrapes, stores, and answers queries. <b>Grafana</b> (<code>localhost:3000</code>)
+    draws the provisioned "Agent Identity Platform" dashboard on top of it, and <b>Jaeger</b>
+    (<code>localhost:16686</code>) holds the traces. All three are port-forwards, none is at the
+    edge: <code>kubectl -n agent-platform port-forward svc/grafana 3000:3000</code> and
+    <code>svc/jaeger 16686:16686</code>.
   </div>
 </section>
 
