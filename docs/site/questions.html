@@ -1657,7 +1657,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
         },</pre>
   </div>
   <p>
-    Keycloak rotates the refresh token on every use, so the newest one is stored each time.
+    Keycloak issues a fresh refresh token on every use, so the newest one is stored each time.
     The UI renews about thirty seconds before expiry, and a request that still catches an
     expired token renews and retries once before giving up — so a page reload after five idle
     minutes comes back signed in, not on the sign-in screen.
@@ -1670,7 +1670,9 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     empty tables. In production the browser would use authorization-code + PKCE and keep the
     refresh token in an <code>httpOnly</code> cookie; here the API does the password grant
     server-side and the browser holds both tokens in <code>sessionStorage</code> — the same
-    trust boundary, and it dies with the tab.
+    trust boundary, and it dies with the tab. One hardening step for production: enable
+    Keycloak's <code>revoke-refresh-token</code>, so the previous refresh token is invalidated
+    on use — this local realm issues a fresh one but leaves the old valid until it expires.
   </div>
 </section>
 
