@@ -523,10 +523,11 @@ pre.ascii{margin:14px 0;background:var(--surface);border:1px solid var(--line);b
       The access token is a bearer credential and lives five minutes — a security property
       (revocation counts within one lifetime), not a session length. The <i>session</i> does
       not end with it: the UI renews the token in the background from the refresh token, so
-      an active tab is not sent back to sign-in every five minutes. Only when the refresh
-      window passes (or the session is revoked) does it return you to sign-in rather than
-      showing you empty tables (<a href="#built">§18</a> explains why that sentence is in a
-      document like this).
+      an active tab is not sent back to sign-in every five minutes. It still ends on two
+      clocks, both Keycloak's: an idle window of 30 minutes that slides on each renewal, and
+      an absolute 10-hour ceiling from sign-in. When either passes (or the session is
+      revoked), the UI returns you to sign-in rather than showing you empty tables
+      (<a href="#built">§18</a> explains why that sentence is in a document like this).
     </li>
     <li>
       <b>The task is sent.</b> The browser calls <code>POST /tasks</code> with the token and
@@ -1436,8 +1437,9 @@ tenant.                                            A second tenant's data is unr
     delete the realm or the database and re-run. OPA reads its bundle at startup and the
     files are mounted with <code>subPath</code>, so a new revision needs a restart, which
     <code>setup.sh</code> does. And the access token lives five minutes, but the session does
-    not: the UI renews it silently from a refresh token, and only returns you to sign-in when
-    the refresh window passes — rather than showing you empty tables.
+    not: the UI renews it silently from a refresh token, and returns you to sign-in only when
+    the session ends — 30 minutes idle, or the 10-hour ceiling from sign-in — rather than
+    showing you empty tables.
   </div>
 </section>
 <section id="verified">

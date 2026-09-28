@@ -1626,11 +1626,37 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
   <p class="answer">
     Not any more. The <b>access token</b> still lives five minutes — that is a security
     property, not a bug — but the API now hands back a <b>refresh token</b> too, and the UI
-    renews the token silently in the background. The session lasts as long as the refresh
-    window (Keycloak's default: 30 minutes idle), so an active tab is not thrown back to
-    sign-in every five minutes. Before this change it was exactly that: a five-minute token,
-    no renewal, and a forced sign-in.
+    renews the token silently in the background. So an active tab is not thrown back to
+    sign-in every five minutes. But it cannot stay signed in forever either: the session ends
+    on two clocks, both Keycloak's. Before this change it was just the first one, with no
+    renewal: a five-minute token and a forced sign-in.
   </p>
+
+  <h3>The two clocks that end it</h3>
+  <p>
+    Keycloak owns both. The UI watches the first (the API returns it as
+    <code>refresh_expires_at</code>) and gives up the moment a renewal fails.
+  </p>
+  <table>
+    <thead><tr><th>Clock</th><th>Setting</th><th>Value</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Idle</b></td>
+        <td><code>ssoSessionIdleTimeout</code></td>
+        <td>30 min</td>
+        <td>the refresh token's own <code>exp</code> (<code>iat + 1800</code>). It <b>slides</b>
+          on every renewal — a fresh refresh token with a fresh window — so a tab in use keeps
+          going.</td>
+      </tr>
+      <tr>
+        <td><b>Absolute</b></td>
+        <td><code>ssoSessionMaxLifespan</code></td>
+        <td>10 h</td>
+        <td>a ceiling measured from the original sign-in that renewal <b>cannot</b> push past.
+          However active the session, at ten hours it must be re-authenticated.</td>
+      </tr>
+    </tbody>
+  </table>
 
   <h3>Why the access token stays short</h3>
   <p>
@@ -1665,9 +1691,10 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
 
   <div class="callout info">
     <b>What still ends the session</b>
-    The refresh window passing (default 30 minutes idle), the session being revoked, or an
-    explicit sign-out. Then the UI says so and returns you to sign-in rather than showing you
-    empty tables. In production the browser would use authorization-code + PKCE and keep the
+    The idle window passing (30 minutes with no renewal), the 10-hour absolute ceiling being
+    reached, the session being revoked, or an explicit sign-out. Then the UI says so and
+    returns you to sign-in rather than showing you empty tables. In production the browser
+    would use authorization-code + PKCE and keep the
     refresh token in an <code>httpOnly</code> cookie; here the API does the password grant
     server-side and the browser holds both tokens in <code>sessionStorage</code> — the same
     trust boundary, and it dies with the tab. One hardening step for production: enable
