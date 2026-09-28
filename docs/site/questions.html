@@ -182,6 +182,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#multi">What would many agents take?</a></li>
         <li><a href="#kms">Disk or KMS for the identity keys?</a></li>
         <li><a href="#policy">How do I inspect the OPA policy and make edits?</a></li>
+        <li><a href="#show-policy">How do I show someone the policy-as-code side?</a></li>
         <li><a href="#rfc8693">What is RFC 8693, and how does this project use it?</a></li>
       </ol>
     </div>
@@ -1440,6 +1441,121 @@ def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> d
     <b>See it for yourself</b>
     <code>./scripts/show-keycloak-users.sh</code> lists the realm straight from Keycloak's Admin
     API (Q3) — an admin-created user appears there because that is where it was written.
+  </div>
+</section>
+
+<section id="show-policy">
+  <h2><span class="qnum">17</span>How do I show someone the policy-as-code (OPA) side?</h2>
+  <p class="answer">
+    Show it the way you would any code: read the rule, run its tests, then run it for real. One
+    file and two commands prove the three things that matter — the rules <b>are</b> code, they are
+    <b>tested</b>, and they are what actually <b>decides</b>. Q13 is the deep dive (querying and
+    editing); this is the five-minute demonstration.
+  </p>
+
+  <h3>1 · It is a file, and the file is the rule</h3>
+  <p>
+    Open <code>policy/authz.rego</code> (package <code>agentnhi.authz</code>). The top states the
+    contract — exactly what a decision is made from:
+  </p>
+  <div class="codeblock">
+    <p class="cap">policy/authz.rego</p>
+    <pre># Input contract:
+#   input.agent   the acting workload's SPIFFE ID (from the token's azp)
+#   input.user    the human the action is for
+#   input.roles   the human's roles, e.g. ["support_rep"]
+#   input.tenant  the human's tenant
+#   input.tool    the tool being called
+#   input.amount  the refund amount (refund tools only)
+#
+# Output:
+#   decision      "allow" | "deny" | "require_approval"
+#   reason        one human-readable string (an `else` chain, so never a set)</pre>
+  </div>
+  <p>
+    The resolution is three lines of precedence and a default that is <b>deny</b> — the single
+    fact that makes "the agent is allowed" mean something:
+  </p>
+  <div class="codeblock">
+    <p class="cap">policy/authz.rego</p>
+    <pre>default decision := "deny"
+
+decision := "deny" if deny
+
+decision := "require_approval" if {
+  needs_approval
+  not deny
+}
+
+decision := "allow" if {
+  allow
+  not deny
+  not needs_approval
+}</pre>
+  </div>
+
+  <h3>2 · It has tests — run them, in front of them</h3>
+  <p>
+    This is the beat that lands. Policy is not prose in a wiki; it has a suite, and the suite is
+    the review surface. <code>policy/tests/authz_test.rego</code> even has data-hygiene guards — an
+    override may only name a real role and a real tool — so a typo fails the build rather than
+    quietly denying at runtime.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — the policy suite, the same command CI runs</p>
+    <pre>docker run --rm -v "$PWD":/w -w /w openpolicyagent/opa:1.9.0 test policy/
+# PASS: 45/45</pre>
+  </div>
+
+  <h3>3 · Run it live — the decision names its rule</h3>
+  <p>
+    Then ask the running engine the same question a tool server asks. Port-forward OPA and send an
+    input document (the full mechanics are in Q13); the reply is the decision, the human-readable
+    reason, and the revision that produced it:
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — ask the live policy for a decision</p>
+    <pre>kubectl -n agent-platform port-forward svc/opa 8181:8181 &amp;
+curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
+  "agent":"spiffe://acme.com/ns/agent-platform/sa/agent","user":"alice",
+  "roles":["support_rep"],"tenant":"acme","tool":"refunds.issue","amount":200}}'</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">illustrative — the reply, trimmed</p>
+    <pre>{"decision":"require_approval",
+ "reason":"requires manager approval: refund of 200 is above the auto-approval limit of 50",
+ "policy_version":"1b8f8ff"}</pre>
+  </div>
+  <p>
+    Change one field — <code>"amount": 25</code> — and the same caller is <b>allowed</b>; change the
+    role or the tenant and it may be <b>denied</b>. Nothing was redeployed; the rules decided.
+  </p>
+
+  <h3>4 · The punchline: the same role, two tenants</h3>
+  <p>
+    Query <code>/v1/data/agentnhi/authz/role_matrix</code>, or just open the <b>Roles &amp;
+    tools</b> page in the UI (it renders this same table from the policy), and show
+    <code>support_rep</code> in <code>acme</code> beside <code>support_rep</code> in
+    <code>globex</code>: the same role name, different tools, because policy is evaluated per
+    tenant (S8). A static document cannot do that; code can. The matrix itself is in Q13, and
+    <code>docs/roles-and-tools.md</code> is the write-up.
+  </p>
+
+  <h3>If they still doubt it, break it on purpose</h3>
+  <p>
+    Remove <code>"refunds.issue"</code> from <code>support_rep</code>, run the suite, and watch a
+    test fail; or roll the bundle and watch the live decision above flip from
+    <code>require_approval</code> to <code>deny</code> with the reason "your role may not call
+    refunds.issue". The check failing is the proof that it is checking.
+  </p>
+
+  <div class="callout info">
+    <b>Where each artifact lives</b>
+    The rules: <code>policy/authz.rego</code>. The proof: <code>policy/tests/authz_test.rego</code>
+    (<code>opa test policy/</code>). The live engine: <code>svc/opa</code> on port 8181. The visible
+    surface: the <b>Roles &amp; tools</b> page. The receipt: every decision carries
+    <code>policy_version</code> into the audit, so a decision recorded months ago can be read next
+    to the exact rule that produced it.
   </div>
 </section>
 
