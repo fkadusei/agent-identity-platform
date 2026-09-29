@@ -2,8 +2,8 @@
 # =============================================================================
 # stop.sh — stop the platform.
 #
-#   ./stop.sh            stops the port-forward and the cluster. Your data is
-#                        kept, so ./start.sh brings it back quickly.
+#   ./stop.sh            stops the cluster. Your data is kept, so ./start.sh
+#                        brings it back quickly.
 #   ./stop.sh --delete   removes the cluster entirely (a clean slate).
 # =============================================================================
 set -uo pipefail
@@ -11,13 +11,6 @@ cd "$(dirname "$0")"
 
 NS=agent-platform
 CLUSTER=agent-platform
-
-if [ -f .port-forward.pid ]; then
-  kill "$(cat .port-forward.pid)" 2>/dev/null || true
-  rm -f .port-forward.pid .port-forward.addr
-fi
-pkill -f "port-forward.*svc/ingress-nginx-controller" 2>/dev/null || true
-pkill -f "port-forward.*svc/api" 2>/dev/null || true
 
 if [ "${1:-}" = "--delete" ]; then
   ./scripts/teardown.sh

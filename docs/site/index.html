@@ -1278,9 +1278,9 @@ tenant.                                            A second tenant's data is unr
       <h4>kind — the whole thing, locally</h4>
       <p>
         One control plane and two workers, so replication and spreading are real rather than
-        theoretical. No host ports are published on purpose, which is why the demo reaches
-        the platform through a port-forward (and why that port-forward goes to the
-        <i>ingress</i>, not the API).
+        theoretical. The one host port is the browser edge — a fixed mapping from host 8443 to
+        the ingress controller's NodePort, not a port-forward, so nothing has to stay alive for
+        the URL to keep working. It reaches the <i>ingress</i>, not the API.
       </p>
     </div>
     <div class="tile">
@@ -1756,7 +1756,7 @@ thinking: '{"tool": "refunds.quote", "args": {} }'   ← correct, and ignored</p
       <tr><td>spire-server · agent</td><td class="mono">8081 · socket</td><td>The server's API; workloads use the Unix socket, not a port</td></tr>
       <tr><td>spire oidc-discovery</td><td class="mono">11080</td><td>Serves the JWKS the gateway and Keycloak use to verify JWT-SVIDs</td></tr>
       <tr><td>metrics-server · adapter</td><td class="mono">10250 · 6443</td><td>Resource metrics and the custom/external metric APIs</td></tr>
-      <tr><td>ingress-nginx</td><td class="mono">80 · 443</td><td>In-cluster; the demo reaches it through a port-forward on 8443</td></tr>
+      <tr><td>ingress-nginx</td><td class="mono">80 · 443 · 30443</td><td>In-cluster; reached from the host through a fixed port mapping, host 8443 → NodePort 30443</td></tr>
     </tbody>
   </table>
 

@@ -4,12 +4,31 @@
 # (and a node can be drained to prove it). A single node would still run
 # everything — anti-affinity is soft — but HA is only meaningful with >1 node.
 #
-# No host port mappings on purpose — demo.sh drives everything via `kubectl exec`.
-# Port-forward commands for browser access are in docs/operator-guide.md.
+# demo.sh drives everything via `kubectl exec`, so no host ports are needed for
+# it. The one host port is the browser edge: a fixed mapping, not a port-forward,
+# so the URL keeps working without a process to keep alive (setup.sh exposes the
+# ingress controller on the NodePort this forwards to).
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 name: agent-platform
 nodes:
   - role: control-plane
+    # Label the node the host port is mapped to, so setup.sh can keep the ingress
+    # controller here: a NodePort forwarded to a pod on a *different* node does not
+    # return in this Docker setup, so the controller must run on this node.
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+    extraPortMappings:
+      # host 8443 -> the ingress controller's HTTPS NodePort (see setup.sh).
+      # listenAddress 127.0.0.1 keeps it host-only (the old port-forward's
+      # default); change to 0.0.0.0 and recreate to reach it from another machine.
+      - containerPort: 30443
+        hostPort: 8443
+        listenAddress: "127.0.0.1"
+        protocol: TCP
   - role: worker
   - role: worker

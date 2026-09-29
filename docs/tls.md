@@ -133,10 +133,12 @@ generates the edge certificate into the gitignored `.edge/`, and **gates** on a
 verified `https` fetch through the edge — the chart's `ingress` block, which had
 never been exercised on kind, is what runs.
 
-On kind the browser reaches the controller through a `port-forward` (`start.sh`),
-because `cluster.yaml` publishes no host ports on purpose. It is a port-forward to
-the **ingress**, not to the API: the certificate and the TLS termination are real
-either way, and the API's own listener is never exposed to the host.
+On kind the browser reaches the controller through a fixed host port: `cluster.yaml`
+maps host 8443 to the controller's HTTPS NodePort (30443), which `setup.sh` pins.
+That is a mapping, not a `port-forward` — so there is no process to die, and the URL
+keeps working after a sleep or a closed terminal. It targets the **ingress**, not the
+API: the certificate and the TLS termination are real, and the API's own listener is
+never exposed to the host.
 
 Without the CLI, setup skips the mesh and the third-party hops run in plaintext; the
 SPIFFE hops still apply, because they do not depend on it.

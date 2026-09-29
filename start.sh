@@ -5,13 +5,15 @@
 #   ./start.sh      first run builds everything (~10-15 min); after that it
 #                   resumes the existing cluster in well under a minute.
 #
-#   BIND_ADDR=0.0.0.0 ./start.sh   publish the edge on every interface so another
-#                                  machine can reach it (see docs/operator-guide.md,
-#                                  "Reach it from another machine"). Default is
-#                                  127.0.0.1, host-only.
+# The browser edge is a fixed host port, not a port-forward: cluster.yaml maps
+# host 8443 to the ingress controller's NodePort (setup.sh pins it). So the URL
+# keeps working with nothing to keep alive — a laptop sleep, a closed terminal or
+# a dropped connection no longer takes the edge down. Nothing to restart.
 #
-# Then open the URL it prints. Ctrl-C is safe; the port-forward keeps running in
-# the background (./stop.sh stops it).
+# A cluster created before that mapping existed has to be recreated once:
+#   ./stop.sh --delete && ./scripts/setup.sh
+#
+# Then open the URL it prints.
 # =============================================================================
 set -euo pipefail
 # shellcheck source=scripts/lib.sh
@@ -20,16 +22,16 @@ cd "$(dirname "$0")"
 
 NS=agent-platform
 CLUSTER=agent-platform
-# The browser reaches the platform over https, terminated at the ingress (S7b) —
-# not by exposing the API itself. The port is the forward to the *controller*.
+# The browser reaches the platform over https, terminated at the ingress (S7b),
+# on the host port kind maps to the controller (deploy/kind/cluster.yaml).
 URL=https://localhost:8443
 EDGE_CA=.edge/ca.crt
-PIDFILE=.port-forward.pid
-ADDRFILE=.port-forward.addr
-# Which interface the port-forward binds: host-only by default, or 0.0.0.0 to
-# publish it to the LAN for a second machine.
-BIND_ADDR="${BIND_ADDR:-127.0.0.1}"
-edge_up() { curl -sf --cacert "$EDGE_CA" "$URL/healthz" >/dev/null 2>&1; }
+edge_up() { curl -sf --max-time 5 --cacert "$EDGE_CA" "$URL/healthz" >/dev/null 2>&1; }
+
+# Clear a forward an older version of this script left running: it is no longer
+# how the edge is reached, and it would sit on port 8443.
+rm -f .port-forward.pid .port-forward.addr
+pkill -f "port-forward.*svc/ingress-nginx-controller" 2>/dev/null || true
 
 if ! kind get clusters 2>/dev/null | grep -qx "$CLUSTER"; then
   echo "First run: building the cluster and the platform — about 10-15 minutes…"
@@ -57,37 +59,10 @@ if [ ! -f "$EDGE_CA" ]; then
   exit 1
 fi
 
-# The port-forward goes to the ingress controller, not the API: TLS is
-# terminated there with the certificate we generated, so the browser speaks
-# https the whole way from the host.
-#
-# Reuse a running forward only if it is bound to the address we want now.
-# Otherwise replace it — and clear any other forward for this service (one
-# started by hand has no pidfile), so exactly one is bound.
-if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null \
-   && [ "$(cat "$ADDRFILE" 2>/dev/null || echo 127.0.0.1)" = "$BIND_ADDR" ]; then
-  : # already running on the requested address
-else
-  if [ -f "$PIDFILE" ]; then
-    kill "$(cat "$PIDFILE")" 2>/dev/null || true
-    rm -f "$PIDFILE"
-  fi
-  pkill -f "port-forward.*svc/ingress-nginx-controller" 2>/dev/null || true
-  sleep 1
-  # nohup so the forward outlives the shell that started it: without it a
-  # non-interactive run gets SIGHUP when that shell exits and the edge silently
-  # disappears. `nohup` cannot see the `kubectl` function lib.sh defines, so the
-  # context is passed explicitly — the same KUBE_CONTEXT the wrapper would add.
-  nohup kubectl --context "$KUBE_CONTEXT" -n ingress-nginx port-forward --address "$BIND_ADDR" \
-    svc/ingress-nginx-controller 8443:443 >/tmp/agent-platform-port-forward.log 2>&1 &
-  echo $! > "$PIDFILE"
-  echo "$BIND_ADDR" > "$ADDRFILE"
-fi
-
-# Wait until it actually answers. `edge_up` verifies the certificate against our
-# CA — no -k, so a wrong or untrusted certificate fails here rather than in the
+# Wait until the edge answers. `edge_up` verifies the certificate against our CA
+# — no -k, so a wrong or untrusted certificate fails here rather than in the
 # browser.
-for _ in $(seq 1 30); do
+for _ in $(seq 1 60); do
   edge_up && break
   sleep 1
 done
@@ -97,12 +72,10 @@ if edge_up; then
   printf '\033[1;32mReady → %s\033[0m\n' "$URL"
   printf '\033[2m    certificate signed by %s (trust it once to use a browser)\033[0m\n' \
     "$(pwd)/$EDGE_CA"
-  if [ "$BIND_ADDR" != "127.0.0.1" ] && [ "$BIND_ADDR" != "localhost" ]; then
-    printf '\033[2m    LAN: https://agent-platform.local:8443 — point agent-platform.local at this\n'
-    printf '         host on the client, and trust %s there too\033[0m\n' "$(pwd)/$EDGE_CA"
-  fi
 else
-  printf '\033[1;33mThe edge is not answering yet. Give it a moment, then run ./status.sh\033[0m\n'
+  printf '\033[1;33mThe edge is not answering.\033[0m\n'
+  printf '    If this cluster predates the host-port mapping, recreate it once:\n'
+  printf '      ./stop.sh --delete && ./scripts/setup.sh\n'
 fi
 echo
 echo "Sign in with:  alice / alice123  (support rep)"
