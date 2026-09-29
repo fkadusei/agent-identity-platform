@@ -320,10 +320,12 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
   lives in the gitignored `.edge/` and carries `basicConstraints` + `keyUsage`:
   without them curl accepts the chain and strict clients (Python/OpenSSL 3) refuse
   it — a mistake worth not repeating, and `tls-check.sh` now asserts it.
-  `start.sh` forwards the **controller** (`svc/ingress-nginx-controller`), never the
-  api, so the API's own listener is not exposed to the host; `stop.sh` clears both.
-  One residual remains: ingress→api:8080 is plaintext in-cluster, because the
-  controller carries no sidecar.
+  The host reaches the **controller**, never the api — a fixed kind host-port
+  mapping (`cluster.yaml`: host 8443 → the controller's HTTPS NodePort 30443,
+  pinned by `setup.sh`), not a `port-forward`, so there is no process to keep
+  alive and the URL survives a sleep or a closed terminal. The API's own listener
+  is not exposed to the host. One residual remains: ingress→api:8080 is plaintext
+  in-cluster, because the controller carries no sidecar.
 - **A readiness probe is not a restart.** A hung process stays `Running` and never
   `Ready`: jaeger did exactly that for 31 hours, logging nothing, and `setup.sh`'s
   rollout gate could not finish until a human restarted it. Every container has a

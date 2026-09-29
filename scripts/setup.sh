@@ -523,6 +523,20 @@ if ! kubectl get ns ingress-nginx >/dev/null 2>&1; then
   ok "ingress-nginx controller-v1.15.1 installed (namespace ingress-nginx)"
 fi
 kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=240s >/dev/null
+# kind has no cloud load balancer, so the Service would sit <pending> forever.
+# Make it a NodePort on a fixed port, and map a fixed host port to it in
+# cluster.yaml — the browser edge is then https://localhost:8443 with nothing to
+# keep alive (the old port-forward was a process that died silently).
+kubectl -n ingress-nginx patch svc ingress-nginx-controller --type merge -p \
+  '{"spec":{"type":"NodePort","ports":[{"name":"http","port":80,"targetPort":"http","nodePort":30080},{"name":"https","port":443,"targetPort":"https","nodePort":30443}]}}' >/dev/null
+# The host port maps to *this* node's NodePort, and a NodePort forwarded to a pod
+# on a *different* node does not return in this Docker setup — so keep the
+# controller on the node the port is mapped to (the control-plane, labelled
+# `ingress-ready=true` in cluster.yaml).
+kubectl -n ingress-nginx patch deploy ingress-nginx-controller --type merge -p \
+  '{"spec":{"template":{"spec":{"nodeSelector":{"ingress-ready":"true"},"tolerations":[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]}}}}' >/dev/null
+kubectl -n ingress-nginx rollout status deploy/ingress-nginx-controller --timeout=180s >/dev/null
+ok "ingress controller exposed on NodePort 30080/30443 (host 8443 -> 30443), pinned to the mapped node"
 # The admission webhook has failurePolicy=Fail, so an Ingress created while the
 # certgen jobs are still running is rejected — "no endpoints available". Wait for
 # them before applying ours. (On a re-run they may be complete and garbage
@@ -572,24 +586,27 @@ EOF
 fi
 kubectl -n $NS create secret tls agent-platform-tls \
   --cert="$EDGE/tls.crt" --key="$EDGE/tls.key" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-kubectl apply -f "$MANIFESTS/edge/" >/dev/null
+# The admission webhook is failurePolicy=Fail, and the controller may still be
+# finishing its rollout when we get here — an Ingress applied too early is refused
+# with "connection refused". Retry until the webhook answers, with a loud final try.
+applied=""
+for _ in $(seq 1 30); do
+  if kubectl apply -f "$MANIFESTS/edge/" >/dev/null 2>&1; then applied=1; break; fi
+  sleep 2
+done
+[ -n "$applied" ] || kubectl apply -f "$MANIFESTS/edge/" >/dev/null
 ok "ingress agent-platform -> api:8080, tls secret agent-platform-tls"
 
 # GATE: fetch /healthz through the edge from outside the cluster, the way a
-# browser does — over https, with our CA, no -k. A certificate we skip
-# verifying would prove nothing.
-EDGE_PORT=9443
-kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller $EDGE_PORT:443 >/dev/null 2>&1 &
-EDGE_PF=$!
-trap 'kill $EDGE_PF 2>/dev/null || true' EXIT
+# browser does — over https on the host-mapped port, with our CA, no -k. A
+# certificate we skip verifying would prove nothing.
 EDGE_CODE=""
 for _ in $(seq 1 20); do
-  EDGE_CODE=$(curl -s -o /dev/null -w '%{http_code}' --cacert "$EDGE/ca.crt" \
-    --resolve "localhost:$EDGE_PORT:127.0.0.1" "https://localhost:$EDGE_PORT/healthz" 2>/dev/null || true)
+  EDGE_CODE=$(curl -s --max-time 5 -o /dev/null -w '%{http_code}' --cacert "$EDGE/ca.crt" \
+    "https://localhost:8443/healthz" 2>/dev/null || true)
   [ "$EDGE_CODE" = "200" ] && break
   sleep 2
 done
-kill $EDGE_PF 2>/dev/null || true; trap - EXIT
 [ "$EDGE_CODE" = "200" ] \
   || die "the edge did not answer over TLS with our CA (got '${EDGE_CODE:-nothing}')"
 ok "https://localhost:8443/healthz answered 200 with a certificate that verifies"
