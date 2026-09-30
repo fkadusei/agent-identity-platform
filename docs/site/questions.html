@@ -422,7 +422,7 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
   <p>
     A second agent would be refused as <code>denied: untrusted workload identity</code> until
     it is registered <i>and</i> the policy names it. That is not an accident of configuration —
-    it is the current design, and question 10 is what changing it would take.
+    it is the current design, and <a href="#cloud">question 10</a> is what changing it would take.
   </p>
 </section>
 
@@ -455,7 +455,7 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
       <p>
         An identifier is kept only if the model has <b>seen</b> it — in the task or in an
         earlier tool result. Otherwise it is dropped, and the task's own value wins over the
-        model's guess (see question 7).
+        model's guess (see <a href="#approval">question 7</a>).
       </p>
     </div>
     <div class="tile">
@@ -463,7 +463,7 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
       <p>
         When the tool answers that it could not do the work, the screen says
         <b>allowed — but nothing happened</b>, and the tool's answer is recorded in the audit
-        (see question 8).
+        (see <a href="#why-ask">question 8</a>).
       </p>
     </div>
   </div>
@@ -1446,7 +1446,7 @@ def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> d
   <div class="callout info">
     <b>See it for yourself</b>
     <code>./scripts/show-keycloak-users.sh</code> lists the realm straight from Keycloak's Admin
-    API (Q3) — an admin-created user appears there because that is where it was written.
+    API (<a href="#keycloak-ui">Q3</a>) — an admin-created user appears there because that is where it was written.
   </div>
 </section>
 
@@ -1455,7 +1455,7 @@ def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> d
   <p class="answer">
     Show it the way you would any code: read the rule, run its tests, then run it for real. One
     file and two commands prove the three things that matter — the rules <b>are</b> code, they are
-    <b>tested</b>, and they are what actually <b>decides</b>. Q13 is the deep dive (querying and
+    <b>tested</b>, and they are what actually <b>decides</b>. <a href="#policy">Q13</a> is the deep dive (querying and
     editing); this is the five-minute demonstration.
   </p>
 
@@ -1516,7 +1516,7 @@ decision := "allow" if {
   <h3>3 · Run it live — the decision names its rule</h3>
   <p>
     Then ask the running engine the same question a tool server asks. Port-forward OPA and send an
-    input document (the full mechanics are in Q13); the reply is the decision, the human-readable
+    input document (the full mechanics are in <a href="#policy">Q13</a>); the reply is the decision, the human-readable
     reason, and the revision that produced it:
   </p>
   <div class="codeblock">
@@ -1543,7 +1543,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     tools</b> page in the UI (it renders this same table from the policy), and show
     <code>support_rep</code> in <code>acme</code> beside <code>support_rep</code> in
     <code>globex</code>: the same role name, different tools, because policy is evaluated per
-    tenant (S8). A static document cannot do that; code can. The matrix itself is in Q13, and
+    tenant (S8). A static document cannot do that; code can. The matrix itself is in <a href="#policy">Q13</a>, and
     <code>docs/roles-and-tools.md</code> is the write-up.
   </p>
 
@@ -1713,7 +1713,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     There is no agent object with a lifecycle of its own — no row, no state on a disk. Two things
     have lifecycles: its <b>identity</b> (a SPIRE entry and the SVIDs issued from it) and each
     <b>run</b> (the graph state of one task). Both are short-lived on purpose, and neither is a
-    credential kept in a file. Q11 lists the four registries an agent appears in; this is what
+    credential kept in a file. <a href="#multi">Q11</a> lists the four registries an agent appears in; this is what
     happens to it over time.
   </p>
 
@@ -1775,7 +1775,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
 
   <div class="callout warn">
     <b>That last step is the honest gap</b>
-    Spinning an agent up is four registries (Q11); taking one down is not automated at all. A
+    Spinning an agent up is four registries (<a href="#multi">Q11</a>); taking one down is not automated at all. A
     retired agent leaves its entry and its client behind — harmless once the workload is gone, but
     they are what a real lifecycle would reap.
   </div>
@@ -1785,7 +1785,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     A task is a LangGraph run — <code>plan → call_tool</code>, a durable pause for a human when
     policy holds it, then a resume. Its state is checkpointed in Postgres (S12), so a run has a
     life of its own: an agent pod can restart mid-run and any replica can pick it up. The in-memory
-    <code>_runs</code> map is only a cache; the checkpoint is the truth. Q7 walks the pause and the
+    <code>_runs</code> map is only a cache; the checkpoint is the truth. <a href="#approval">Q7</a> walks the pause and the
     resume in full.
   </p>
 </section>
@@ -1870,7 +1870,7 @@ kubectl -n agent-platform delete pod -l app=agent</pre>
     No CRL/OCSP, so a copied SVID key lives until it expires. No central or automated revoke —
     only <i>user</i> revocation is scripted (<code>POST /admin/users/{id}/enabled</code>, revoke a
     role). The gateway does not name-check callers. And nothing reaps the SPIRE entry or the
-    Keycloak client when a workload is retired (Q20's deregistration gap). Closing these — a
+    Keycloak client when a workload is retired (<a href="#agent-lifecycle">Q20</a>'s deregistration gap). Closing these — a
     runbook wrapper, an admission denylist fed by the api, or a policy/mesh decision — is
     <b>S23</b> in <code>docs/backlog.md</code>, deliberately deferred.
   </div>
@@ -1891,7 +1891,7 @@ kubectl -n agent-platform delete pod -l app=agent</pre>
     Grafana, Jaeger, the SPIRE API and Postgres have <b>no</b> route from outside. That is the
     security posture, not an omission — so an inspector works from the host (port-forward or
     exec). The one exception, the Keycloak console, needs a hosts entry because the realm pins
-    its hostname to <code>keycloak</code> (Q3).
+    its hostname to <code>keycloak</code> (<a href="#keycloak-ui">Q3</a>).
   </div>
 
   <h3>The whole system at a glance</h3>
@@ -1903,14 +1903,14 @@ kubectl -n agent-platform delete pod -l app=agent</pre>
       <tr><td class="mono">agent</td><td>our LangGraph runtime</td><td><code>./logs.sh</code>; <code>kubectl logs deploy/agent</code>; its runs live in Postgres</td></tr>
       <tr><td class="mono">tools</td><td>our policy enforcement point</td><td><code>./scripts/role-tools.sh</code>; <code>kubectl logs deploy/tools</code></td></tr>
       <tr><td class="mono">gateway</td><td>our only egress to a model</td><td><code>kubectl logs deploy/gateway | grep llm.call</code>; its limits are in Postgres</td></tr>
-      <tr><td class="mono">sandbox</td><td>our synthetic vendor systems</td><td>a call to <code>sandbox:8090</code> from the tools pod (Q4)</td></tr>
-      <tr><td class="mono">Keycloak</td><td>identity, users, tokens</td><td><code>./scripts/show-keycloak-users.sh</code>; console on <code>keycloak:8080</code> (Q3)</td></tr>
+      <tr><td class="mono">sandbox</td><td>our synthetic vendor systems</td><td>a call to <code>sandbox:8090</code> from the tools pod (<a href="#demo-data">Q4</a>)</td></tr>
+      <tr><td class="mono">Keycloak</td><td>identity, users, tokens</td><td><code>./scripts/show-keycloak-users.sh</code>; console on <code>keycloak:8080</code> (<a href="#keycloak-ui">Q3</a>)</td></tr>
       <tr><td class="mono">SPIRE server</td><td>workload identity registry</td><td><code>spire-server entry show</code> / <code>agent list</code> / <code>bundle show</code></td></tr>
       <tr><td class="mono">SPIRE agent</td><td>attests pods, per node</td><td><code>kubectl get pods -l app=spire-agent</code>; its logs</td></tr>
-      <tr><td class="mono">OPA</td><td>the policy decisions</td><td><code>port-forward svc/opa 8181</code>; <code>/v1/data/agentnhi/authz</code> (Q13)</td></tr>
+      <tr><td class="mono">OPA</td><td>the policy decisions</td><td><code>port-forward svc/opa 8181</code>; <code>/v1/data/agentnhi/authz</code> (<a href="#policy">Q13</a>)</td></tr>
       <tr><td class="mono">Postgres</td><td>everything durable</td><td><code>exec deploy/postgres -- psql -U agent</code>; then <code>\dt</code></td></tr>
       <tr><td class="mono">otel-collector</td><td>the trace/metric pipeline</td><td><code>port-forward svc/otel-collector 8888</code>; <code>/metrics</code></td></tr>
-      <tr><td class="mono">Prometheus</td><td>metrics engine</td><td><code>port-forward svc/prometheus 9090</code> (Q18)</td></tr>
+      <tr><td class="mono">Prometheus</td><td>metrics engine</td><td><code>port-forward svc/prometheus 9090</code> (<a href="#prometheus">Q18</a>)</td></tr>
       <tr><td class="mono">Grafana</td><td>the dashboard</td><td><code>port-forward svc/grafana 3000</code></td></tr>
       <tr><td class="mono">Jaeger</td><td>the traces</td><td><code>./scripts/show-trace.sh</code>; <code>port-forward svc/jaeger 16686</code></td></tr>
       <tr><td class="mono">Ollama</td><td>the model, on your host</td><td><code>ollama list</code>; <code>./scripts/use-model.sh</code></td></tr>
@@ -2147,8 +2147,8 @@ return TokenExchanger(self._settings).exchange(
     <tbody>
       <tr><td>What it is</td><td>a URI string naming the identity</td><td>a signed credential proving it</td></tr>
       <tr><td>Where it lives</td><td>the Keycloak realm — and the policy, and the admission lists</td><td>nowhere: fetched from the Workload API and held in memory</td></tr>
-      <tr><td>What changes it</td><td>a registration decision; the same URI appears in four registries (Q11)</td><td>nothing — it rotates on its own</td></tr>
-      <tr><td>How long it lasts</td><td>stable until someone changes the registration</td><td>JWT-SVID ~5 m; X.509-SVID 1 h (Q20)</td></tr>
+      <tr><td>What changes it</td><td>a registration decision; the same URI appears in four registries (<a href="#multi">Q11</a>)</td><td>nothing — it rotates on its own</td></tr>
+      <tr><td>How long it lasts</td><td>stable until someone changes the registration</td><td>JWT-SVID ~5 m; X.509-SVID 1 h (<a href="#agent-lifecycle">Q20</a>)</td></tr>
       <tr><td>What uses it</td><td>the <code>client_id</code> on the exchange; the <code>azp</code> on the result</td><td>the <code>client_assertion</code>; the mTLS client cert on our hops</td></tr>
     </tbody>
   </table>
@@ -2164,7 +2164,7 @@ return TokenExchanger(self._settings).exchange(
   <h3>After the exchange, look at <code>azp</code></h3>
   <p>
     The result token's <code>azp</code> is that same SPIFFE ID — the actor acting for the human —
-    not <code>portal</code> or <code>mcp-tools</code>, which are separate clients (Q14). The SDK
+    not <code>portal</code> or <code>mcp-tools</code>, which are separate clients (<a href="#rfc8693">Q14</a>). The SDK
     reads the RFC 8693 <code>act</code> claim first and falls back to Keycloak's <code>azp</code>:
   </p>
   <div class="codeblock">

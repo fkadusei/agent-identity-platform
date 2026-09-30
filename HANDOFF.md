@@ -417,8 +417,11 @@ it from the one it extends, and it is part of the set.
 **A `QA:` question is a request to document.** When the owner asks a question
 prefixed `QA:`, answer it and append it to `questions.html` (next `qnum`, a nav
 entry, the answer checked against the code or the running cluster) — the page is
-the log. Then bump this file's "Last updated" and the row below, because a session
-that ends mid-conversation must not lose that the page moved.
+the log. Cross-references between questions are **links** (`Q11` jumps to it), not
+bare text, so a reader never has to scroll to find the question being cited — but
+not inside a code block, where a comment stays literal. Then bump this file's
+"Last updated" and the row below, because a session that ends mid-conversation
+must not lose that the page moved.
 
 Answered so far: the user store, one agent, approvals, disk vs KMS, RFC 8693,
 MCP (Q15), admin-created users (Q16), the policy-as-code demo (Q17), the
