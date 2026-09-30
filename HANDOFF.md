@@ -190,18 +190,22 @@ End-to-end, on the cluster:
 ## Immediate next task
 
 Phases 1–3 are complete, every threat is addressed, and **S1–S22 are done**. What
-remains is one open slice and one loose end — both are small and each is written up
-where it lands:
+remains is two open slices and one loose end — all are written up where they land:
 
-1. **S17 — provider-agnostic models** (the only open slice). Two defects in the
-   hosted-provider branch, both found by reading it: the forwarder sends no model,
-   and it forwards a JSON hint a strict provider may reject. The *interesting* half
-   is the policy question: may a cloud model see the personal data the agent can
-   read under approval? Local-only means it cannot, today. **S22** documented the
-   concrete case that turns on — a multi-step run re-exposes a `privacy.pii.read`
-   result to whichever model the gateway points at — and deliberately left the
-   control here.
-2. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
+1. **S17 — provider-agnostic models.** Two defects in the hosted-provider branch,
+   both found by reading it: the forwarder sends no model, and it forwards a JSON hint
+   a strict provider may reject. The *interesting* half is the policy question: may a
+   cloud model see the personal data the agent can read under approval? Local-only
+   means it cannot, today. **S22** documented the concrete case that turns on — a
+   multi-step run re-exposes a `privacy.pii.read` result to whichever model the
+   gateway points at — and deliberately left the control here.
+2. **S23 — revoke a rogue agent.** Identity is the root of trust, but "turn one off"
+   is a manual runbook (delete the SPIRE entry and the pod) with **no un-issue and no
+   central, automated revoke**: a held SVID lives until it expires (JWT 5 m, X.509
+   1 h), and the gateway does not name-check callers. Question 21 on the pages has the
+   trust points and the gaps; the backlog entry carries the options (a runbook
+   wrapper, an admission denylist, or a policy/mesh decision). Deferred on purpose.
+3. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
    live key, and documented in [`docs/ha.md`](docs/ha.md) and question 12 of the
    pages. No action unless you want HA identity on by default.
 
