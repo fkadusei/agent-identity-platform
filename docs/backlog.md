@@ -836,6 +836,53 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   (`app/agent/tests/test_graph.py`); `scripts/check-docs-pages.py` keeps the pages
   and their quoted lines consistent.
 
+## S23 — Revoke a rogue agent
+
+- **What:** a first-class way to cut off a workload identity that should no longer be
+  trusted — an agent that was never authorized, or a once-legitimate one that has
+  gone bad. Today it is a manual runbook (`docs/operator-guide.md` §5.B: delete the
+  SPIRE entry, delete the pod). There is **no un-issue and no central, automated
+  revoke**: an SVID is a bearer credential with no CRL/OCSP, so a held one lives until
+  it expires.
+- **Why:** identity is the platform's root of trust, so "turn one off" should be a
+  tested, one-command action rather than three CLI commands an operator has to
+  remember under pressure. Question 21 on the pages lays out the trust points and the
+  gaps; the attack suite already proves an *unauthorized* workload gets no identity —
+  this is the other half, revoking one that has.
+- **The levers, and what each buys (Q21 has the table):**
+  - **SPIRE entry** — `spire-server entry delete` stops *new* SVIDs at once; a held
+    X.509-SVID (1 h) or JWT-SVID (5 m) still works until it expires. Deleting the pod
+    removes the holder.
+  - **Admission** — `ALLOWED_WORKLOADS` in `app/common/workload.py`: dropping a
+    SPIFFE ID and restarting the service refuses that caller at the next hop with **no
+    TTL window**. Static env today, so it needs a restart.
+  - **Authorization** — OPA `is_trusted` / `input.agent`: denies a *different* rogue
+    identity at the tool server, but cannot distinguish a compromised *trusted* agent
+    from a good one; a policy change needs a bundle rebuild + OPA restart (`subPath`).
+  - **Delegation** — disabling the Keycloak client whose `clientId` is the SPIFFE ID
+    stops token exchange; not scripted.
+  - **Gateway** — accepts any valid JWT-SVID audienced to it (no caller allow-list),
+    so there the only bound is the 5-minute TTL.
+- **Open questions the slice must answer:** does "revoke" mean *immediate at every hop*
+  (needs a denylist/API) or *bounded by the TTL*? And where does the list live —
+  per-service config, a small revocation endpoint on the api, or the OPA policy?
+- **Options to choose from when picked up:** (a) a `scripts/revoke-workload.sh` runbook
+  wrapper (delete entry + pods, optionally disable the client, audit, print the TTL
+  caveat); (b) an **admission denylist** every service we own consults, fed by a small
+  revocation endpoint on the api, so a revoked SPIFFE ID is refused immediately; (c)
+  revocation in the **OPA policy** (`revoked_workloads`) for a central, auditable
+  decision; (d) a **mesh AuthorizationPolicy** for defence-in-depth — noting the
+  app-level SPIFFE hop (8443) skips the proxy, so it still needs (b). Likely (a) then
+  (b), with (c) if revocation should live with policy.
+- **Also in scope:** reap the SPIRE entry and the Keycloak client when a workload is
+  retired — the deregistration half of the lifecycle gap named in Q20/S22.
+- **Lands in:** `scripts/` (runbook/wrapper), `app/common/workload.py` and the api (if
+  the denylist path), `policy/authz.rego` (if policy), and `docs/operator-guide.md`
+  §5.B plus a `docs/revocation.md`.
+- **Verified by:** an attack-suite case that revokes a live identity and shows its next
+  call refused, and a test showing a held SVID refused at admission *before* it expires
+  — "stop issuing" alone is not the claim.
+
 ## Not slices (documented limits)
 
 - **There is exactly one agent, by construction.** One workload, one SPIFFE ID

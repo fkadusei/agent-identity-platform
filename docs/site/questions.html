@@ -175,6 +175,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#why-allowed">Why did a wrong order come back "allowed"?</a></li>
         <li><a href="#mcp">If the tools were MCP, what would change?</a></li>
         <li><a href="#agent-lifecycle">What is the lifecycle of an agent?</a></li>
+        <li><a href="#revoke">Can a rogue agent be revoked?</a></li>
       </ol>
     </div>
     <div class="group">
@@ -1785,6 +1786,92 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     <code>_runs</code> map is only a cache; the checkpoint is the truth. Q7 walks the pause and the
     resume in full.
   </p>
+</section>
+
+<section id="revoke">
+  <h2><span class="qnum">21</span>Can a rogue agent be revoked?</h2>
+  <p class="answer">
+    <b>Yes, but only as "stop issuing and kill the holder" — there is no un-issue.</b> An SVID is
+    a bearer credential with no CRL or OCSP, so a copied one works until it expires. The platform
+    can stop the identity being renewed, can refuse it at every hop, and can kill the process that
+    holds it; it cannot reach out and invalidate a certificate already in someone's hands. Today
+    this is a manual runbook, and a first-class capability is backlogged as <b>S23</b>.
+  </p>
+
+  <h3>First, "rogue" is two different problems</h3>
+  <ul>
+    <li>
+      <b>An identity that should never have existed</b> — a workload that is not the registered
+      service account. SPIRE issues it nothing (attack suite #1), so there is nothing to revoke.
+    </li>
+    <li>
+      <b>A legitimate agent gone bad</b> — the trusted SPIFFE ID itself. This is the hard case:
+      policy cannot tell it from the good one, because it <i>is</i> the identity policy trusts. You
+      remove trust, not a stranger.
+    </li>
+  </ul>
+
+  <h3>The trust points, and the lever at each</h3>
+  <table>
+    <thead><tr><th>Trust point</th><th>Lever</th><th>Latency</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Identity issuance — the SPIRE entry (namespace + service account → SPIFFE ID)</td>
+        <td><code>spire-server entry delete</code></td>
+        <td>immediate for new SVIDs</td>
+      </tr>
+      <tr>
+        <td>The held credential — X.509-SVID (1 h) or JWT-SVID (5 m)</td>
+        <td>delete the pod, or wait out the TTL</td>
+        <td>bounded by the TTL</td>
+      </tr>
+      <tr>
+        <td>Admission — <code>ALLOWED_WORKLOADS</code> (<code>app/common/workload.py</code>;
+          default: the one agent)</td>
+        <td>remove the SPIFFE ID and restart the service</td>
+        <td>next call, no TTL</td>
+      </tr>
+      <tr>
+        <td>Authorization — OPA <code>is_trusted</code> / <code>input.agent</code></td>
+        <td>edit the policy, rebuild the bundle, restart OPA</td>
+        <td>minutes</td>
+      </tr>
+      <tr>
+        <td>Delegation — the Keycloak client whose <code>clientId</code> is the SPIFFE ID</td>
+        <td>disable the client: token exchange fails</td>
+        <td>immediate (manual)</td>
+      </tr>
+      <tr>
+        <td>Model access — the gateway</td>
+        <td><i>none</i>: it accepts any valid JWT-SVID audienced to it</td>
+        <td>only the 5 m TTL</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>What the runbook is today</h3>
+  <p>
+    <code>docs/operator-guide.md</code> §5.B: delete the registration entry so the SVID cannot be
+    renewed, then delete the pod so the current one stops being presented.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — the operator runbook, manual</p>
+    <pre>SPIRE="kubectl -n agent-platform exec spire-server-0 -- /opt/spire/bin/spire-server"
+SOCKET=/run/spire/server/private/api.sock
+$SPIRE entry show   -socketPath $SOCKET -spiffeID &lt;spiffe-id&gt;
+$SPIRE entry delete -socketPath $SOCKET -entryID &lt;entry-id&gt;
+kubectl -n agent-platform delete pod -l app=agent</pre>
+  </div>
+
+  <div class="callout warn">
+    <b>The honest limits</b>
+    No CRL/OCSP, so a copied SVID key lives until it expires. No central or automated revoke —
+    only <i>user</i> revocation is scripted (<code>POST /admin/users/{id}/enabled</code>, revoke a
+    role). The gateway does not name-check callers. And nothing reaps the SPIRE entry or the
+    Keycloak client when a workload is retired (Q20's deregistration gap). Closing these — a
+    runbook wrapper, an admission denylist fed by the api, or a policy/mesh decision — is
+    <b>S23</b> in <code>docs/backlog.md</code>, deliberately deferred.
+  </div>
 </section>
 
 <div class="foot">
