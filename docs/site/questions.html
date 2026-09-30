@@ -188,6 +188,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#show-policy">How do I show someone the policy-as-code side?</a></li>
         <li><a href="#rfc8693">What is RFC 8693, and how does this project use it?</a></li>
         <li><a href="#prometheus">How do I show someone the Prometheus UI?</a></li>
+        <li><a href="#inspect">How do I inspect every component?</a></li>
       </ol>
     </div>
   </nav>
@@ -1871,6 +1872,219 @@ kubectl -n agent-platform delete pod -l app=agent</pre>
     Keycloak client when a workload is retired (Q20's deregistration gap). Closing these — a
     runbook wrapper, an admission denylist fed by the api, or a policy/mesh decision — is
     <b>S23</b> in <code>docs/backlog.md</code>, deliberately deferred.
+  </div>
+</section>
+
+<section id="inspect">
+  <h2><span class="qnum">22</span>How do I inspect every component?</h2>
+  <p class="answer">
+    <b>Through one of three doors — and the component decides which.</b> Only the API is
+    published (the https edge); everything else is reached by <code>kubectl port-forward</code> to
+    your own machine, or by <code>kubectl exec</code> inside the pod — and for a few pieces
+    (SPIRE, Postgres, the model) a CLI inside is the only view. This is the index: one row per
+    component, then the exact commands, grouped the way the system is.
+  </p>
+  <div class="callout info">
+    <b>Why not just expose everything?</b>
+    The edge routes <code>/</code> to the API alone, so the Keycloak console, OPA, Prometheus,
+    Grafana, Jaeger, the SPIRE API and Postgres have <b>no</b> route from outside. That is the
+    security posture, not an omission — so an inspector works from the host (port-forward or
+    exec). The one exception, the Keycloak console, needs a hosts entry because the realm pins
+    its hostname to <code>keycloak</code> (Q3).
+  </div>
+
+  <h3>The whole system at a glance</h3>
+  <table>
+    <thead><tr><th>Component</th><th>What it is</th><th>How to look</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">api</td><td>our FastAPI + the UI</td><td>the edge <code>https://localhost:8443</code>; <code>kubectl logs deploy/api</code>; <code>curl --cacert .edge/ca.crt …/audit</code></td></tr>
+      <tr><td class="mono">web</td><td>our React UI, served by the api</td><td>the edge; tabs <b>Console · Approvals · Privacy · Roles · Audit · Admin</b></td></tr>
+      <tr><td class="mono">agent</td><td>our LangGraph runtime</td><td><code>./logs.sh</code>; <code>kubectl logs deploy/agent</code>; its runs live in Postgres</td></tr>
+      <tr><td class="mono">tools</td><td>our policy enforcement point</td><td><code>./scripts/role-tools.sh</code>; <code>kubectl logs deploy/tools</code></td></tr>
+      <tr><td class="mono">gateway</td><td>our only egress to a model</td><td><code>kubectl logs deploy/gateway | grep llm.call</code>; its limits are in Postgres</td></tr>
+      <tr><td class="mono">sandbox</td><td>our synthetic vendor systems</td><td>a call to <code>sandbox:8090</code> from the tools pod (Q4)</td></tr>
+      <tr><td class="mono">Keycloak</td><td>identity, users, tokens</td><td><code>./scripts/show-keycloak-users.sh</code>; console on <code>keycloak:8080</code> (Q3)</td></tr>
+      <tr><td class="mono">SPIRE server</td><td>workload identity registry</td><td><code>spire-server entry show</code> / <code>agent list</code> / <code>bundle show</code></td></tr>
+      <tr><td class="mono">SPIRE agent</td><td>attests pods, per node</td><td><code>kubectl get pods -l app=spire-agent</code>; its logs</td></tr>
+      <tr><td class="mono">OPA</td><td>the policy decisions</td><td><code>port-forward svc/opa 8181</code>; <code>/v1/data/agentnhi/authz</code> (Q13)</td></tr>
+      <tr><td class="mono">Postgres</td><td>everything durable</td><td><code>exec deploy/postgres -- psql -U agent</code>; then <code>\dt</code></td></tr>
+      <tr><td class="mono">otel-collector</td><td>the trace/metric pipeline</td><td><code>port-forward svc/otel-collector 8888</code>; <code>/metrics</code></td></tr>
+      <tr><td class="mono">Prometheus</td><td>metrics engine</td><td><code>port-forward svc/prometheus 9090</code> (Q18)</td></tr>
+      <tr><td class="mono">Grafana</td><td>the dashboard</td><td><code>port-forward svc/grafana 3000</code></td></tr>
+      <tr><td class="mono">Jaeger</td><td>the traces</td><td><code>./scripts/show-trace.sh</code>; <code>port-forward svc/jaeger 16686</code></td></tr>
+      <tr><td class="mono">Ollama</td><td>the model, on your host</td><td><code>ollama list</code>; <code>./scripts/use-model.sh</code></td></tr>
+      <tr><td class="mono">Linkerd</td><td>the mesh (mTLS every hop)</td><td><code>linkerd check</code>; <code>./scripts/tls-check.sh</code></td></tr>
+      <tr><td class="mono">ingress</td><td>the one published door</td><td><code>kubectl -n ingress-nginx get pods</code>; <code>./start.sh</code></td></tr>
+      <tr><td class="mono">HPA · adapter</td><td>autoscaling on queue depth</td><td><code>kubectl get hpa</code>; the raw external metric below</td></tr>
+      <tr><td class="mono">Kyverno</td><td>image-signature admission</td><td>declared in the tree; <b>not installed</b> by the local setup</td></tr>
+    </tbody>
+  </table>
+  <div class="codeblock">
+    <p class="cap">commands — the first three things to run</p>
+<pre>./status.sh                                    # cluster up? pods ready? the URL
+kubectl -n agent-platform get pods -o wide     # every pod, its node, its restarts
+./logs.sh                                       # the audit stream across agent, tools, api, gateway</pre>
+  </div>
+
+  <h3>Our services</h3>
+  <p>
+    The four we wrote expose no console of their own — the UI <i>is</i> their console. For the
+    three with no user-facing port, the log line and the audit event are the view.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — our services, one command each</p>
+<pre># api — the UI and the REST API (the only thing at the edge)
+curl -s --cacert .edge/ca.crt https://localhost:8443/healthz
+curl -s --cacert .edge/ca.crt https://localhost:8443/roles
+kubectl -n agent-platform logs deploy/api --tail=50
+
+# agent — the graph; no user-facing port, so logs and the audit stream are the view
+kubectl -n agent-platform logs deploy/agent --tail=50
+
+# tools — the enforcement point; role-tools.sh exercises it end to end, no LLM
+./scripts/role-tools.sh
+kubectl -n agent-platform logs deploy/tools --tail=50
+
+# gateway — the only egress to a model; every call names the model it used
+kubectl -n agent-platform logs deploy/gateway | grep llm.call
+
+# sandbox — the synthetic vendor systems the tools act on
+kubectl -n agent-platform exec -i deploy/tools -c tools -- python -c "
+import httpx
+print(httpx.get('http://sandbox:8090/orders/o-2001/refund-quote', headers={'X-Tenant':'acme'}).json())"</pre>
+  </div>
+
+  <h3>Identity — Keycloak and SPIRE</h3>
+  <div class="codeblock">
+    <p class="cap">commands — users, and the workload-identity registry</p>
+<pre># Keycloak — the users and roles, as Keycloak itself reports them (Q3)
+./scripts/show-keycloak-users.sh
+
+# Keycloak — the realm definition in git, and the Job that imported it
+#   deploy/kind/manifests/keycloak/realm.json.tmpl  (rendered by scripts/render.py)
+kubectl -n agent-platform logs job/keycloak-import
+kubectl -n agent-platform logs deploy/keycloak --tail=50
+
+# Keycloak — its own database, one of Postgres's three
+kubectl -n agent-platform exec -it deploy/postgres -- psql -U agent -d keycloak -c '\dt'
+
+# SPIRE server — who may be which identity (the registry)
+SPIRE="kubectl -n agent-platform exec spire-server-0 -- /opt/spire/bin/spire-server"
+SOCKET=/run/spire/server/private/api.sock
+$SPIRE entry show  -socketPath $SOCKET     # the registered workload identities
+$SPIRE agent list  -socketPath $SOCKET     # the attested nodes
+$SPIRE bundle show -socketPath $SOCKET     # the trust bundle in use
+
+# SPIRE agent — a DaemonSet, one per node
+kubectl -n agent-platform get pods -l app=spire-agent -o wide
+kubectl -n agent-platform logs -l app=spire-agent --tail=30</pre>
+  </div>
+
+  <h3>Policy — OPA</h3>
+  <div class="codeblock">
+    <p class="cap">commands — health, the revision, a decision, and the trail</p>
+<pre># is it alive? ({} == healthy), and which revision is live?
+kubectl -n agent-platform exec deploy/tools -- python -c "import httpx; print(httpx.get('http://opa:8181/health').json())"
+kubectl -n agent-platform exec deploy/tools -- python -c "import httpx,json; print(httpx.get('http://opa:8181/v1/data/agentnhi/authz/policy_version').json())"
+
+# ask a decision, or read the whole role → tool matrix (Q13)
+kubectl -n agent-platform port-forward svc/opa 8181:8181 &
+curl -s localhost:8181/v1/data/agentnhi/authz/role_matrix
+
+# the decisions it has made, structured
+kubectl -n agent-platform logs deploy/opa --tail=20 | grep decision_id</pre>
+  </div>
+
+  <h3>Data — Postgres, and the trail over HTTP</h3>
+  <p>
+    One Postgres holds three databases: <code>agent_platform</code> (the app's), <code>keycloak</code>
+    and <code>spire</code>. The app's tables include <code>approvals</code>,
+    <code>audit_events</code>, the LangGraph <code>checkpoints</code>, and the gateway's
+    <code>llm_rate</code> / <code>llm_daily</code>.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — the database, and the same data through the API</p>
+<pre>kubectl -n agent-platform exec -it deploy/postgres -- psql -U agent -d agent_platform
+#   \l                                        the three databases
+#   \dt                                       the app's tables
+#   select event, sub, tool, decision from audit_events order by ts desc limit 20;
+#   select id, tool, "user", status, approver, tenant from approvals order by created_at desc limit 10;
+#   select * from llm_daily;                  the per-agent token budget, per day
+
+kubectl -n agent-platform get pvc postgres-data   # the durable volume behind it
+
+# without SQL — the trail and the queue (also the UI's Audit / Approvals tabs)
+curl -s --cacert .edge/ca.crt https://localhost:8443/audit
+curl -s --cacert .edge/ca.crt "https://localhost:8443/approvals?status=pending"</pre>
+  </div>
+
+  <h3>Observability — the collector, Prometheus, Grafana, Jaeger</h3>
+  <div class="codeblock">
+    <p class="cap">commands — the pipeline and its three front ends</p>
+<pre># the collector's own account of what it exported (failed spans included)
+kubectl -n agent-platform port-forward svc/otel-collector 8888:8888 &
+curl -s localhost:8888/metrics | grep '^otelcol_exporter_.*spans'
+
+# Prometheus — every scrape target and its health (Q18)
+kubectl -n agent-platform port-forward svc/prometheus 9090:9090 &
+curl -s localhost:9090/api/v1/targets | python3 -c 'import sys,json; [print(t["labels"]["job"], t["health"]) for t in json.load(sys.stdin)["data"]["activeTargets"]]'
+
+# Grafana — the provisioned "Agent Identity Platform" dashboard
+kubectl -n agent-platform port-forward svc/grafana 3000:3000 &
+#   open http://localhost:3000
+
+# Jaeger — one trace, with identity on its spans
+./scripts/show-trace.sh
+kubectl -n agent-platform port-forward svc/jaeger 16686:16686 &
+#   open http://localhost:16686</pre>
+  </div>
+
+  <h3>The model — Ollama, on your host</h3>
+  <p>
+    The model does not run in the cluster. The gateway reaches it over
+    <code>host.docker.internal:11434</code>, so inspect it where it lives.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — the models you have, and the one in use</p>
+<pre>ollama list
+curl -s localhost:11434/api/tags | python3 -m json.tool | head
+
+# which model the gateway was told to use, and swap it without a rebuild
+kubectl -n agent-platform get configmap llm-config -o jsonpath='{.data}'
+./scripts/use-model.sh llama3.2:3b</pre>
+  </div>
+
+  <h3>The cluster's own machinery</h3>
+  <div class="codeblock">
+    <p class="cap">commands — mesh, edge, autoscaling, supply chain</p>
+<pre># mesh — mTLS on every hop; tls-check.sh reads the mesh's own edges
+linkerd check
+linkerd -n agent-platform viz stat deploy
+./scripts/tls-check.sh
+
+# edge — the ingress is the only published door, and it is ours to trust
+kubectl -n ingress-nginx get pods,svc
+./start.sh
+ls -l .edge/ca.crt
+
+# autoscaling — the HPA, the meter it reads, and the metric it follows
+kubectl -n agent-platform get hpa
+kubectl top pods -n agent-platform
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/agent-platform/approvals_pending"
+
+# supply chain — declared in the tree, not installed by the local setup
+#   deploy/kind/manifests/supply-chain/kyverno-verify-images.yaml
+kubectl get clusterpolicy 2>/dev/null || echo "kyverno not installed in the kind demo"</pre>
+  </div>
+
+  <div class="callout ok">
+    <b>The rule of thumb</b>
+    <b style="display:inline">·</b> Serves the user → <b>the edge</b>
+    (<code>https://localhost:8443</code>). <b style="display:inline">·</b> Infrastructure with a
+    UI or a data API → <b>port-forward</b> to localhost. <b style="display:inline">·</b> A registry
+    or a datastore → <b>exec</b> the CLI inside its pod. And <code>./status.sh</code> plus
+    <code>./logs.sh</code> answer the two questions you have first: <i>is it up</i>, and
+    <i>what is it doing</i>.
   </div>
 </section>
 
