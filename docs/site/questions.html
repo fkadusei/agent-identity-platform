@@ -159,6 +159,7 @@ ol.steps>li b{color:var(--ink)}
       <div class="gtitle">Identity and data</div>
       <ol>
         <li><a href="#users">Where are the users stored?</a></li>
+        <li><a href="#svid-client">Is the agent's SVID the same as its Keycloak client_id?</a></li>
         <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
         <li><a href="#session">Do users have to sign in every five minutes?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
@@ -2085,6 +2086,99 @@ kubectl get clusterpolicy 2>/dev/null || echo "kyverno not installed in the kind
     or a datastore → <b>exec</b> the CLI inside its pod. And <code>./status.sh</code> plus
     <code>./logs.sh</code> answer the two questions you have first: <i>is it up</i>, and
     <i>what is it doing</i>.
+  </div>
+</section>
+
+<section id="svid-client">
+  <h2><span class="qnum">23</span>Is the agent's SVID the same as its Keycloak <code>client_id</code>?</h2>
+  <p class="answer">
+    <b>No — one is the name, the other is the proof.</b> The <code>client_id</code> is the SPIFFE
+    ID as a stable <i>string</i> in the realm; the SVID is a short-lived <i>credential</i> SPIRE
+    mints for that identity. They are tied together — the JWT-SVID's subject is the same URI as the
+    <code>client_id</code> — but the string is not the credential, and the credential is not stored
+    anywhere.
+  </p>
+
+  <h3>The <code>client_id</code> is the SPIFFE ID</h3>
+  <p>
+    Keycloak's client for the agent is named by the identity itself. In the realm template
+    (<code>deploy/kind/manifests/keycloak/realm.json.tmpl</code>), the client id <i>is</i> the
+    SPIFFE ID:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the agent client in the realm template</p>
+<pre>"clientId": "spiffe://acme.com/ns/agent-platform/sa/agent",</pre>
+  </div>
+
+  <h3>The SVID is the credential that proves it</h3>
+  <p>
+    The agent fetches a fresh JWT-SVID and presents it to Keycloak as the
+    <code>client_assertion</code>, naming that same SPIFFE ID as the <code>client_id</code>:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/live.py</p>
+<pre>svid = fetch_jwt_svid(self._settings.spiffe_socket, self._settings.keycloak_issuer)
+return TokenExchanger(self._settings).exchange(
+    subject_token=self._user_token,
+    client_id=self._agent_id,
+    client_assertion=svid,
+)</pre>
+  </div>
+  <p>
+    Keycloak is configured to verify that assertion's signature against SPIRE's published keys
+    rather than a shared secret — which is why no client secret exists:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the same client's authenticator, from the realm template</p>
+<pre>"clientAuthenticatorType": "client-jwt",
+"serviceAccountsEnabled": true,
+"standardFlowEnabled": false,
+"directAccessGrantsEnabled": false,
+"attributes": {
+  "use.jwks.url": "true",
+  "jwks.url": "http://spire-oidc-discovery.agent-platform.svc.cluster.local:11080/keys",
+  "token.endpoint.auth.signing.alg": "ES256",
+  "standard.token.exchange.enabled": "true"
+},</pre>
+  </div>
+
+  <table>
+    <thead><tr><th></th><th>The SPIFFE ID / <code>client_id</code></th><th>The SVID</th></tr></thead>
+    <tbody>
+      <tr><td>What it is</td><td>a URI string naming the identity</td><td>a signed credential proving it</td></tr>
+      <tr><td>Where it lives</td><td>the Keycloak realm — and the policy, and the admission lists</td><td>nowhere: fetched from the Workload API and held in memory</td></tr>
+      <tr><td>What changes it</td><td>a registration decision; the same URI appears in four registries (Q11)</td><td>nothing — it rotates on its own</td></tr>
+      <tr><td>How long it lasts</td><td>stable until someone changes the registration</td><td>JWT-SVID ~5 m; X.509-SVID 1 h (Q20)</td></tr>
+      <tr><td>What uses it</td><td>the <code>client_id</code> on the exchange; the <code>azp</code> on the result</td><td>the <code>client_assertion</code>; the mTLS client cert on our hops</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <b>The agent holds two SVIDs, and only one is the client assertion</b>
+    Both carry the same SPIFFE ID. The <b>JWT-SVID</b> is what Keycloak sees, as the
+    <code>client_assertion</code>. The <b>X.509-SVID</b> is the mTLS client certificate on the
+    SPIFFE hops to <code>tools</code> and <code>gateway</code>. Neither is a secret you
+    provision; both expire on their own.
+  </div>
+
+  <h3>After the exchange, look at <code>azp</code></h3>
+  <p>
+    The result token's <code>azp</code> is that same SPIFFE ID — the actor acting for the human —
+    not <code>portal</code> or <code>mcp-tools</code>, which are separate clients (Q14). The SDK
+    reads the RFC 8693 <code>act</code> claim first and falls back to Keycloak's <code>azp</code>:
+  </p>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/tokens.py</p>
+<pre>act = claims.get("act") or {}
+workload = act.get("sub") or claims.get("azp") or "?"</pre>
+  </div>
+  <div class="callout ok">
+    <b>See it on the running cluster</b>
+    <code>./scripts/show-keycloak-users.sh</code> answers the user side; the client side is in the
+    realm above — <code>clientId == SPIFFE ID</code>, <code>clientAuthenticatorType: client-jwt</code>,
+    no <code>secret</code>. The audit's <code>tool.allowed</code> and the trace's
+    <code>policy.decision</code> span both carry the same SPIFFE ID as <code>spiffe_id</code>, so
+    the name on the header matches the name in the token.
   </div>
 </section>
 

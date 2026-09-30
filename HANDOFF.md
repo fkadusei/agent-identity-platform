@@ -409,7 +409,7 @@ behaviour changed, the page that describes it changes in the same PR*.
 |---|---|
 | `index.html` | The whole platform, plain language, twenty sections |
 | `agent-flow.html` | The agent end to end: the graph, the prompt, the guardrails, the tool boundary, the interrupt, the policy decision — including the upgrade (S18–S19), marked built where it is built |
-| `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, how to inspect every component (Q22), and more |
+| `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, how to inspect every component (Q22), the SVID versus the Keycloak client_id (Q23), and more |
 
 There are no numbers in the list above and nothing to renumber: add a page, link
 it from the one it extends, and it is part of the set.
@@ -423,7 +423,8 @@ that ends mid-conversation must not lose that the page moved.
 Answered so far: the user store, one agent, approvals, disk vs KMS, RFC 8693,
 MCP (Q15), admin-created users (Q16), the policy-as-code demo (Q17), the
 Prometheus UI (Q18), silent token renewal (Q19), the agent lifecycle (Q20),
-revoking a rogue agent (Q21), and inspecting every component (Q22).
+revoking a rogue agent (Q21), inspecting every component (Q22), and the SVID
+versus the Keycloak client_id (Q23).
 
 To read them:
 ```sh
