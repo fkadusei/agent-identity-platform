@@ -174,6 +174,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#why-ask">Why didn't it ask for the order?</a></li>
         <li><a href="#why-allowed">Why did a wrong order come back "allowed"?</a></li>
         <li><a href="#mcp">If the tools were MCP, what would change?</a></li>
+        <li><a href="#agent-lifecycle">What is the lifecycle of an agent?</a></li>
       </ol>
     </div>
     <div class="group">
@@ -1701,6 +1702,89 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     Keycloak's <code>revoke-refresh-token</code>, so the previous refresh token is invalidated
     on use — this local realm issues a fresh one but leaves the old valid until it expires.
   </div>
+</section>
+
+<section id="agent-lifecycle">
+  <h2><span class="qnum">20</span>What is the lifecycle of an agent?</h2>
+  <p class="answer">
+    There is no agent object with a lifecycle of its own — no row, no state on a disk. Two things
+    have lifecycles: its <b>identity</b> (a SPIRE entry and the SVIDs issued from it) and each
+    <b>run</b> (the graph state of one task). Both are short-lived on purpose, and neither is a
+    credential kept in a file. Q11 lists the four registries an agent appears in; this is what
+    happens to it over time.
+  </p>
+
+  <h3>The identity: register → attest → work → rotate → restart → retire</h3>
+  <ol class="steps">
+    <li>
+      <b>Register.</b> A SPIRE registration entry means "a workload with this service account in
+      this namespace may be this SPIFFE ID". It lives in SPIRE's Postgres (durable), created by
+      <code>setup.sh</code> — and <b>one entry per attested SPIRE agent</b>, because a pod is
+      attested by the agent on its own node:
+      <div class="codeblock">
+        <p class="cap">scripts/setup.sh</p>
+        <pre>  for parent in $($SPIRE agent list -socketPath "$SOCKET" 2>/dev/null \
+    | awk '/SPIFFE ID/{print $NF}'); do
+    $SPIRE entry create -socketPath "$SOCKET" \
+      -spiffeID "$id" -parentID "$parent" \
+      -selector "k8s:ns:$NS" -selector "k8s:sa:$sa" >/dev/null
+  done</pre>
+      </div>
+    </li>
+    <li>
+      <b>Attest.</b> The node's SPIRE agent proves itself with <code>k8s_psat</code> (a projected
+      service-account token the server checks through TokenReview). The workload then asks the
+      Workload API over the socket and is matched by those selectors. It receives an
+      <b>X.509-SVID</b> (1 h) and a <b>JWT-SVID</b> (5 m) — "demo-tuned lifetimes: short SVIDs make
+      rotation visible" (<code>deploy/kind/manifests/spire/server.conf.tmpl</code>, CA 24 h).
+    </li>
+    <li>
+      <b>Work.</b> Per call, not per process: the agent fetches a JWT-SVID audienced to the
+      gateway, and exchanges the user's token for the tool call. It holds <b>no static
+      credential</b> — no client secret, no provider key.
+    </li>
+    <li>
+      <b>Rotate.</b> SPIRE rotates an SVID at roughly half its life. A process that is serving one
+      exits about two minutes before its own certificate expires, so it restarts holding a fresh
+      one — read from the certificate, never assumed from the TTL:
+      <div class="codeblock">
+        <p class="cap">app/common/server.py</p>
+        <pre>def restart_before_expiry(cert_file: str, margin: int, service: str) -> None:
+    """Exit `margin` seconds before the certificate we are serving expires.
+
+    The deadline comes from the certificate, not a constant. An interval that
+    assumes a full lifetime serves an **expired** certificate for the difference,
+    and every handshake fails until the process happens to restart (S15).</pre>
+      </div>
+    </li>
+    <li>
+      <b>Heal.</b> Every container carries a liveness probe, so a hung process is restarted rather
+      than reported forever; two replicas with anti-affinity and a PodDisruptionBudget mean a
+      restart or an eviction is not an outage.
+    </li>
+    <li>
+      <b>Retire.</b> Delete the workload and no new SVID is issued — an already-issued one stays
+      valid only until it expires. But nothing removes the <i>registration entry</i>, and nothing
+      removes the Keycloak client whose <code>clientId</code> is the SPIFFE ID. Deregistration is
+      manual: the demo has the create half, not the destroy half.
+    </li>
+  </ol>
+
+  <div class="callout warn">
+    <b>That last step is the honest gap</b>
+    Spinning an agent up is four registries (Q11); taking one down is not automated at all. A
+    retired agent leaves its entry and its client behind — harmless once the workload is gone, but
+    they are what a real lifecycle would reap.
+  </div>
+
+  <h3>The run: a second, shorter lifecycle</h3>
+  <p>
+    A task is a LangGraph run — <code>plan → call_tool</code>, a durable pause for a human when
+    policy holds it, then a resume. Its state is checkpointed in Postgres (S12), so a run has a
+    life of its own: an agent pod can restart mid-run and any replica can pick it up. The in-memory
+    <code>_runs</code> map is only a cache; the checkpoint is the truth. Q7 walks the pause and the
+    resume in full.
+  </p>
 </section>
 
 <div class="foot">
