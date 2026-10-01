@@ -22,7 +22,7 @@
   that loop now keeps and re-exposes. **S17** (cloud providers) is the one open
   slice.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-09-25
+- **Last updated:** 2026-09-30
 
 ## Resuming work in a fresh session
 
@@ -409,7 +409,7 @@ behaviour changed, the page that describes it changes in the same PR*.
 |---|---|
 | `index.html` | The whole platform, plain language, twenty sections |
 | `agent-flow.html` | The agent end to end: the graph, the prompt, the guardrails, the tool boundary, the interrupt, the policy decision — including the upgrade (S18–S19), marked built where it is built |
-| `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, and more |
+| `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, how to inspect every component (Q22), the SVID versus the Keycloak client_id (Q23), the four OAuth grants (Q24), and more |
 
 There are no numbers in the list above and nothing to renumber: add a page, link
 it from the one it extends, and it is part of the set.
@@ -417,7 +417,19 @@ it from the one it extends, and it is part of the set.
 **A `QA:` question is a request to document.** When the owner asks a question
 prefixed `QA:`, answer it and append it to `questions.html` (next `qnum`, a nav
 entry, the answer checked against the code or the running cluster) — the page is
-the log.
+the log. Cross-references between questions are **links** (`Q11` jumps to it), not
+bare text, so a reader never has to scroll to find the question being cited — but
+not inside a code block, where a comment stays literal. Then bump this file's
+"Last updated" and the row below, because a session that ends mid-conversation
+must not lose that the page moved.
+
+Answered so far: the user store, one agent, approvals, disk vs KMS, RFC 8693,
+MCP (Q15), admin-created users (Q16), the policy-as-code demo (Q17), the
+Prometheus UI (Q18), silent token renewal (Q19), the agent lifecycle (Q20),
+revoking a rogue agent (Q21), inspecting every component (Q22), the SVID versus
+the Keycloak client_id (Q23), and the four OAuth grants with an inline-SVG flow
+diagram each, plus the production authorization-code + PKCE flow for comparison
+(Q24).
 
 To read them:
 ```sh

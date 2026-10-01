@@ -38,7 +38,11 @@ Optionally install `gitleaks` for a thorough local scan:
 2. Make focused commits with clear messages (see style below).
 3. Run the checks locally (below).
 4. Open a PR. `main` is protected: PR-only, no force-push, reviews required.
-5. Update `HANDOFF.md` and `docs/roadmap.md` if the change affects state.
+5. Update `HANDOFF.md`, `docs/roadmap.md`, and the file the change belongs to —
+   `docs/backlog.md` for a slice, `docs/site/questions.html` for a `QA:` answer,
+   an ADR for a decision. Do this **always**, not only for state changes: sessions
+   stop mid-conversation, so the repository is the memory. `AGENTS.md` spells the
+   rule out for AI agents.
 
 ## Local checks
 

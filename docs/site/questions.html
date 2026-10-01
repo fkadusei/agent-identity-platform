@@ -159,6 +159,8 @@ ol.steps>li b{color:var(--ink)}
       <div class="gtitle">Identity and data</div>
       <ol>
         <li><a href="#users">Where are the users stored?</a></li>
+        <li><a href="#svid-client">Is the agent's SVID the same as its Keycloak client_id?</a></li>
+        <li><a href="#oauth">Is there an OAuth flow, and where is it?</a></li>
         <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
         <li><a href="#session">Do users have to sign in every five minutes?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
@@ -188,6 +190,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#show-policy">How do I show someone the policy-as-code side?</a></li>
         <li><a href="#rfc8693">What is RFC 8693, and how does this project use it?</a></li>
         <li><a href="#prometheus">How do I show someone the Prometheus UI?</a></li>
+        <li><a href="#inspect">How do I inspect every component?</a></li>
       </ol>
     </div>
   </nav>
@@ -420,7 +423,7 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
   <p>
     A second agent would be refused as <code>denied: untrusted workload identity</code> until
     it is registered <i>and</i> the policy names it. That is not an accident of configuration —
-    it is the current design, and question 10 is what changing it would take.
+    it is the current design, and <a href="#cloud">question 10</a> is what changing it would take.
   </p>
 </section>
 
@@ -453,7 +456,7 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
       <p>
         An identifier is kept only if the model has <b>seen</b> it — in the task or in an
         earlier tool result. Otherwise it is dropped, and the task's own value wins over the
-        model's guess (see question 7).
+        model's guess (see <a href="#approval">question 7</a>).
       </p>
     </div>
     <div class="tile">
@@ -461,7 +464,7 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
       <p>
         When the tool answers that it could not do the work, the screen says
         <b>allowed — but nothing happened</b>, and the tool's answer is recorded in the audit
-        (see question 8).
+        (see <a href="#why-ask">question 8</a>).
       </p>
     </div>
   </div>
@@ -1444,7 +1447,7 @@ def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> d
   <div class="callout info">
     <b>See it for yourself</b>
     <code>./scripts/show-keycloak-users.sh</code> lists the realm straight from Keycloak's Admin
-    API (Q3) — an admin-created user appears there because that is where it was written.
+    API (<a href="#keycloak-ui">Q3</a>) — an admin-created user appears there because that is where it was written.
   </div>
 </section>
 
@@ -1453,7 +1456,7 @@ def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> d
   <p class="answer">
     Show it the way you would any code: read the rule, run its tests, then run it for real. One
     file and two commands prove the three things that matter — the rules <b>are</b> code, they are
-    <b>tested</b>, and they are what actually <b>decides</b>. Q13 is the deep dive (querying and
+    <b>tested</b>, and they are what actually <b>decides</b>. <a href="#policy">Q13</a> is the deep dive (querying and
     editing); this is the five-minute demonstration.
   </p>
 
@@ -1514,7 +1517,7 @@ decision := "allow" if {
   <h3>3 · Run it live — the decision names its rule</h3>
   <p>
     Then ask the running engine the same question a tool server asks. Port-forward OPA and send an
-    input document (the full mechanics are in Q13); the reply is the decision, the human-readable
+    input document (the full mechanics are in <a href="#policy">Q13</a>); the reply is the decision, the human-readable
     reason, and the revision that produced it:
   </p>
   <div class="codeblock">
@@ -1541,7 +1544,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     tools</b> page in the UI (it renders this same table from the policy), and show
     <code>support_rep</code> in <code>acme</code> beside <code>support_rep</code> in
     <code>globex</code>: the same role name, different tools, because policy is evaluated per
-    tenant (S8). A static document cannot do that; code can. The matrix itself is in Q13, and
+    tenant (S8). A static document cannot do that; code can. The matrix itself is in <a href="#policy">Q13</a>, and
     <code>docs/roles-and-tools.md</code> is the write-up.
   </p>
 
@@ -1711,7 +1714,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     There is no agent object with a lifecycle of its own — no row, no state on a disk. Two things
     have lifecycles: its <b>identity</b> (a SPIRE entry and the SVIDs issued from it) and each
     <b>run</b> (the graph state of one task). Both are short-lived on purpose, and neither is a
-    credential kept in a file. Q11 lists the four registries an agent appears in; this is what
+    credential kept in a file. <a href="#multi">Q11</a> lists the four registries an agent appears in; this is what
     happens to it over time.
   </p>
 
@@ -1773,7 +1776,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
 
   <div class="callout warn">
     <b>That last step is the honest gap</b>
-    Spinning an agent up is four registries (Q11); taking one down is not automated at all. A
+    Spinning an agent up is four registries (<a href="#multi">Q11</a>); taking one down is not automated at all. A
     retired agent leaves its entry and its client behind — harmless once the workload is gone, but
     they are what a real lifecycle would reap.
   </div>
@@ -1783,7 +1786,7 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     A task is a LangGraph run — <code>plan → call_tool</code>, a durable pause for a human when
     policy holds it, then a resume. Its state is checkpointed in Postgres (S12), so a run has a
     life of its own: an agent pod can restart mid-run and any replica can pick it up. The in-memory
-    <code>_runs</code> map is only a cache; the checkpoint is the truth. Q7 walks the pause and the
+    <code>_runs</code> map is only a cache; the checkpoint is the truth. <a href="#approval">Q7</a> walks the pause and the
     resume in full.
   </p>
 </section>
@@ -1868,9 +1871,550 @@ kubectl -n agent-platform delete pod -l app=agent</pre>
     No CRL/OCSP, so a copied SVID key lives until it expires. No central or automated revoke —
     only <i>user</i> revocation is scripted (<code>POST /admin/users/{id}/enabled</code>, revoke a
     role). The gateway does not name-check callers. And nothing reaps the SPIRE entry or the
-    Keycloak client when a workload is retired (Q20's deregistration gap). Closing these — a
+    Keycloak client when a workload is retired (<a href="#agent-lifecycle">Q20</a>'s deregistration gap). Closing these — a
     runbook wrapper, an admission denylist fed by the api, or a policy/mesh decision — is
     <b>S23</b> in <code>docs/backlog.md</code>, deliberately deferred.
+  </div>
+</section>
+
+<section id="inspect">
+  <h2><span class="qnum">22</span>How do I inspect every component?</h2>
+  <p class="answer">
+    <b>Through one of three doors — and the component decides which.</b> Only the API is
+    published (the https edge); everything else is reached by <code>kubectl port-forward</code> to
+    your own machine, or by <code>kubectl exec</code> inside the pod — and for a few pieces
+    (SPIRE, Postgres, the model) a CLI inside is the only view. This is the index: one row per
+    component, then the exact commands, grouped the way the system is.
+  </p>
+  <div class="callout info">
+    <b>Why not just expose everything?</b>
+    The edge routes <code>/</code> to the API alone, so the Keycloak console, OPA, Prometheus,
+    Grafana, Jaeger, the SPIRE API and Postgres have <b>no</b> route from outside. That is the
+    security posture, not an omission — so an inspector works from the host (port-forward or
+    exec). The one exception, the Keycloak console, needs a hosts entry because the realm pins
+    its hostname to <code>keycloak</code> (<a href="#keycloak-ui">Q3</a>).
+  </div>
+
+  <h3>The whole system at a glance</h3>
+  <table>
+    <thead><tr><th>Component</th><th>What it is</th><th>How to look</th></tr></thead>
+    <tbody>
+      <tr><td class="mono">api</td><td>our FastAPI + the UI</td><td>the edge <code>https://localhost:8443</code>; <code>kubectl logs deploy/api</code>; <code>curl --cacert .edge/ca.crt …/audit</code></td></tr>
+      <tr><td class="mono">web</td><td>our React UI, served by the api</td><td>the edge; tabs <b>Console · Approvals · Privacy · Roles · Audit · Admin</b></td></tr>
+      <tr><td class="mono">agent</td><td>our LangGraph runtime</td><td><code>./logs.sh</code>; <code>kubectl logs deploy/agent</code>; its runs live in Postgres</td></tr>
+      <tr><td class="mono">tools</td><td>our policy enforcement point</td><td><code>./scripts/role-tools.sh</code>; <code>kubectl logs deploy/tools</code></td></tr>
+      <tr><td class="mono">gateway</td><td>our only egress to a model</td><td><code>kubectl logs deploy/gateway | grep llm.call</code>; its limits are in Postgres</td></tr>
+      <tr><td class="mono">sandbox</td><td>our synthetic vendor systems</td><td>a call to <code>sandbox:8090</code> from the tools pod (<a href="#demo-data">Q4</a>)</td></tr>
+      <tr><td class="mono">Keycloak</td><td>identity, users, tokens</td><td><code>./scripts/show-keycloak-users.sh</code>; console on <code>keycloak:8080</code> (<a href="#keycloak-ui">Q3</a>)</td></tr>
+      <tr><td class="mono">SPIRE server</td><td>workload identity registry</td><td><code>spire-server entry show</code> / <code>agent list</code> / <code>bundle show</code></td></tr>
+      <tr><td class="mono">SPIRE agent</td><td>attests pods, per node</td><td><code>kubectl get pods -l app=spire-agent</code>; its logs</td></tr>
+      <tr><td class="mono">OPA</td><td>the policy decisions</td><td><code>port-forward svc/opa 8181</code>; <code>/v1/data/agentnhi/authz</code> (<a href="#policy">Q13</a>)</td></tr>
+      <tr><td class="mono">Postgres</td><td>everything durable</td><td><code>exec deploy/postgres -- psql -U agent</code>; then <code>\dt</code></td></tr>
+      <tr><td class="mono">otel-collector</td><td>the trace/metric pipeline</td><td><code>port-forward svc/otel-collector 8888</code>; <code>/metrics</code></td></tr>
+      <tr><td class="mono">Prometheus</td><td>metrics engine</td><td><code>port-forward svc/prometheus 9090</code> (<a href="#prometheus">Q18</a>)</td></tr>
+      <tr><td class="mono">Grafana</td><td>the dashboard</td><td><code>port-forward svc/grafana 3000</code></td></tr>
+      <tr><td class="mono">Jaeger</td><td>the traces</td><td><code>./scripts/show-trace.sh</code>; <code>port-forward svc/jaeger 16686</code></td></tr>
+      <tr><td class="mono">Ollama</td><td>the model, on your host</td><td><code>ollama list</code>; <code>./scripts/use-model.sh</code></td></tr>
+      <tr><td class="mono">Linkerd</td><td>the mesh (mTLS every hop)</td><td><code>linkerd check</code>; <code>./scripts/tls-check.sh</code></td></tr>
+      <tr><td class="mono">ingress</td><td>the one published door</td><td><code>kubectl -n ingress-nginx get pods</code>; <code>./start.sh</code></td></tr>
+      <tr><td class="mono">HPA · adapter</td><td>autoscaling on queue depth</td><td><code>kubectl get hpa</code>; the raw external metric below</td></tr>
+      <tr><td class="mono">Kyverno</td><td>image-signature admission</td><td>declared in the tree; <b>not installed</b> by the local setup</td></tr>
+    </tbody>
+  </table>
+  <div class="codeblock">
+    <p class="cap">commands — the first three things to run</p>
+<pre>./status.sh                                    # cluster up? pods ready? the URL
+kubectl -n agent-platform get pods -o wide     # every pod, its node, its restarts
+./logs.sh                                       # the audit stream across agent, tools, api, gateway</pre>
+  </div>
+
+  <h3>Our services</h3>
+  <p>
+    The four we wrote expose no console of their own — the UI <i>is</i> their console. For the
+    three with no user-facing port, the log line and the audit event are the view.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — our services, one command each</p>
+<pre># api — the UI and the REST API (the only thing at the edge)
+curl -s --cacert .edge/ca.crt https://localhost:8443/healthz
+curl -s --cacert .edge/ca.crt https://localhost:8443/roles
+kubectl -n agent-platform logs deploy/api --tail=50
+
+# agent — the graph; no user-facing port, so logs and the audit stream are the view
+kubectl -n agent-platform logs deploy/agent --tail=50
+
+# tools — the enforcement point; role-tools.sh exercises it end to end, no LLM
+./scripts/role-tools.sh
+kubectl -n agent-platform logs deploy/tools --tail=50
+
+# gateway — the only egress to a model; every call names the model it used
+kubectl -n agent-platform logs deploy/gateway | grep llm.call
+
+# sandbox — the synthetic vendor systems the tools act on
+kubectl -n agent-platform exec -i deploy/tools -c tools -- python -c "
+import httpx
+print(httpx.get('http://sandbox:8090/orders/o-2001/refund-quote', headers={'X-Tenant':'acme'}).json())"</pre>
+  </div>
+
+  <h3>Identity — Keycloak and SPIRE</h3>
+  <div class="codeblock">
+    <p class="cap">commands — users, and the workload-identity registry</p>
+<pre># Keycloak — the users and roles, as Keycloak itself reports them (Q3)
+./scripts/show-keycloak-users.sh
+
+# Keycloak — the realm definition in git, and the Job that imported it
+#   deploy/kind/manifests/keycloak/realm.json.tmpl  (rendered by scripts/render.py)
+kubectl -n agent-platform logs job/keycloak-import
+kubectl -n agent-platform logs deploy/keycloak --tail=50
+
+# Keycloak — its own database, one of Postgres's three
+kubectl -n agent-platform exec -it deploy/postgres -- psql -U agent -d keycloak -c '\dt'
+
+# SPIRE server — who may be which identity (the registry)
+SPIRE="kubectl -n agent-platform exec spire-server-0 -- /opt/spire/bin/spire-server"
+SOCKET=/run/spire/server/private/api.sock
+$SPIRE entry show  -socketPath $SOCKET     # the registered workload identities
+$SPIRE agent list  -socketPath $SOCKET     # the attested nodes
+$SPIRE bundle show -socketPath $SOCKET     # the trust bundle in use
+
+# SPIRE agent — a DaemonSet, one per node
+kubectl -n agent-platform get pods -l app=spire-agent -o wide
+kubectl -n agent-platform logs -l app=spire-agent --tail=30</pre>
+  </div>
+
+  <h3>Policy — OPA</h3>
+  <div class="codeblock">
+    <p class="cap">commands — health, the revision, a decision, and the trail</p>
+<pre># is it alive? ({} == healthy), and which revision is live?
+kubectl -n agent-platform exec deploy/tools -- python -c "import httpx; print(httpx.get('http://opa:8181/health').json())"
+kubectl -n agent-platform exec deploy/tools -- python -c "import httpx,json; print(httpx.get('http://opa:8181/v1/data/agentnhi/authz/policy_version').json())"
+
+# ask a decision, or read the whole role → tool matrix (Q13)
+kubectl -n agent-platform port-forward svc/opa 8181:8181 &
+curl -s localhost:8181/v1/data/agentnhi/authz/role_matrix
+
+# the decisions it has made, structured
+kubectl -n agent-platform logs deploy/opa --tail=20 | grep decision_id</pre>
+  </div>
+
+  <h3>Data — Postgres, and the trail over HTTP</h3>
+  <p>
+    One Postgres holds three databases: <code>agent_platform</code> (the app's), <code>keycloak</code>
+    and <code>spire</code>. The app's tables include <code>approvals</code>,
+    <code>audit_events</code>, the LangGraph <code>checkpoints</code>, and the gateway's
+    <code>llm_rate</code> / <code>llm_daily</code>.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — the database, and the same data through the API</p>
+<pre>kubectl -n agent-platform exec -it deploy/postgres -- psql -U agent -d agent_platform
+#   \l                                        the three databases
+#   \dt                                       the app's tables
+#   select event, sub, tool, decision from audit_events order by ts desc limit 20;
+#   select id, tool, "user", status, approver, tenant from approvals order by created_at desc limit 10;
+#   select * from llm_daily;                  the per-agent token budget, per day
+
+kubectl -n agent-platform get pvc postgres-data   # the durable volume behind it
+
+# without SQL — the trail and the queue (also the UI's Audit / Approvals tabs)
+curl -s --cacert .edge/ca.crt https://localhost:8443/audit
+curl -s --cacert .edge/ca.crt "https://localhost:8443/approvals?status=pending"</pre>
+  </div>
+
+  <h3>Observability — the collector, Prometheus, Grafana, Jaeger</h3>
+  <div class="codeblock">
+    <p class="cap">commands — the pipeline and its three front ends</p>
+<pre># the collector's own account of what it exported (failed spans included)
+kubectl -n agent-platform port-forward svc/otel-collector 8888:8888 &
+curl -s localhost:8888/metrics | grep '^otelcol_exporter_.*spans'
+
+# Prometheus — every scrape target and its health (Q18)
+kubectl -n agent-platform port-forward svc/prometheus 9090:9090 &
+curl -s localhost:9090/api/v1/targets | python3 -c 'import sys,json; [print(t["labels"]["job"], t["health"]) for t in json.load(sys.stdin)["data"]["activeTargets"]]'
+
+# Grafana — the provisioned "Agent Identity Platform" dashboard
+kubectl -n agent-platform port-forward svc/grafana 3000:3000 &
+#   open http://localhost:3000
+
+# Jaeger — one trace, with identity on its spans
+./scripts/show-trace.sh
+kubectl -n agent-platform port-forward svc/jaeger 16686:16686 &
+#   open http://localhost:16686</pre>
+  </div>
+
+  <h3>The model — Ollama, on your host</h3>
+  <p>
+    The model does not run in the cluster. The gateway reaches it over
+    <code>host.docker.internal:11434</code>, so inspect it where it lives.
+  </p>
+  <div class="codeblock">
+    <p class="cap">commands — the models you have, and the one in use</p>
+<pre>ollama list
+curl -s localhost:11434/api/tags | python3 -m json.tool | head
+
+# which model the gateway was told to use, and swap it without a rebuild
+kubectl -n agent-platform get configmap llm-config -o jsonpath='{.data}'
+./scripts/use-model.sh llama3.2:3b</pre>
+  </div>
+
+  <h3>The cluster's own machinery</h3>
+  <div class="codeblock">
+    <p class="cap">commands — mesh, edge, autoscaling, supply chain</p>
+<pre># mesh — mTLS on every hop; tls-check.sh reads the mesh's own edges
+linkerd check
+linkerd -n agent-platform viz stat deploy
+./scripts/tls-check.sh
+
+# edge — the ingress is the only published door, and it is ours to trust
+kubectl -n ingress-nginx get pods,svc
+./start.sh
+ls -l .edge/ca.crt
+
+# autoscaling — the HPA, the meter it reads, and the metric it follows
+kubectl -n agent-platform get hpa
+kubectl top pods -n agent-platform
+kubectl get --raw "/apis/external.metrics.k8s.io/v1beta1/namespaces/agent-platform/approvals_pending"
+
+# supply chain — declared in the tree, not installed by the local setup
+#   deploy/kind/manifests/supply-chain/kyverno-verify-images.yaml
+kubectl get clusterpolicy 2>/dev/null || echo "kyverno not installed in the kind demo"</pre>
+  </div>
+
+  <div class="callout ok">
+    <b>The rule of thumb</b>
+    <b style="display:inline">·</b> Serves the user → <b>the edge</b>
+    (<code>https://localhost:8443</code>). <b style="display:inline">·</b> Infrastructure with a
+    UI or a data API → <b>port-forward</b> to localhost. <b style="display:inline">·</b> A registry
+    or a datastore → <b>exec</b> the CLI inside its pod. And <code>./status.sh</code> plus
+    <code>./logs.sh</code> answer the two questions you have first: <i>is it up</i>, and
+    <i>what is it doing</i>.
+  </div>
+</section>
+
+<section id="svid-client">
+  <h2><span class="qnum">23</span>Is the agent's SVID the same as its Keycloak <code>client_id</code>?</h2>
+  <p class="answer">
+    <b>No — one is the name, the other is the proof.</b> The <code>client_id</code> is the SPIFFE
+    ID as a stable <i>string</i> in the realm; the SVID is a short-lived <i>credential</i> SPIRE
+    mints for that identity. They are tied together — the JWT-SVID's subject is the same URI as the
+    <code>client_id</code> — but the string is not the credential, and the credential is not stored
+    anywhere.
+  </p>
+
+  <h3>The <code>client_id</code> is the SPIFFE ID</h3>
+  <p>
+    Keycloak's client for the agent is named by the identity itself. In the realm template
+    (<code>deploy/kind/manifests/keycloak/realm.json.tmpl</code>), the client id <i>is</i> the
+    SPIFFE ID:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the agent client in the realm template</p>
+<pre>"clientId": "spiffe://acme.com/ns/agent-platform/sa/agent",</pre>
+  </div>
+
+  <h3>The SVID is the credential that proves it</h3>
+  <p>
+    The agent fetches a fresh JWT-SVID and presents it to Keycloak as the
+    <code>client_assertion</code>, naming that same SPIFFE ID as the <code>client_id</code>:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/agent/live.py</p>
+<pre>svid = fetch_jwt_svid(self._settings.spiffe_socket, self._settings.keycloak_issuer)
+return TokenExchanger(self._settings).exchange(
+    subject_token=self._user_token,
+    client_id=self._agent_id,
+    client_assertion=svid,
+)</pre>
+  </div>
+  <p>
+    Keycloak is configured to verify that assertion's signature against SPIRE's published keys
+    rather than a shared secret — which is why no client secret exists:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the same client's authenticator, from the realm template</p>
+<pre>"clientAuthenticatorType": "client-jwt",
+"serviceAccountsEnabled": true,
+"standardFlowEnabled": false,
+"directAccessGrantsEnabled": false,
+"attributes": {
+  "use.jwks.url": "true",
+  "jwks.url": "http://spire-oidc-discovery.agent-platform.svc.cluster.local:11080/keys",
+  "token.endpoint.auth.signing.alg": "ES256",
+  "standard.token.exchange.enabled": "true"
+},</pre>
+  </div>
+
+  <table>
+    <thead><tr><th></th><th>The SPIFFE ID / <code>client_id</code></th><th>The SVID</th></tr></thead>
+    <tbody>
+      <tr><td>What it is</td><td>a URI string naming the identity</td><td>a signed credential proving it</td></tr>
+      <tr><td>Where it lives</td><td>the Keycloak realm — and the policy, and the admission lists</td><td>nowhere: fetched from the Workload API and held in memory</td></tr>
+      <tr><td>What changes it</td><td>a registration decision; the same URI appears in four registries (<a href="#multi">Q11</a>)</td><td>nothing — it rotates on its own</td></tr>
+      <tr><td>How long it lasts</td><td>stable until someone changes the registration</td><td>JWT-SVID ~5 m; X.509-SVID 1 h (<a href="#agent-lifecycle">Q20</a>)</td></tr>
+      <tr><td>What uses it</td><td>the <code>client_id</code> on the exchange; the <code>azp</code> on the result</td><td>the <code>client_assertion</code>; the mTLS client cert on our hops</td></tr>
+    </tbody>
+  </table>
+
+  <div class="callout info">
+    <b>The agent holds two SVIDs, and only one is the client assertion</b>
+    Both carry the same SPIFFE ID. The <b>JWT-SVID</b> is what Keycloak sees, as the
+    <code>client_assertion</code>. The <b>X.509-SVID</b> is the mTLS client certificate on the
+    SPIFFE hops to <code>tools</code> and <code>gateway</code>. Neither is a secret you
+    provision; both expire on their own.
+  </div>
+
+  <h3>After the exchange, look at <code>azp</code></h3>
+  <p>
+    The result token's <code>azp</code> is that same SPIFFE ID — the actor acting for the human —
+    not <code>portal</code> or <code>mcp-tools</code>, which are separate clients (<a href="#rfc8693">Q14</a>). The SDK
+    reads the RFC 8693 <code>act</code> claim first and falls back to Keycloak's <code>azp</code>:
+  </p>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/tokens.py</p>
+<pre>act = claims.get("act") or {}
+workload = act.get("sub") or claims.get("azp") or "?"</pre>
+  </div>
+  <div class="callout ok">
+    <b>See it on the running cluster</b>
+    <code>./scripts/show-keycloak-users.sh</code> answers the user side; the client side is in the
+    realm above — <code>clientId == SPIFFE ID</code>, <code>clientAuthenticatorType: client-jwt</code>,
+    no <code>secret</code>. The audit's <code>tool.allowed</code> and the trace's
+    <code>policy.decision</code> span both carry the same SPIFFE ID as <code>spiffe_id</code>, so
+    the name on the header matches the name in the token.
+  </div>
+</section>
+
+<section id="oauth">
+  <h2><span class="qnum">24</span>Is there an OAuth flow, and where is it?</h2>
+  <p class="answer">
+    <b>Yes — four of them, and they are load-bearing.</b> Keycloak is an OAuth 2.0 / OIDC
+    authorization server, and the platform uses four grants, each for one job: <b>password</b> to
+    sign a person in, <b>refresh_token</b> to keep the session alive, <b>client_credentials</b> for
+    the API's own admin service account, and <b>RFC 8693 token exchange</b> for the delegation the
+    whole platform turns on — the agent acting for the user without holding their credentials
+    (Q14). The browser never talks to Keycloak: the API is the OAuth client, server-side.
+  </p>
+
+  <h3>Each flow, drawn</h3>
+  <p>
+    A box is an actor and an arrow is a call; the number on each arrow is that step in the grant.
+    The colour is the same across this page — blue is the OAuth request itself, green is a
+    response or a decision, violet is a token-endpoint or Admin API call, and amber is a call
+    that reaches a service. The first four are the flows this code runs; the fifth is the one
+    production would use instead of the password grant.
+  </p>
+<div class="card"><h4 style="margin:.1rem 0 .6rem">Sign-in — the password grant</h4><svg viewBox="0 0 960 420" width="100%" role="img" aria-label="The browser posts credentials to the API; the API, as the portal OAuth client, runs the password grant at Keycloak and returns a session to the browser.">
+  <defs>
+      <marker id="q24f1-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f1-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+    </defs>
+  <rect x="70" y="50" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">browser</text><text x="180.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">the resource owner</text>
+  <rect x="70" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">api</text><text x="180.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the OAuth client (portal)</text>
+  <rect x="670" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="780.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="780.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <line x1="150" y1="120" x2="150" y2="268" stroke="var(--accent)" marker-end="url(#q24f1-accent)"/>
+  <line x1="210" y1="270" x2="210" y2="122" stroke="var(--green)" marker-end="url(#q24f1-green)"/>
+  <line x1="290" y1="290" x2="668" y2="290" stroke="var(--accent)" marker-end="url(#q24f1-accent)"/>
+  <line x1="670" y1="320" x2="292" y2="320" stroke="var(--green)" marker-end="url(#q24f1-green)"/>
+  <text x="145" y="196" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> POST /auth/login</text>
+  <text x="140" y="214" text-anchor="end" font-size="10" fill="var(--faint)" font-weight="400">username + password</text>
+  <text x="220" y="196" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">4</tspan> session: tokens, roles, tools</text>
+  <text x="480" y="281" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> grant_type=password · client_id=portal</text>
+  <text x="480" y="341" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> access + refresh token</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">The browser never talks to Keycloak. The API is the OAuth client, so the password reaches it — which is why production replaces this with authorization code + PKCE.</p></div>
+
+<div class="card"><h4 style="margin:.1rem 0 .6rem">Staying signed in — the refresh grant</h4><svg viewBox="0 0 960 420" width="100%" role="img" aria-label="The browser sends its refresh token to the API; the API redeems it at Keycloak and returns a fresh access token and a rotated refresh token.">
+  <defs>
+      <marker id="q24f2-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f2-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+    </defs>
+  <rect x="70" y="50" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">browser</text><text x="180.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">a live session</text>
+  <rect x="70" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">api</text><text x="180.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the OAuth client (portal)</text>
+  <rect x="670" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="780.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="780.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <line x1="150" y1="120" x2="150" y2="268" stroke="var(--accent)" marker-end="url(#q24f2-accent)"/>
+  <line x1="210" y1="270" x2="210" y2="122" stroke="var(--green)" marker-end="url(#q24f2-green)"/>
+  <line x1="290" y1="290" x2="668" y2="290" stroke="var(--accent)" marker-end="url(#q24f2-accent)"/>
+  <line x1="670" y1="320" x2="292" y2="320" stroke="var(--green)" marker-end="url(#q24f2-green)"/>
+  <text x="145" y="196" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> POST /auth/refresh</text>
+  <text x="140" y="214" text-anchor="end" font-size="10" fill="var(--faint)" font-weight="400">the refresh token</text>
+  <text x="220" y="196" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">4</tspan> renewed session</text>
+  <text x="480" y="281" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> grant_type=refresh_token · client_id=portal</text>
+  <text x="480" y="341" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> new access + rotated refresh</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">The access token still lives five minutes; this is what stops that from meaning “sign in again” (Q19). Keycloak rotates the refresh token on every use.</p></div>
+
+<div class="card"><h4 style="margin:.1rem 0 .6rem">The API acting as itself — client credentials</h4><svg viewBox="0 0 960 420" width="100%" role="img" aria-label="The API authenticates as its least-privilege platform-admin service account to get a token for Keycloak's Admin API, with no user involved.">
+  <defs>
+      <marker id="q24f3-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f3-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+      <marker id="q24f3-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker>
+    </defs>
+  <rect x="70" y="150" width="250" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="195.0" y="178" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">api</text><text x="195.0" y="197" text-anchor="middle" font-size="10.5" fill="var(--muted)">the platform-admin client</text>
+  <rect x="650" y="150" width="250" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="775.0" y="178" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="775.0" y="197" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <rect x="650" y="300" width="250" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="775.0" y="328" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak Admin API</text><text x="775.0" y="347" text-anchor="middle" font-size="10.5" fill="var(--muted)">create user · grant role</text>
+  <line x1="320" y1="175" x2="648" y2="175" stroke="var(--accent)" marker-end="url(#q24f3-accent)"/>
+  <line x1="650" y1="205" x2="322" y2="205" stroke="var(--green)" marker-end="url(#q24f3-green)"/>
+  <path d="M195 220 V335 H648" fill="none" stroke="var(--violet)" marker-end="url(#q24f3-violet)"/>
+  <text x="484" y="150" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> grant_type=client_credentials</text>
+  <text x="484" y="192" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">client_id=platform-admin · client_secret</text>
+  <text x="484" y="225" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">2</tspan> service-account token</text>
+  <text x="420" y="325" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--violet)" font-weight="700">3</tspan> POST /admin/realms/… — Bearer &lt;token&gt;</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">This is the only grant with no person: it is the API managing users and roles in Keycloak (Q16). The service account holds manage-users and read-roles, nothing else.</p></div>
+
+<div class="card"><h4 style="margin:.1rem 0 .6rem">The delegation — RFC 8693 token exchange</h4><svg viewBox="0 0 980 600" width="100%" role="img" aria-label="The agent exchanges the user's token at Keycloak, authenticating with a JWT-SVID as the client assertion, for a token audienced to the tool server whose subject is the user and whose actor is the agent; it calls the tools, which asks OPA.">
+  <defs>
+      <marker id="q24f4-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f4-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--amber)"/></marker>
+      <marker id="q24f4-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+    </defs>
+  <rect x="60" y="50" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">browser (via the api)</text><text x="180.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">the resource owner</text>
+  <rect x="700" y="50" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="820.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="820.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <rect x="60" y="320" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="348" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">agent</text><text x="180.0" y="367" text-anchor="middle" font-size="10.5" fill="var(--muted)">the client — holds no secret</text>
+  <rect x="700" y="320" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="820.0" y="348" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">tools</text><text x="820.0" y="367" text-anchor="middle" font-size="10.5" fill="var(--muted)">the resource server</text>
+  <rect x="700" y="490" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="820.0" y="518" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">OPA</text><text x="820.0" y="537" text-anchor="middle" font-size="10.5" fill="var(--muted)">policy</text>
+  <line x1="180" y1="120" x2="180" y2="318" stroke="var(--accent)" marker-end="url(#q24f4-accent)"/>
+  <line x1="300" y1="350" x2="698" y2="105" stroke="var(--accent)" marker-end="url(#q24f4-accent)"/>
+  <line x1="700" y1="128" x2="302" y2="375" stroke="var(--green)" marker-end="url(#q24f4-green)"/>
+  <line x1="300" y1="365" x2="698" y2="365" stroke="var(--amber)" marker-end="url(#q24f4-amber)"/>
+  <line x1="790" y1="400" x2="790" y2="488" stroke="var(--green)" marker-end="url(#q24f4-green)"/>
+  <line x1="850" y1="490" x2="850" y2="402" stroke="var(--green)" marker-end="url(#q24f4-green)"/>
+  <text x="195" y="225" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> the user's token (aud=agent)</text>
+  <text x="430" y="168" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> grant_type=token-exchange</text>
+  <text x="430" y="186" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">client_id = SPIFFE ID</text>
+  <text x="430" y="202" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">client_assertion = JWT-SVID</text>
+  <text x="560" y="300" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> aud=mcp-tools · sub=user · azp=agent</text>
+  <text x="500" y="355" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--amber)" font-weight="700">4</tspan> Bearer &lt;token&gt; + X-Workload-Token &lt;JWT-SVID&gt;</text>
+  <text x="770" y="445" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">5</tspan> policy question</text>
+  <text x="770" y="475" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">6</tspan> allow | deny | require_approval</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">This is the flow the platform turns on: the token's subject is the person, its actor is the agent, and it is valid at one service — so the agent acts for the user without ever holding their credentials (Q14).</p></div>
+
+<div class="card"><h4 style="margin:.1rem 0 .6rem">For comparison — what production would use</h4><svg viewBox="0 0 1080 560" width="100%" role="img" aria-label="The OAuth 2.0 authorization code flow with PKCE: the client redirects the browser to the authorization server, the user signs in, the browser returns an authorization code, the client redeems it for tokens, and calls the resource server with a bearer token.">
+  <defs>
+      <marker id="q24f5-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f5-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--amber)"/></marker>
+      <marker id="q24f5-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+      <marker id="q24f5-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+      <marker id="q24f5-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker>
+    </defs>
+  <rect x="60" y="40" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="68" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Resource owner</text><text x="180.0" y="87" text-anchor="middle" font-size="10.5" fill="var(--muted)">user + browser</text>
+  <rect x="700" y="40" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="820.0" y="68" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Authorization server</text><text x="820.0" y="87" text-anchor="middle" font-size="10.5" fill="var(--muted)">Keycloak</text>
+  <rect x="60" y="420" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="448" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Client</text><text x="180.0" y="467" text-anchor="middle" font-size="10.5" fill="var(--muted)">web app / BFF</text>
+  <rect x="700" y="420" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="820.0" y="448" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Resource server</text><text x="820.0" y="467" text-anchor="middle" font-size="10.5" fill="var(--muted)">the api</text>
+  <line x1="120" y1="420" x2="120" y2="112" stroke="var(--accent)" marker-end="url(#q24f5-accent)"/>
+  <line x1="260" y1="110" x2="260" y2="418" stroke="var(--accent)" marker-end="url(#q24f5-accent)"/>
+  <line x1="300" y1="60" x2="698" y2="60" stroke="var(--accent)" marker-end="url(#q24f5-accent)"/>
+  <line x1="700" y1="90" x2="302" y2="90" stroke="var(--green)" marker-end="url(#q24f5-green)"/>
+  <line x1="300" y1="440" x2="698" y2="105" stroke="var(--violet)" marker-end="url(#q24f5-violet)"/>
+  <line x1="700" y1="128" x2="302" y2="470" stroke="var(--violet)" marker-end="url(#q24f5-violet)"/>
+  <line x1="300" y1="455" x2="698" y2="455" stroke="var(--amber)" marker-end="url(#q24f5-amber)"/>
+  <line x1="700" y1="485" x2="302" y2="485" stroke="var(--green)" marker-end="url(#q24f5-green)"/>
+  <line x1="880" y1="420" x2="880" y2="112" stroke="var(--muted)" stroke-dasharray="5 4" marker-end="url(#q24f5-muted)"/>
+  <text x="128" y="200" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> redirect + PKCE</text>
+  <text x="499" y="50" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> sign in + consent</text>
+  <text x="499" y="112" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> redirect back with code</text>
+  <text x="268" y="290" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">4</tspan> code to redirect URI</text>
+  <text x="499" y="240" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--violet)" font-weight="700">5</tspan> POST /token</text>
+  <text x="499" y="258" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">(code + verifier)</text>
+  <text x="300" y="345" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--violet)" font-weight="700">6</tspan> access + refresh + ID</text>
+  <text x="499" y="447" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--amber)" font-weight="700">7</tspan> API call with Bearer</text>
+  <text x="499" y="507" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">8</tspan> protected resource</text>
+  <text x="888" y="270" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--muted)" font-weight="700">9</tspan> validate (JWKS / introspect)</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">Not in this code: the demo uses the password grant server-side. This is the shape a real deployment adopts (Q19) — the browser talks to Keycloak, the refresh token lives in an httpOnly cookie, and the delegation half of the platform is unchanged.</p></div>
+
+  <h3>Who plays which OAuth role</h3>
+  <table>
+    <thead><tr><th>Role</th><th>Who</th></tr></thead>
+    <tbody>
+      <tr><td><b>Authorization server</b></td><td>Keycloak — the realm <code>agent-platform</code></td></tr>
+      <tr><td><b>OAuth client</b></td><td>the API (the <code>portal</code> and <code>platform-admin</code> clients) and the agent (a client whose id is its SPIFFE ID)</td></tr>
+      <tr><td><b>Resource server</b></td><td>the API, the tool server and the gateway — each verifies the token before it acts</td></tr>
+      <tr><td><b>Resource owner</b></td><td>the signed-in person, whose <code>sub</code>, roles and tenant travel in the token</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The four grants</h3>
+  <table>
+    <thead><tr><th>Grant</th><th>Client</th><th>Made by</th><th>What it yields</th></tr></thead>
+    <tbody>
+      <tr><td><code>password</code> (ROPC)</td><td><code>portal</code></td><td>the API, server-side, for the UI</td><td>the person's access token (<code>aud=agent</code>, <code>aud=mcp-tools</code>) and a refresh token</td></tr>
+      <tr><td><code>refresh_token</code></td><td><code>portal</code></td><td>the API, for the UI</td><td>a fresh access token and a rotated refresh token</td></tr>
+      <tr><td><code>client_credentials</code></td><td><code>platform-admin</code></td><td>the API, for Keycloak Admin API writes</td><td>a service-account token — no person</td></tr>
+      <tr><td><code>urn:ietf:params:oauth:grant-type:token-exchange</code></td><td class="mono">spiffe://…/sa/agent</td><td>the agent, per tool call</td><td>a token for <code>mcp-tools</code>: <code>sub</code>=the person, <code>azp</code>=the agent</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Two of the four clients are worth naming as <i>not</i> grants: <code>mcp-tools</code> is an
+    audience the resource servers accept tokens for, and <code>demo-cli</code> /
+    <code>manager-cli</code> exist so the scripted suites can sign in with the password grant.
+  </p>
+
+  <h3>The four grants in code</h3>
+  <div class="codeblock">
+    <p class="cap">app/api/auth.py — password (sign-in) and refresh_token</p>
+<pre>    resp = httpx.post(
+        settings.token_endpoint,
+        data={
+            "grant_type": "password",
+            "client_id": os.environ.get("PORTAL_CLIENT_ID", "portal"),
+            "client_secret": os.environ.get("PORTAL_SECRET", ""),
+            "username": username,
+            "password": password,
+        },
+        timeout=10,
+    )</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/api/auth.py — refresh_token</p>
+<pre>        data={
+            "grant_type": "refresh_token",
+            "client_id": os.environ.get("PORTAL_CLIENT_ID", "portal"),
+            "client_secret": os.environ.get("PORTAL_SECRET", ""),
+            "refresh_token": refresh_token,
+        },</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/api/identity.py — client_credentials</p>
+<pre>        resp = self._client.post(
+            f"{self._issuer}/protocol/openid-connect/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+            },
+            timeout=10,
+        )</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/exchange.py — the token-exchange grant</p>
+<pre>TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"</pre>
+  </div>
+  <p>
+    The exchange's request data, and the client assertion that stands in for a secret, are quoted
+    in full in Q14; the point here is that it is the same one token endpoint, with a different
+    <code>grant_type</code>.
+  </p>
+
+  <div class="callout info">
+    <b>The browser never talks to Keycloak</b>
+    Sign-in is the <b>password grant, run server-side</b> in the API: the UI posts the username and
+    password to <code>/auth/login</code>, and the API calls Keycloak. That is simple, and it is
+    <b>not</b> what a production deployment should use — OAuth 2.1 removes the password grant. In
+    production the browser would use <b>authorization-code + PKCE</b> and keep the refresh token in
+    an <code>httpOnly</code> cookie; the delegation half (steps 7–10) would not change at all
+    (Q19).
+  </div>
+  <div class="callout ok">
+    <b>Three of the grants are plumbing; the fourth is the architecture</b>
+    Password, refresh and client-credentials are how a session and a service account work. The
+    <b>token exchange</b> is the one the design rests on: it produces a token whose <code>sub</code>
+    is the person and whose <code>azp</code> is the agent, audienced to exactly one service — which
+    is how "the agent acts for the user, without holding the user's credentials" is enforced rather
+    than promised (ADR-0002, Q14).
+  </div>
+  <div class="callout warn">
+    <b>Two things here are called "token", and the tool server checks both</b>
+    An <b>OAuth access token</b> (steps 3 and 8) carries the human and their authorization. A
+    <b>SPIFFE JWT-SVID</b> (step 9, the <code>X-Workload-Token</code> header) carries the
+    workload's identity. The tool server verifies the access token's signature, audience and
+    issued-to, <i>and</i> that the workload which exchanged it is the one policy trusts — so a
+    copied token presented by a different workload is refused (Q23).
   </div>
 </section>
 
