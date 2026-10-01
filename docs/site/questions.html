@@ -161,6 +161,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#users">Where are the users stored?</a></li>
         <li><a href="#svid-client">Is the agent's SVID the same as its Keycloak client_id?</a></li>
         <li><a href="#oauth">Is there an OAuth flow, and where is it?</a></li>
+        <li><a href="#oidc-login">Why not OIDC for user login?</a></li>
         <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
         <li><a href="#session">Do users have to sign in every five minutes?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
@@ -2415,6 +2416,115 @@ workload = act.get("sub") or claims.get("azp") or "?"</pre>
     workload's identity. The tool server verifies the access token's signature, audience and
     issued-to, <i>and</i> that the workload which exchanged it is the one policy trusts — so a
     copied token presented by a different workload is refused (Q23).
+  </div>
+</section>
+
+<section id="oidc-login">
+  <h2><span class="qnum">25</span>So why are we not using OIDC for user login?</h2>
+  <p class="answer">
+    <b>We are using the OIDC provider — we are just not using the redirect.</b> Keycloak is the
+    OpenID Provider, the realm's clients speak <code>openid-connect</code>, and every service
+    verifies tokens against the realm's issuer and JWKS. What the demo skips is the
+    <b>authorization-code flow</b> — the browser round-trip to <code>/authorize</code> — that
+    "OIDC login" usually means. Instead the realm turns the standard flow <b>off</b> and direct
+    access grants <b>on</b>, and the API runs the password grant server-side. It is a deliberate
+    demo choice, named in the code rather than hidden (Q19, Q24).
+  </p>
+
+  <h3>What we use, and what we skip</h3>
+  <table>
+    <thead><tr><th></th><th>This platform</th><th>A redirect OIDC login</th></tr></thead>
+    <tbody>
+      <tr><td>Provider</td><td>Keycloak, realm <code>agent-platform</code></td><td>the same</td></tr>
+      <tr><td>Token endpoint</td><td><code>/protocol/openid-connect/token</code></td><td>the same</td></tr>
+      <tr><td>Key discovery</td><td>JWKS at <code>/protocol/openid-connect/certs</code>; issuer and audience checked</td><td>the same, usually via <code>/.well-known/openid-configuration</code></td></tr>
+      <tr><td>Grant</td><td><b>password</b> (ROPC), run server-side in the API</td><td><b>authorization code</b> + PKCE, run in the browser</td></tr>
+      <tr><td>Where the browser goes</td><td>only the API — never Keycloak</td><td>Keycloak's hosted login page, then back</td></tr>
+      <tr><td>Token consumed</td><td>the <b>access token</b> (roles, tenant)</td><td>the access token <i>and</i> an ID token; often <code>userinfo</code></td></tr>
+    </tbody>
+  </table>
+  <p>
+    So the honest phrasing is: <b>OAuth 2.0 password grant, against an OIDC-capable server, with
+    OIDC's discovery and JWKS used for verification.</b> We do not request an ID token and never
+    call <code>userinfo</code> — the app reads identity and roles from the access token.
+  </p>
+
+  <h3>Why the demo does it this way</h3>
+  <ol class="steps">
+    <li>
+      <b>It keeps the demo self-contained.</b> The browser only ever talks to the API, so there is
+      no redirect URI to register and host, no route from the browser to Keycloak, no CORS or
+      third-party-cookie surface — and it sidesteps the puzzle in Q3, where
+      <code>KC_HOSTNAME_STRICT</code> pins the realm to the internal name <code>keycloak</code>.
+      The ingress routes <code>/</code> to the API alone.
+    </li>
+    <li>
+      <b>The API is already the OAuth client.</b> It holds the <code>portal</code> client secret
+      and runs every other Keycloak call, so minting and verifying the session in one place is one
+      fewer moving part — and the token can be issued with both audiences in a single place.
+    </li>
+    <li>
+      <b>It is documented as a demo limitation, not dressed up as a design win.</b> The password
+      grant is removed in OAuth 2.1, and the pages say so and draw the replacement (Q24, flow 5).
+    </li>
+  </ol>
+
+  <h3>The realm says it out loud</h3>
+  <p>
+    The realm template (<code>deploy/kind/manifests/keycloak/realm.json.tmpl</code>) turns the
+    standard flow off and direct access grants on for the <code>portal</code> client:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the <code>portal</code> client in the realm template</p>
+<pre>"directAccessGrantsEnabled": true,
+"standardFlowEnabled": false,</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/api/auth.py — the login grant</p>
+<pre>        data={
+            "grant_type": "password",
+            "client_id": os.environ.get("PORTAL_CLIENT_ID", "portal"),
+            "client_secret": os.environ.get("PORTAL_SECRET", ""),
+            "username": username,
+            "password": password,
+        },</pre>
+  </div>
+  <p>
+    And the verification is ordinary OIDC/OAuth: the JWKS URL is built from the realm issuer, and
+    <code>jwt.decode</code> checks the signature, the audience and the issuer:
+  </p>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/config.py</p>
+<pre>    def jwks_url(self) -> str:
+        return f"{self.keycloak_issuer}/protocol/openid-connect/certs"</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/tokens.py</p>
+<pre>            claims = jwt.decode(
+                token,
+                key,
+                algorithms=["RS256", "ES256"],
+                audience=audience,
+                issuer=self._settings.keycloak_issuer,
+            )</pre>
+  </div>
+
+  <div class="callout warn">
+    <b>The trade-off, stated plainly</b>
+    With the password grant the user's password reaches the <b>API</b> (server-side), and the API
+    holds a client secret. That is acceptable for a synthetic, local demo where the API is already
+    the trusted broker for everything else — and it is <b>not</b> acceptable for a real
+    deployment, which is why the switch below is the first item in the production checklist
+    (<code>docs/enrollment-and-roles.md</code>).
+  </div>
+  <div class="callout ok">
+    <b>What switching to OIDC login actually takes</b>
+    Enable the standard flow on <code>portal</code> (and/or add a public PKCE client), register the
+    redirect URI, let the browser hit <code>/authorize</code> and come back with a code, then
+    redeem it — at the API (authorization-code) or in the SPA (PKCE), with the refresh token in an
+    <code>httpOnly</code> cookie (Q19). <b>The delegation half does not move</b>: the agent's RFC
+    8693 exchange and every downstream check are identical, because they were never coupled to how
+    the person signed in.
   </div>
 </section>
 
