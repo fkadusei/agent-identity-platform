@@ -160,6 +160,7 @@ ol.steps>li b{color:var(--ink)}
       <ol>
         <li><a href="#users">Where are the users stored?</a></li>
         <li><a href="#svid-client">Is the agent's SVID the same as its Keycloak client_id?</a></li>
+        <li><a href="#oauth">Is there an OAuth flow, and where is it?</a></li>
         <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
         <li><a href="#session">Do users have to sign in every five minutes?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
@@ -2179,6 +2180,139 @@ workload = act.get("sub") or claims.get("azp") or "?"</pre>
     no <code>secret</code>. The audit's <code>tool.allowed</code> and the trace's
     <code>policy.decision</code> span both carry the same SPIFFE ID as <code>spiffe_id</code>, so
     the name on the header matches the name in the token.
+  </div>
+</section>
+
+<section id="oauth">
+  <h2><span class="qnum">24</span>Is there an OAuth flow, and where is it?</h2>
+  <p class="answer">
+    <b>Yes — four of them, and they are load-bearing.</b> Keycloak is an OAuth 2.0 / OIDC
+    authorization server, and the platform uses four grants, each for one job: <b>password</b> to
+    sign a person in, <b>refresh_token</b> to keep the session alive, <b>client_credentials</b> for
+    the API's own admin service account, and <b>RFC 8693 token exchange</b> for the delegation the
+    whole platform turns on — the agent acting for the user without holding their credentials
+    (Q14). The browser never talks to Keycloak: the API is the OAuth client, server-side.
+  </p>
+
+  <h3>The flow, drawn</h3>
+  <pre class="ascii"> ── the human session ────────────────────────────────────────────────────────
+  (1) browser  ──POST /auth/login {username, password}──▶  api
+  (2) api      ──grant_type=password, client=portal────▶  Keycloak
+  (3) Keycloak ──▶ api:  access token (aud=agent, aud=mcp-tools) + refresh token
+  (4) later:  POST /auth/refresh  →  grant_type=refresh_token, client=portal
+
+ ── the API acting as itself ─────────────────────────────────────────────────
+  (5) api ──grant_type=client_credentials, client=platform-admin──▶ Keycloak
+                                  ◀── service-account token → Keycloak Admin API
+
+ ── the delegation: the agent acting for the user ────────────────────────────
+  (6) the user's token ──▶  agent
+  (7) agent ──grant_type=urn:ietf:params:oauth:grant-type:token-exchange──▶ Keycloak
+              client_id        = spiffe://acme.com/ns/agent-platform/sa/agent
+              client_assertion = the agent's JWT-SVID       (client-jwt, no secret)
+              subject_token    = the user's access token
+  (8) Keycloak ──▶ agent:  sub=alice, azp=agent, aud=mcp-tools, tenant=acme
+  (9) agent ──Authorization: Bearer &lt;token&gt; + X-Workload-Token: Bearer &lt;JWT-SVID&gt;──▶ tools
+ (10) tools ──{agent, user, roles, tenant, tool, amount}──▶ OPA ──▶ allow | deny | require_approval</pre>
+  <p class="mono" style="color:var(--faint);font-size:.8rem">the four grants, and where each call is made</p>
+
+  <h3>Who plays which OAuth role</h3>
+  <table>
+    <thead><tr><th>Role</th><th>Who</th></tr></thead>
+    <tbody>
+      <tr><td><b>Authorization server</b></td><td>Keycloak — the realm <code>agent-platform</code></td></tr>
+      <tr><td><b>OAuth client</b></td><td>the API (the <code>portal</code> and <code>platform-admin</code> clients) and the agent (a client whose id is its SPIFFE ID)</td></tr>
+      <tr><td><b>Resource server</b></td><td>the API, the tool server and the gateway — each verifies the token before it acts</td></tr>
+      <tr><td><b>Resource owner</b></td><td>the signed-in person, whose <code>sub</code>, roles and tenant travel in the token</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The four grants</h3>
+  <table>
+    <thead><tr><th>Grant</th><th>Client</th><th>Made by</th><th>What it yields</th></tr></thead>
+    <tbody>
+      <tr><td><code>password</code> (ROPC)</td><td><code>portal</code></td><td>the API, server-side, for the UI</td><td>the person's access token (<code>aud=agent</code>, <code>aud=mcp-tools</code>) and a refresh token</td></tr>
+      <tr><td><code>refresh_token</code></td><td><code>portal</code></td><td>the API, for the UI</td><td>a fresh access token and a rotated refresh token</td></tr>
+      <tr><td><code>client_credentials</code></td><td><code>platform-admin</code></td><td>the API, for Keycloak Admin API writes</td><td>a service-account token — no person</td></tr>
+      <tr><td><code>urn:ietf:params:oauth:grant-type:token-exchange</code></td><td class="mono">spiffe://…/sa/agent</td><td>the agent, per tool call</td><td>a token for <code>mcp-tools</code>: <code>sub</code>=the person, <code>azp</code>=the agent</td></tr>
+    </tbody>
+  </table>
+  <p>
+    Two of the four clients are worth naming as <i>not</i> grants: <code>mcp-tools</code> is an
+    audience the resource servers accept tokens for, and <code>demo-cli</code> /
+    <code>manager-cli</code> exist so the scripted suites can sign in with the password grant.
+  </p>
+
+  <h3>The four grants in code</h3>
+  <div class="codeblock">
+    <p class="cap">app/api/auth.py — password (sign-in) and refresh_token</p>
+<pre>    resp = httpx.post(
+        settings.token_endpoint,
+        data={
+            "grant_type": "password",
+            "client_id": os.environ.get("PORTAL_CLIENT_ID", "portal"),
+            "client_secret": os.environ.get("PORTAL_SECRET", ""),
+            "username": username,
+            "password": password,
+        },
+        timeout=10,
+    )</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/api/auth.py — refresh_token</p>
+<pre>        data={
+            "grant_type": "refresh_token",
+            "client_id": os.environ.get("PORTAL_CLIENT_ID", "portal"),
+            "client_secret": os.environ.get("PORTAL_SECRET", ""),
+            "refresh_token": refresh_token,
+        },</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">app/api/identity.py — client_credentials</p>
+<pre>        resp = self._client.post(
+            f"{self._issuer}/protocol/openid-connect/token",
+            data={
+                "grant_type": "client_credentials",
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+            },
+            timeout=10,
+        )</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/exchange.py — the token-exchange grant</p>
+<pre>TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"</pre>
+  </div>
+  <p>
+    The exchange's request data, and the client assertion that stands in for a secret, are quoted
+    in full in Q14; the point here is that it is the same one token endpoint, with a different
+    <code>grant_type</code>.
+  </p>
+
+  <div class="callout info">
+    <b>The browser never talks to Keycloak</b>
+    Sign-in is the <b>password grant, run server-side</b> in the API: the UI posts the username and
+    password to <code>/auth/login</code>, and the API calls Keycloak. That is simple, and it is
+    <b>not</b> what a production deployment should use — OAuth 2.1 removes the password grant. In
+    production the browser would use <b>authorization-code + PKCE</b> and keep the refresh token in
+    an <code>httpOnly</code> cookie; the delegation half (steps 7–10) would not change at all
+    (Q19).
+  </div>
+  <div class="callout ok">
+    <b>Three of the grants are plumbing; the fourth is the architecture</b>
+    Password, refresh and client-credentials are how a session and a service account work. The
+    <b>token exchange</b> is the one the design rests on: it produces a token whose <code>sub</code>
+    is the person and whose <code>azp</code> is the agent, audienced to exactly one service — which
+    is how "the agent acts for the user, without holding the user's credentials" is enforced rather
+    than promised (ADR-0002, Q14).
+  </div>
+  <div class="callout warn">
+    <b>Two things here are called "token", and the tool server checks both</b>
+    An <b>OAuth access token</b> (steps 3 and 8) carries the human and their authorization. A
+    <b>SPIFFE JWT-SVID</b> (step 9, the <code>X-Workload-Token</code> header) carries the
+    workload's identity. The tool server verifies the access token's signature, audience and
+    issued-to, <i>and</i> that the workload which exchanged it is the one policy trusts — so a
+    copied token presented by a different workload is refused (Q23).
   </div>
 </section>
 
