@@ -427,7 +427,9 @@ Answered so far: the user store, one agent, approvals, disk vs KMS, RFC 8693,
 MCP (Q15), admin-created users (Q16), the policy-as-code demo (Q17), the
 Prometheus UI (Q18), silent token renewal (Q19), the agent lifecycle (Q20),
 revoking a rogue agent (Q21), inspecting every component (Q22), the SVID versus
-the Keycloak client_id (Q23), and the four OAuth grants and where they sit (Q24).
+the Keycloak client_id (Q23), and the four OAuth grants with an inline-SVG flow
+diagram each, plus the production authorization-code + PKCE flow for comparison
+(Q24).
 
 To read them:
 ```sh

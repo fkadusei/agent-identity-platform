@@ -2194,27 +2194,129 @@ workload = act.get("sub") or claims.get("azp") or "?"</pre>
     (Q14). The browser never talks to Keycloak: the API is the OAuth client, server-side.
   </p>
 
-  <h3>The flow, drawn</h3>
-  <pre class="ascii"> ── the human session ────────────────────────────────────────────────────────
-  (1) browser  ──POST /auth/login {username, password}──▶  api
-  (2) api      ──grant_type=password, client=portal────▶  Keycloak
-  (3) Keycloak ──▶ api:  access token (aud=agent, aud=mcp-tools) + refresh token
-  (4) later:  POST /auth/refresh  →  grant_type=refresh_token, client=portal
+  <h3>Each flow, drawn</h3>
+  <p>
+    A box is an actor and an arrow is a call; the number on each arrow is that step in the grant.
+    The colour is the same across this page — blue is the OAuth request itself, green is a
+    response or a decision, violet is the token the model boundary never sees, amber is the call
+    that reaches a service (Q14). The first four are the flows this code runs; the fifth is the
+    one production would use instead of the password grant.
+  </p>
+<div class="card"><h4 style="margin:.1rem 0 .6rem">Sign-in — the password grant</h4><svg viewBox="0 0 960 420" width="100%" role="img" aria-label="The browser posts credentials to the API; the API, as the portal OAuth client, runs the password grant at Keycloak and returns a session to the browser.">
+  <defs>
+      <marker id="q24f1-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f1-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+    </defs>
+  <rect x="70" y="50" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">browser</text><text x="180.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">the resource owner</text>
+  <rect x="70" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">api</text><text x="180.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the OAuth client (portal)</text>
+  <rect x="670" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="780.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="780.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <line x1="150" y1="120" x2="150" y2="268" stroke="var(--accent)" marker-end="url(#q24f1-accent)"/>
+  <line x1="210" y1="270" x2="210" y2="122" stroke="var(--green)" marker-end="url(#q24f1-green)"/>
+  <line x1="290" y1="290" x2="668" y2="290" stroke="var(--accent)" marker-end="url(#q24f1-accent)"/>
+  <line x1="670" y1="320" x2="292" y2="320" stroke="var(--green)" marker-end="url(#q24f1-green)"/>
+  <text x="145" y="196" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> POST /auth/login</text>
+  <text x="140" y="214" text-anchor="end" font-size="10" fill="var(--faint)" font-weight="400">username + password</text>
+  <text x="220" y="196" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">4</tspan> session: tokens, roles, tools</text>
+  <text x="480" y="281" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> grant_type=password · client_id=portal</text>
+  <text x="480" y="341" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> access + refresh token</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">The browser never talks to Keycloak. The API is the OAuth client, so the password reaches it — which is why production replaces this with authorization code + PKCE.</p></div>
 
- ── the API acting as itself ─────────────────────────────────────────────────
-  (5) api ──grant_type=client_credentials, client=platform-admin──▶ Keycloak
-                                  ◀── service-account token → Keycloak Admin API
+<div class="card"><h4 style="margin:.1rem 0 .6rem">Staying signed in — the refresh grant</h4><svg viewBox="0 0 960 420" width="100%" role="img" aria-label="The browser sends its refresh token to the API; the API redeems it at Keycloak and returns a fresh access token and a rotated refresh token.">
+  <defs>
+      <marker id="q24f2-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f2-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+    </defs>
+  <rect x="70" y="50" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">browser</text><text x="180.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">a live session</text>
+  <rect x="70" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">api</text><text x="180.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the OAuth client (portal)</text>
+  <rect x="670" y="270" width="220" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="780.0" y="298" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="780.0" y="317" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <line x1="150" y1="120" x2="150" y2="268" stroke="var(--accent)" marker-end="url(#q24f2-accent)"/>
+  <line x1="210" y1="270" x2="210" y2="122" stroke="var(--green)" marker-end="url(#q24f2-green)"/>
+  <line x1="290" y1="290" x2="668" y2="290" stroke="var(--accent)" marker-end="url(#q24f2-accent)"/>
+  <line x1="670" y1="320" x2="292" y2="320" stroke="var(--green)" marker-end="url(#q24f2-green)"/>
+  <text x="145" y="196" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> POST /auth/refresh</text>
+  <text x="140" y="214" text-anchor="end" font-size="10" fill="var(--faint)" font-weight="400">the refresh token</text>
+  <text x="220" y="196" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">4</tspan> renewed session</text>
+  <text x="480" y="281" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> grant_type=refresh_token · client_id=portal</text>
+  <text x="480" y="341" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> new access + rotated refresh</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">The access token still lives five minutes; this is what stops that from meaning “sign in again” (Q19). Keycloak rotates the refresh token on every use.</p></div>
 
- ── the delegation: the agent acting for the user ────────────────────────────
-  (6) the user's token ──▶  agent
-  (7) agent ──grant_type=urn:ietf:params:oauth:grant-type:token-exchange──▶ Keycloak
-              client_id        = spiffe://acme.com/ns/agent-platform/sa/agent
-              client_assertion = the agent's JWT-SVID       (client-jwt, no secret)
-              subject_token    = the user's access token
-  (8) Keycloak ──▶ agent:  sub=alice, azp=agent, aud=mcp-tools, tenant=acme
-  (9) agent ──Authorization: Bearer &lt;token&gt; + X-Workload-Token: Bearer &lt;JWT-SVID&gt;──▶ tools
- (10) tools ──{agent, user, roles, tenant, tool, amount}──▶ OPA ──▶ allow | deny | require_approval</pre>
-  <p class="mono" style="color:var(--faint);font-size:.8rem">the four grants, and where each call is made</p>
+<div class="card"><h4 style="margin:.1rem 0 .6rem">The API acting as itself — client credentials</h4><svg viewBox="0 0 960 420" width="100%" role="img" aria-label="The API authenticates as its least-privilege platform-admin service account to get a token for Keycloak's Admin API, with no user involved.">
+  <defs>
+      <marker id="q24f3-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f3-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+      <marker id="q24f3-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker>
+    </defs>
+  <rect x="70" y="150" width="250" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="195.0" y="178" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">api</text><text x="195.0" y="197" text-anchor="middle" font-size="10.5" fill="var(--muted)">the platform-admin client</text>
+  <rect x="650" y="150" width="250" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="775.0" y="178" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="775.0" y="197" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <rect x="650" y="300" width="250" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="775.0" y="328" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak Admin API</text><text x="775.0" y="347" text-anchor="middle" font-size="10.5" fill="var(--muted)">create user · grant role</text>
+  <line x1="320" y1="175" x2="648" y2="175" stroke="var(--accent)" marker-end="url(#q24f3-accent)"/>
+  <line x1="650" y1="205" x2="322" y2="205" stroke="var(--green)" marker-end="url(#q24f3-green)"/>
+  <path d="M195 220 V335 H648" fill="none" stroke="var(--violet)" marker-end="url(#q24f3-violet)"/>
+  <text x="484" y="150" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> grant_type=client_credentials</text>
+  <text x="484" y="192" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">client_id=platform-admin · client_secret</text>
+  <text x="484" y="225" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">2</tspan> service-account token</text>
+  <text x="420" y="325" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--violet)" font-weight="700">3</tspan> POST /admin/realms/… — Bearer &lt;token&gt;</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">This is the only grant with no person: it is the API managing users and roles in Keycloak (Q16). The service account holds manage-users and read-roles, nothing else.</p></div>
+
+<div class="card"><h4 style="margin:.1rem 0 .6rem">The delegation — RFC 8693 token exchange</h4><svg viewBox="0 0 980 600" width="100%" role="img" aria-label="The agent exchanges the user's token at Keycloak, authenticating with a JWT-SVID as the client assertion, for a token audienced to the tool server whose subject is the user and whose actor is the agent; it calls the tools, which asks OPA.">
+  <defs>
+      <marker id="q24f4-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f4-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--amber)"/></marker>
+      <marker id="q24f4-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+    </defs>
+  <rect x="60" y="50" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">browser (via the api)</text><text x="180.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">the resource owner</text>
+  <rect x="700" y="50" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="820.0" y="78" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Keycloak</text><text x="820.0" y="97" text-anchor="middle" font-size="10.5" fill="var(--muted)">the authorization server</text>
+  <rect x="60" y="320" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="348" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">agent</text><text x="180.0" y="367" text-anchor="middle" font-size="10.5" fill="var(--muted)">the client — holds no secret</text>
+  <rect x="700" y="320" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="820.0" y="348" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">tools</text><text x="820.0" y="367" text-anchor="middle" font-size="10.5" fill="var(--muted)">the resource server</text>
+  <rect x="700" y="490" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="820.0" y="518" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">OPA</text><text x="820.0" y="537" text-anchor="middle" font-size="10.5" fill="var(--muted)">policy</text>
+  <line x1="180" y1="120" x2="180" y2="318" stroke="var(--accent)" marker-end="url(#q24f4-accent)"/>
+  <line x1="300" y1="350" x2="698" y2="105" stroke="var(--accent)" marker-end="url(#q24f4-accent)"/>
+  <line x1="700" y1="128" x2="302" y2="375" stroke="var(--green)" marker-end="url(#q24f4-green)"/>
+  <line x1="300" y1="365" x2="698" y2="365" stroke="var(--amber)" marker-end="url(#q24f4-amber)"/>
+  <line x1="790" y1="400" x2="790" y2="488" stroke="var(--green)" marker-end="url(#q24f4-green)"/>
+  <line x1="850" y1="490" x2="850" y2="402" stroke="var(--green)" marker-end="url(#q24f4-green)"/>
+  <text x="195" y="225" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> the user's token (aud=agent)</text>
+  <text x="430" y="168" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> grant_type=token-exchange</text>
+  <text x="430" y="186" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">client_id = SPIFFE ID</text>
+  <text x="430" y="202" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">client_assertion = JWT-SVID</text>
+  <text x="560" y="300" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> aud=mcp-tools · sub=user · azp=agent</text>
+  <text x="500" y="355" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--amber)" font-weight="700">4</tspan> Bearer &lt;token&gt; + X-Workload-Token &lt;JWT-SVID&gt;</text>
+  <text x="770" y="445" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">5</tspan> policy question</text>
+  <text x="770" y="475" text-anchor="end" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">6</tspan> allow | deny | require_approval</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">This is the flow the platform turns on: the token's subject is the person, its actor is the agent, and it is valid at one service — so the agent acts for the user without ever holding their credentials (Q14).</p></div>
+
+<div class="card"><h4 style="margin:.1rem 0 .6rem">For comparison — what production would use</h4><svg viewBox="0 0 1080 560" width="100%" role="img" aria-label="The OAuth 2.0 authorization code flow with PKCE: the client redirects the browser to the authorization server, the user signs in, the browser returns an authorization code, the client redeems it for tokens, and calls the resource server with a bearer token.">
+  <defs>
+      <marker id="q24f5-accent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+      <marker id="q24f5-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--amber)"/></marker>
+      <marker id="q24f5-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--green)"/></marker>
+      <marker id="q24f5-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker>
+      <marker id="q24f5-violet" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--violet)"/></marker>
+    </defs>
+  <rect x="60" y="40" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="68" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Resource owner</text><text x="180.0" y="87" text-anchor="middle" font-size="10.5" fill="var(--muted)">user + browser</text>
+  <rect x="700" y="40" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--amber-line)"/><text x="820.0" y="68" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Authorization server</text><text x="820.0" y="87" text-anchor="middle" font-size="10.5" fill="var(--muted)">Keycloak</text>
+  <rect x="60" y="420" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="180.0" y="448" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Client</text><text x="180.0" y="467" text-anchor="middle" font-size="10.5" fill="var(--muted)">web app / BFF</text>
+  <rect x="700" y="420" width="240" height="70" rx="12" fill="var(--surface)" stroke="var(--line3)"/><text x="820.0" y="448" text-anchor="middle" font-size="14.5" font-weight="700" fill="var(--ink)">Resource server</text><text x="820.0" y="467" text-anchor="middle" font-size="10.5" fill="var(--muted)">the api</text>
+  <line x1="120" y1="420" x2="120" y2="112" stroke="var(--accent)" marker-end="url(#q24f5-accent)"/>
+  <line x1="260" y1="110" x2="260" y2="418" stroke="var(--accent)" marker-end="url(#q24f5-accent)"/>
+  <line x1="300" y1="60" x2="698" y2="60" stroke="var(--accent)" marker-end="url(#q24f5-accent)"/>
+  <line x1="700" y1="90" x2="302" y2="90" stroke="var(--green)" marker-end="url(#q24f5-green)"/>
+  <line x1="300" y1="440" x2="698" y2="105" stroke="var(--violet)" marker-end="url(#q24f5-violet)"/>
+  <line x1="700" y1="128" x2="302" y2="470" stroke="var(--violet)" marker-end="url(#q24f5-violet)"/>
+  <line x1="300" y1="455" x2="698" y2="455" stroke="var(--amber)" marker-end="url(#q24f5-amber)"/>
+  <line x1="700" y1="485" x2="302" y2="485" stroke="var(--green)" marker-end="url(#q24f5-green)"/>
+  <line x1="880" y1="420" x2="880" y2="112" stroke="var(--muted)" stroke-dasharray="5 4" marker-end="url(#q24f5-muted)"/>
+  <text x="128" y="200" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">1</tspan> redirect + PKCE</text>
+  <text x="499" y="50" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">2</tspan> sign in + consent</text>
+  <text x="499" y="112" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">3</tspan> redirect back with code</text>
+  <text x="268" y="290" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--accent)" font-weight="700">4</tspan> code to redirect URI</text>
+  <text x="499" y="240" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--violet)" font-weight="700">5</tspan> POST /token</text>
+  <text x="499" y="258" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">(code + verifier)</text>
+  <text x="300" y="345" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--violet)" font-weight="700">6</tspan> access + refresh + ID</text>
+  <text x="499" y="447" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--amber)" font-weight="700">7</tspan> API call with Bearer</text>
+  <text x="499" y="507" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">8</tspan> protected resource</text>
+  <text x="888" y="270" text-anchor="start" font-size="11" fill="var(--ink2)"><tspan fill="var(--muted)" font-weight="700">9</tspan> validate (JWKS / introspect)</text>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">Not in this code: the demo uses the password grant server-side. This is the shape a real deployment adopts (Q19) — the browser talks to Keycloak, the refresh token lives in an httpOnly cookie, and the delegation half of the platform is unchanged.</p></div>
 
   <h3>Who plays which OAuth role</h3>
   <table>
