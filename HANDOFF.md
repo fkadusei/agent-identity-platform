@@ -409,7 +409,7 @@ behaviour changed, the page that describes it changes in the same PR*.
 |---|---|
 | `index.html` | The whole platform, plain language, twenty sections |
 | `agent-flow.html` | The agent end to end: the graph, the prompt, the guardrails, the tool boundary, the interrupt, the policy decision — including the upgrade (S18–S19), marked built where it is built |
-| `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, how to inspect every component (Q22), the SVID versus the Keycloak client_id (Q23), the four OAuth grants (Q24), and more |
+| `questions.html` | The questions asked while learning the platform, answered from the code: the user store, one agent, how approvals work, disk vs KMS, how to inspect every component (Q22), the SVID versus the Keycloak client_id (Q23), the four OAuth grants (Q24), why login is not a redirect (Q25), the jti on the client assertion vs X.509 (Q26), and more |
 
 There are no numbers in the list above and nothing to renumber: add a page, link
 it from the one it extends, and it is part of the set.
@@ -429,7 +429,9 @@ Prometheus UI (Q18), silent token renewal (Q19), the agent lifecycle (Q20),
 revoking a rogue agent (Q21), inspecting every component (Q22), the SVID versus
 the Keycloak client_id (Q23), and the four OAuth grants with an inline-SVG flow
 diagram each, plus the production authorization-code + PKCE flow for comparison
-(Q24).
+(Q24), why user login is the password grant rather than an OIDC redirect (Q25),
+and the JWT-SVID client assertion's `jti` — plus where X.509-SVID is still used
+(Q26).
 
 To read them:
 ```sh
