@@ -2198,9 +2198,9 @@ workload = act.get("sub") or claims.get("azp") or "?"</pre>
   <p>
     A box is an actor and an arrow is a call; the number on each arrow is that step in the grant.
     The colour is the same across this page — blue is the OAuth request itself, green is a
-    response or a decision, violet is the token the model boundary never sees, amber is the call
-    that reaches a service (Q14). The first four are the flows this code runs; the fifth is the
-    one production would use instead of the password grant.
+    response or a decision, violet is a token-endpoint or Admin API call, and amber is a call
+    that reaches a service. The first four are the flows this code runs; the fifth is the one
+    production would use instead of the password grant.
   </p>
 <div class="card"><h4 style="margin:.1rem 0 .6rem">Sign-in — the password grant</h4><svg viewBox="0 0 960 420" width="100%" role="img" aria-label="The browser posts credentials to the API; the API, as the portal OAuth client, runs the password grant at Keycloak and returns a session to the browser.">
   <defs>
