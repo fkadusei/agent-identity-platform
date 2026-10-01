@@ -162,6 +162,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#svid-client">Is the agent's SVID the same as its Keycloak client_id?</a></li>
         <li><a href="#oauth">Is there an OAuth flow, and where is it?</a></li>
         <li><a href="#oidc-login">Why not OIDC for user login?</a></li>
+        <li><a href="#jwt-svid-assertion">Why does the client assertion need a jti?</a></li>
         <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
         <li><a href="#session">Do users have to sign in every five minutes?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
@@ -2525,6 +2526,200 @@ workload = act.get("sub") or claims.get("azp") or "?"</pre>
     <code>httpOnly</code> cookie (Q19). <b>The delegation half does not move</b>: the agent's RFC
     8693 exchange and every downstream check are identical, because they were never coupled to how
     the person signed in.
+  </div>
+</section>
+
+<section id="jwt-svid-assertion">
+  <h2><span class="qnum">26</span>Why does the JWT-SVID need a <code>jti</code> — and does the agent still use X.509?</h2>
+  <p class="answer">
+    <b>Because the JWT-SVID is being used as an OAuth client assertion, not just as a bearer
+    token.</b> When a client authenticates by <i>signing a JWT</i> — <code>private_key_jwt</code>,
+    the method RFC 7523 profiles — the authorization server uses the <code>jti</code> claim to
+    detect a replay, and Keycloak requires it. SPIRE's JWT-SVIDs carry no <code>jti</code>, so this
+    project adds one. And yes, the agent <b>also</b> uses its X.509-SVID, for a different job: the
+    two SVIDs are not alternatives.
+  </p>
+
+  <h3>The sentence, one clause at a time</h3>
+  <table>
+    <thead><tr><th>Phrase</th><th>What it means</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>client assertion</b></td>
+        <td>Instead of a client <i>secret</i>, the client sends a signed JWT as proof of identity, in two form fields: <code>client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer</code> and <code>client_assertion=&lt;jwt&gt;</code>.</td>
+      </tr>
+      <tr>
+        <td><b>private_key_jwt</b></td>
+        <td>The OpenID Connect name for that method when the JWT is signed with the client's <i>private key</i> — the server verifies it against the client's registered public keys (a JWKS). Keycloak calls the authenticator <code>client-jwt</code>.</td>
+      </tr>
+      <tr>
+        <td><b>RFC 7523</b></td>
+        <td>The spec that defines this JWT-as-assertion shape and the <code>jti</code> (JWT ID) claim: a unique id per assertion, so the server can remember what it has seen and refuse a second use. Replay protection, not decoration.</td>
+      </tr>
+      <tr>
+        <td><b>SPIRE does not add one</b></td>
+        <td>A SPIRE JWT-SVID carries <code>iss</code>, <code>sub</code>, <code>aud</code>, <code>exp</code>, <code>iat</code> — and nothing else. No <code>jti</code>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>What SPIRE mints, and what Keycloak demands</h3>
+  <p>
+    The agent asks the Workload API for a JWT-SVID audienced to the realm. By default the decoded
+    assertion is missing the one claim Keycloak's client-JWT validator insists on:
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — a SPIRE JWT-SVID as it comes, decoded (no jti)</p>
+<pre>{
+  "iss": "spiffe://acme.com/ns/agent-platform/sa/agent",
+  "sub": "spiffe://acme.com/ns/agent-platform/sa/agent",
+  "aud": "http://keycloak:8080/realms/agent-platform",
+  "exp": 1789954300,
+  "iat": 1789954000
+}</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">illustrative — the same assertion with the jti this project adds at issuance</p>
+<pre>{
+  "iss": "spiffe://acme.com/ns/agent-platform/sa/agent",
+  "sub": "spiffe://acme.com/ns/agent-platform/sa/agent",
+  "aud": "http://keycloak:8080/realms/agent-platform",
+  "jti": "9f2c1d0b7a4e4f8e9c1a2b3d4e5f6071",
+  "exp": 1789954300,
+  "iat": 1789954000
+}</pre>
+  </div>
+  <div class="callout info">
+    <b>Two claims carry the identity, and the demo makes them line up</b>
+    Keycloak's client-JWT validator is happiest when the assertion's <code>iss</code> equals its
+    <code>sub</code> equals the client's <code>client_id</code>. The client id <i>is</i> the
+    SPIFFE ID and the JWT-SVID's <code>sub</code> already is, so the demo sets SPIRE's
+    <code>jwt_issuer</code> to the same value — the one place that tidies the demo, flagged in
+    the config and removed by an authorization server that understands SPIFFE issuers natively
+    (Q23, Q14).
+  </div>
+
+  <h3>The exchange this assertion travels in</h3>
+  <div class="codeblock">
+    <p class="cap">illustrative — the token-exchange request body, one assertion per call</p>
+<pre>POST /realms/agent-platform/protocol/openid-connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=urn:ietf:params:oauth:grant-type:token-exchange
+client_id=spiffe://acme.com/ns/agent-platform/sa/agent
+client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer
+client_assertion=&lt;the JWT-SVID above&gt;
+subject_token=&lt;alice's access token&gt;
+subject_token_type=urn:ietf:params:oauth:token-type:access_token
+requested_token_type=urn:ietf:params:oauth:token-type:access_token</pre>
+  </div>
+  <p>
+    The SDK builds exactly this — the two constants are the assertion's type and the grant:
+  </p>
+  <div class="codeblock">
+    <p class="cap">sdk/agentnhi/exchange.py</p>
+<pre>TOKEN_EXCHANGE_GRANT = "urn:ietf:params:oauth:grant-type:token-exchange"
+ACCESS_TOKEN_TYPE = "urn:ietf:params:oauth:token-type:access_token"
+JWT_BEARER_ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"</pre>
+  </div>
+
+  <h3>The two SPIRE builds that close the gap</h3>
+  <p>
+    Adding <code>jti</code> is only half of it. SPIRE also <b>caches</b> JWT-SVIDs per
+    (SPIFFE ID, audience), so a second exchange in a session would reuse the same assertion — and
+    a reused <code>jti</code> is exactly what Keycloak is built to reject ("Token reuse
+    detected"). So the demo carries two small builds:
+  </p>
+  <ol class="steps">
+    <li>
+      <b>A <code>jti</code> CredentialComposer plugin on the server.</b> It runs on every
+      workload JWT-SVID SPIRE mints, generates 16 random bytes as hex, and adds the claim only if
+      absent — changing nothing else:
+      <div class="codeblock">
+        <p class="cap">spire-plugin/main.go</p>
+<pre>	if _, present := claims.Fields["jti"]; !present {
+		id, err := randomID()
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to generate jti: %v", err)
+		}
+		claims.Fields["jti"] = structpb.NewStringValue(id)
+	}</pre>
+      </div>
+    </li>
+    <li>
+      <b>A SPIRE agent with the JWT-SVID cache disabled</b>, so every fetch mints a fresh SVID —
+      and therefore a fresh <code>jti</code>. X.509-SVID caching is left untouched; only the
+      single-use assertion needs the miss.
+    </li>
+  </ol>
+  <p>
+    Both live in configuration, not in application code — SPIRE's server config
+    (<code>deploy/kind/manifests/spire/server.conf.tmpl</code>) and the realm template
+    (<code>deploy/kind/manifests/keycloak/realm.json.tmpl</code>):
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the SPIRE server config (server.conf.tmpl)</p>
+<pre>jwt_issuer = "spiffe://acme.com/ns/agent-platform/sa/agent"
+
+CredentialComposer "jti" {
+  plugin_cmd = "/opt/spire/plugins/jti-plugin"
+  plugin_data {}
+}</pre>
+  </div>
+  <div class="codeblock">
+    <p class="cap">illustrative — the realm's agent client</p>
+<pre>"clientAuthenticatorType": "client-jwt",
+"use.jwks.url": "true",
+"jwks.url": "http://spire-oidc-discovery.agent-platform.svc.cluster.local:11080/keys",
+"token.endpoint.auth.signing.alg": "ES256",</pre>
+  </div>
+  <p>
+    Read together: the assertion is signed with the workload's own key (ES256) and Keycloak
+    verifies it against SPIRE's published JWKS — there is <b>no client secret</b> anywhere in
+    this. That is the whole point of using the SVID as the credential.
+  </p>
+
+  <h3>So — does the agent still authenticate with X.509-SVID?</h3>
+  <p>
+    <b>Yes.</b> The statement above is about <i>one</i> credential doing <i>one</i> job. The
+    agent holds both SVIDs, and each is used where it fits:
+  </p>
+  <table>
+    <thead><tr><th>Job</th><th>Which SVID</th><th>How it is presented</th><th>Verified by</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Transport to services we own (agent → tools, agent → gateway)</td>
+        <td><b>X.509-SVID</b></td>
+        <td>the mTLS client certificate</td>
+        <td>the TLS handshake, against SPIRE's trust bundle</td>
+      </tr>
+      <tr>
+        <td>Naming the caller on those same hops</td>
+        <td><b>JWT-SVID</b>, audienced to the callee</td>
+        <td>the <code>X-Workload-Token</code> header</td>
+        <td><code>app/common/workload.py</code>, against SPIRE's JWKS</td>
+      </tr>
+      <tr>
+        <td>Authenticating to Keycloak</td>
+        <td><b>JWT-SVID</b>, as the client assertion</td>
+        <td><code>client_assertion</code> in the token request</td>
+        <td>Keycloak's <code>client-jwt</code> validator, against SPIRE's JWKS</td>
+      </tr>
+      <tr>
+        <td>Serving mTLS (the gateway as a server)</td>
+        <td><b>X.509-SVID</b></td>
+        <td>the TLS server certificate</td>
+        <td>the connecting client</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout warn">
+    <b>Why not use the X.509-SVID for Keycloak too?</b>
+    Keycloak <i>has</i> X.509 client authentication, and it was considered — but it matches on the
+    certificate's <b>subject DN</b>, and SPIRE puts the SPIFFE ID in the <b>SAN</b>, not the
+    subject. Distinct workloads would be indistinguishable, so the assertion route was chosen
+    instead (ADR-0002). The X.509-SVID is not weaker; it is simply the right credential for a
+    <i>transport</i>, and the JWT-SVID is the right one for an HTTP <i>client assertion</i>.
   </div>
 </section>
 
