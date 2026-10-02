@@ -22,7 +22,7 @@
   that loop now keeps and re-exposes. **S17** (cloud providers) and **S23** (revoke a
   rogue agent) remain open; **S24** closed the refund-idempotency gap.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-10-02
+- **Last updated:** 2026-10-03
 
 ## Resuming work in a fresh session
 
@@ -214,6 +214,12 @@ Recently closed: **the `demo-roles.sh` cold-start flakiness.** The login helpers
 the client scripts (`roles`, `demo`, `attack`, `role_tools`, `tenancy`) now use a
 30s timeout and retry once on a timeout, and the admin/approval calls use 30s, so
 the first call after a restart no longer loses the race.
+
+Also closed: **the nested error message.** The API proxied the agent's error body
+with `detail=resp.text`, so a guardrail refusal reached the console as
+`Error: {"detail":"the task looks like ..."}`. `_agent_error` now extracts the
+agent's own `detail`, so it reads as the sentence it is (also true of any other
+agent error, not just the injection refusal).
 
 Done, kept for the record:
  **S1** (SPIRE's registry is durable, and the KeyManager is
