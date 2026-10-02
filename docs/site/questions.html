@@ -167,6 +167,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#oauth">Is there an OAuth flow, and where is it?</a></li>
         <li><a href="#oidc-login">Why not OIDC for user login?</a></li>
         <li><a href="#jwt-svid-assertion">Why does the client assertion need a jti?</a></li>
+        <li><a href="#downstream-identity">What does the tool server send the simulated system?</a></li>
         <li><a href="#admin-create">Does an admin-created user go into Keycloak?</a></li>
         <li><a href="#session">Do users have to sign in every five minutes?</a></li>
         <li><a href="#keycloak-ui">How do I show someone the users really exist?</a></li>
@@ -2817,6 +2818,121 @@ kubectl get nodes      # three kind nodes: one control-plane, two workers</pre>
     (<code>deploy/kind/manifests/supply-chain/</code>) and exercised in CI, but the local demo
     does not install Kyverno, so nothing enforces signatures here. It is the one thing in the
     architecture that is not running locally.
+  </div>
+</section>
+
+<section id="downstream-identity">
+  <h2><span class="qnum">28</span>What does the tool server send the simulated system?</h2>
+  <p class="answer">
+    <b>No JWT — so no, the user is not the <code>sub</code> any more.</b> The user's
+    delegated token stops at the <b>tool server</b>. That server reads the identity and the
+    tenant off the verified token and then calls the simulated system as a plain
+    <b>tenant-scoped</b> request: an <code>X-Tenant</code> header (and, for a real vendor, an
+    optional static bearer). The person's <code>sub</code> never crosses that boundary.
+  </p>
+
+  <h3>Who appears where</h3>
+  <table>
+    <thead><tr><th>Hop</th><th>Credential on the wire</th><th>Whose identity</th><th>Is the person present?</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>agent → tool server</td>
+        <td>a delegated OAuth access token (<code>Authorization: Bearer</code>) <i>plus</i> the agent's JWT-SVID in <code>X-Workload-Token</code></td>
+        <td>the user (<code>sub</code>) and the agent (<code>azp</code>)</td>
+        <td><b>yes</b> — <code>sub</code> is the human</td>
+      </tr>
+      <tr>
+        <td>tool server → simulated system</td>
+        <td><code>X-Tenant: acme</code> (and, if configured, a static <code>SANDBOX_TOKEN</code> bearer)</td>
+        <td>nobody — a tenant, not a person</td>
+        <td><b>no</b> — there is no token to carry a <code>sub</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>The token that <i>does</i> carry the user — the delegated one</h3>
+  <p>
+    This is what the agent presents to the tool server. Keycloak mints it in the RFC 8693
+    exchange (Q14): the <code>sub</code> is the human, the <code>azp</code> is the agent, and
+    it is audienced to exactly one service.
+  </p>
+  <div class="codeblock">
+    <p class="cap">illustrative — the delegated access token, decoded</p>
+<pre>{
+  "iss": "http://keycloak:8080/realms/agent-platform",
+  "sub": "b1a4…-uuid",                         // the human (alice)
+  "preferred_username": "alice",
+  "azp": "spiffe://acme.com/ns/agent-platform/sa/agent",   // the actor
+  "aud": "mcp-tools",                          // only the tool server accepts it
+  "tenant": "acme",
+  "realm_access": { "roles": ["support_rep"] },
+  "exp": 1790954300,
+  "iat": 1790954000,
+  "jti": "6f0c…",
+  "typ": "Bearer"
+}</pre>
+  </div>
+  <p>
+    The <code>X-Workload-Token</code> sent alongside it is a different JWT — a SPIFFE
+    JWT-SVID whose <code>sub</code> is the <b>agent's</b> SPIFFE ID, proving <i>which</i>
+    workload is calling (Q23, Q26). It names the agent, not the person.
+  </p>
+
+  <h3>What actually reaches the simulated system</h3>
+  <div class="codeblock">
+    <p class="cap">illustrative — the tool server's request to the sandbox</p>
+<pre>POST /orders/o-1001/refunds
+X-Tenant: acme
+Authorization: Bearer &lt;SANDBOX_TOKEN&gt;     # empty in the demo — header omitted
+Content-Type: application/json
+
+{"amount": 200, "idempotency_key": "ap-344aed0d29f1"}</pre>
+  </div>
+  <p>
+    The HTTP backend builds exactly that — the tenant is the only identity that goes on the
+    wire, and the static token is added only if it is set (it is not, in the demo):
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/tools/backends.py</p>
+<pre>    def _request(self, method: str, path: str, tenant: str, **kwargs) -> Any:
+        headers = {"X-Tenant": tenant}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"</pre>
+  </div>
+  <p>
+    On the receiving side the simulated system refuses anything without a tenant, and takes
+    it from the header — there is no token to read a <code>sub</code> from:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/sandbox/app.py</p>
+<pre>def _tenant(x_tenant: str | None) -> str:
+    if not x_tenant:
+        raise HTTPException(status_code=400, detail="X-Tenant header is required")
+    return x_tenant</pre>
+  </div>
+
+  <h3>Why the tenant is safe to trust</h3>
+  <p>
+    Because it is not taken from the request. The tool server derives it from the verified
+    token and hands it to the handler; the caller cannot name a tenant it does not belong to:
+  </p>
+  <div class="codeblock">
+    <p class="cap">app/tools/enforcement.py</p>
+<pre>            # The tenant comes from the identity, never from the caller's args —
+            # so a request cannot name a tenant it does not belong to. An
+            # idempotent tool also gets the key, so a repeat does not act twice.
+            extra = {"idempotency_key": idempotency_key} if tool.idempotent else {}
+            result = tool.handler(**call_args, tenant=delegation.tenant, **extra)</pre>
+  </div>
+
+  <div class="callout warn">
+    <b>The honest boundary: the vendor call is tenant-scoped, not on-behalf-of the user</b>
+    Nothing downstream cryptographically proves <i>which person</i> the action was for — that was
+    decided and audited at the tool server, which holds the person's identity. A real vendor that
+    needs proof of the user would take a <b>second</b> token exchange (the SDK's client-secret
+    shape, <code>sdk/agentnhi/exchange.py</code>); the demo does not wire one because its
+    sandbox is a stand-in scoped by <code>X-Tenant</code>, not a token (Q14). The control that
+    matters — <i>may this person, through this agent, do this</i> — already happened one hop back.
   </div>
 </section>
 
