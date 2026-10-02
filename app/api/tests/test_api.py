@@ -162,6 +162,39 @@ def test_a_manager_cannot_decide_another_tenants_approval(client):
     assert resp.status_code == 409  # not found in this tenant
 
 
+def test_the_agents_error_is_unwrapped_not_nested_json():
+    """A refusal reaches the UI as a sentence, not as `{"detail": "..."}`.
+
+    The agent answers a guardrail refusal as ``{"detail": "..."}``; forwarding
+    ``resp.text`` nested that JSON inside the API's own detail, so the console
+    rendered ``Error: {"detail":"the task looks like ..."}``. The API extracts
+    the field instead.
+    """
+    from app.api.main import _agent_error
+
+    message = "the task looks like an attempt to override the agent's instructions — refusing it"
+
+    class Resp:
+        text = f'{{"detail":"{message}"}}'
+
+        def json(self):
+            return {"detail": message}
+
+    assert _agent_error(Resp()) == message
+
+
+def test_an_agent_error_that_is_not_json_falls_back_to_the_body():
+    from app.api.main import _agent_error
+
+    class Resp:
+        text = "upstream exploded"
+
+        def json(self):
+            raise ValueError("not json")
+
+    assert _agent_error(Resp()) == "upstream exploded"
+
+
 def test_the_cache_policy_revalidates_the_shell_and_immortalises_bundles():
     """A stale build in a browser looks exactly like a bug, so the policy is asserted.
 

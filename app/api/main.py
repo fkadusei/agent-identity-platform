@@ -141,6 +141,24 @@ def _agent_url() -> str:
     return os.environ.get("AGENT_URL", "http://agent:8081").rstrip("/")
 
 
+def _agent_error(resp: httpx.Response) -> str:
+    """The agent's own `detail`, not its raw JSON.
+
+    The agent answers a refusal as ``{"detail": "..."}`` (FastAPI's shape).
+    Forwarding ``resp.text`` nested that JSON *inside* the API's own
+    ``{"detail": ...}``, so the UI rendered the whole envelope as the message:
+    ``Error: {"detail":"..."}``. Pull the field out and fall back to the body.
+    """
+    try:
+        body = resp.json()
+    except ValueError:
+        return resp.text[:300]
+    detail = body.get("detail") if isinstance(body, dict) else None
+    if isinstance(detail, str) and detail:
+        return detail[:300]
+    return resp.text[:300]
+
+
 def _to_agent(path: str, body: dict, token: str, timeout: float) -> dict:
     """Call the agent on a hop we own (S7): our SVID, and our name in a header.
 
@@ -158,7 +176,7 @@ def _to_agent(path: str, body: dict, token: str, timeout: float) -> dict:
     finally:
         client.close()
     if resp.status_code != 200:
-        raise HTTPException(status_code=resp.status_code, detail=resp.text[:300])
+        raise HTTPException(status_code=resp.status_code, detail=_agent_error(resp))
     return resp.json()
 
 
