@@ -53,14 +53,17 @@ def _heading(fragment: str) -> str:
 def records() -> list[dict]:
     """One record per section: page, anchor, title, text."""
     out: list[dict] = []
-    for page in sorted(SITE.glob("*.html")):
+    # `rglob` does not descend into symlinked directories, so `docs/site/`'s
+    # `visualization` symlink (a separate app) is deliberately left out.
+    for page in sorted(SITE.rglob("*.html")):
+        rel = page.relative_to(SITE).as_posix()
         doc = page.read_text(encoding="utf-8")
         for anchor, body in SECTION_RE.findall(doc):
             text = _text(body)
             if not text:
                 continue
             out.append(
-                {"p": page.name, "a": anchor, "t": _heading(body), "x": text[:MAX_CHARS]}
+                {"p": rel, "a": anchor, "t": _heading(body), "x": text[:MAX_CHARS]}
             )
     return out
 
