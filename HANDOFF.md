@@ -467,7 +467,8 @@ House rules for a page, enforced by `scripts/check-docs-pages.py` (runs in CI):
   earns its keep: the cross-page search uses `docs/site/search-index.js`
   (generated, never hand-edited) and `docs/site/docs-search.js`. `fetch()` is not
   an option here — it is blocked on `file://` — which is why the index is a
-  committed script.
+  committed script. Every page must carry the widget (the checker enforces it),
+  and the index is built recursively over `docs/site/` (symlinked dirs skipped).
 - **Quoted code is quoted.** A code block whose caption names a file must match
   that file line for line. A block that is a sketch must say *illustrative* or
   *commands* in its caption — so a reader can always tell code from a sketch, and

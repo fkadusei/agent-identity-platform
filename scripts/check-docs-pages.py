@@ -120,9 +120,15 @@ def check_code(page: str, text: str, problems: list[str]) -> int:
 
 
 def check_page(path: Path) -> tuple[list[str], int]:
-    page = path.name
+    page = path.relative_to(SITE).as_posix()
     text = path.read_text(encoding="utf-8")
     problems: list[str] = []
+
+    # Every page carries the cross-page search widget (S25), so adding a page
+    # cannot silently ship without a search box.
+    for needle in ('class="docsearch"', "search-index.js", "docs-search.js"):
+        if needle not in text:
+            problems.append(f"{page}: missing {needle} (the cross-page search widget, S25)")
 
     ids = set(re.findall(r'\bid="([^"]+)"', text))
     hrefs = re.findall(r'href="#([^"]+)"', text)
@@ -147,7 +153,7 @@ def check_page(path: Path) -> tuple[list[str], int]:
 
 
 def main() -> int:
-    pages = sorted(SITE.glob("*.html"))
+    pages = sorted(SITE.rglob("*.html"))
     if not pages:
         print(f"no pages under {SITE.relative_to(ROOT)}", file=sys.stderr)
         return 1
@@ -158,7 +164,7 @@ def main() -> int:
         problems += found
         quoted += checked
         mark = "ok" if not found else f"{len(found)} problem(s)"
-        print(f"  {page.name:<22} {mark}")
+        print(f"  {page.relative_to(SITE).as_posix():<22} {mark}")
 
     # The cross-page search index is generated, so it can go stale: fail if a page
     # changed without rebuilding docs/site/search-index.js (S25).

@@ -935,15 +935,18 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   *commit* time into a committed script (`docs/site/search-index.js`), loaded with a
   plain `<script>` tag — which works offline — rather than fetched at runtime.
 - **Built:**
-  - `scripts/search_index.py` — walks `docs/site/*.html`, splits each `<section>`
-    into a record (page, anchor, heading, text), and writes `search-index.js`;
-    `--check` exits non-zero if the committed file is stale.
+  - `scripts/search_index.py` — walks `docs/site/` recursively (symlinked dirs
+    such as `visualization` are skipped), splits each `<section>` into a record
+    (page, anchor, heading, text), and writes `search-index.js`; `--check` exits
+    non-zero if the committed file is stale.
   - `docs/site/docs-search.js` — renders the box, ranks hits (every query term must
     appear; title matches weigh more), shows a snippet, and handles keyboard
     (↑/↓/Enter/Esc) and click-away.
   - The widget + two `<script>` tags in each page's sidebar.
   - `scripts/check-docs-pages.py` now rebuilds the index in memory and **fails if
-    `search-index.js` is stale**, and validates `src="…"` links (not just `href`).
+    `search-index.js` is stale**, validates `src="…"` links (not just `href`), and
+    **requires the search widget** (`<div class="docsearch">` plus both scripts) on
+    every page — so adding a page cannot silently ship without a search box.
 - **Scope, stated:** substring/token AND search, title-weighted, top 12, body capped
   at 3000 chars per section. No stemming/fuzzy matching and no per-term ranking
   beyond that — enough to find a phrase, not a search engine.
