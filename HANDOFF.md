@@ -440,7 +440,8 @@ the Keycloak client_id (Q23), and the four OAuth grants with an inline-SVG flow
 diagram each, plus the production authorization-code + PKCE flow for comparison
 (Q24), why user login is the password grant rather than an OIDC redirect (Q25),
 the JWT-SVID client assertion's `jti` — plus where X.509-SVID is still used (Q26),
-and that everything but the model runs in the cluster (Q27).
+and that everything but the model runs in the cluster, drawn as a cluster/host
+boundary picture (Q27).
 
 To read them:
 ```sh
