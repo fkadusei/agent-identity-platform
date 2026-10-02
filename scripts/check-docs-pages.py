@@ -136,8 +136,8 @@ def check_page(path: Path) -> tuple[list[str], int]:
         if section not in nav_targets:
             problems.append(f"{page}: section #{section} is not in the nav")
 
-    for rel in set(re.findall(r'href="([^"#][^"]*)"', text)):
-        if rel.startswith(("http://", "https://", "mailto:")):
+    for rel in set(re.findall(r'(?:href|src)="([^"#][^"]*)"', text)):
+        if rel.startswith(("http://", "https://", "mailto:", "data:")):
             continue
         if not (path.parent / rel).exists():
             problems.append(f"{page}: link to {rel} is broken")
@@ -159,6 +159,24 @@ def main() -> int:
         quoted += checked
         mark = "ok" if not found else f"{len(found)} problem(s)"
         print(f"  {page.name:<22} {mark}")
+
+    # The cross-page search index is generated, so it can go stale: fail if a page
+    # changed without rebuilding docs/site/search-index.js (S25).
+    sys.path.insert(0, str(ROOT / "scripts"))
+    try:
+        import search_index  # type: ignore[import-not-found]
+
+        expected = search_index.build()
+    except Exception as exc:  # noqa: BLE001 - report, don't crash the checker
+        problems.append(f"search index could not be built: {exc}")
+    else:
+        index_path = SITE / "search-index.js"
+        actual = index_path.read_text(encoding="utf-8") if index_path.exists() else ""
+        if actual != expected:
+            problems.append("search-index.js is stale — run: python3 scripts/search_index.py")
+        else:
+            print(f"  {'search-index.js':<22} ok")
+
     if problems:
         print()
         for p in problems:

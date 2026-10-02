@@ -920,6 +920,38 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   `app/tools/tests/test_backends.py`; and the simulator-level idempotency tests in
   `app/tests/test_simulators.py`.
 
+## S25 — Cross-page search for the docs site — **done**
+
+- **What:** a search box on every docs page (`index.html`, `agent-flow.html`,
+  `questions.html`) that searches the text of **all** pages and deep-links to the
+  exact section (`questions.html#oauth`). Typing filters as you go; Enter opens the
+  top hit.
+- **Why:** the pages have grown to ~58 sections (Q1–Q27 on the Q&A page alone) and
+  the only way around was a per-page sidebar plus a per-page filter — finding a
+  phrase across pages meant opening each one. The index turns the whole set into one
+  searchable document.
+- **Constraint that shaped it:** the pages are self-contained and must work from
+  `file://`, where `fetch()` and ES modules are blocked. So the index is built at
+  *commit* time into a committed script (`docs/site/search-index.js`), loaded with a
+  plain `<script>` tag — which works offline — rather than fetched at runtime.
+- **Built:**
+  - `scripts/search_index.py` — walks `docs/site/*.html`, splits each `<section>`
+    into a record (page, anchor, heading, text), and writes `search-index.js`;
+    `--check` exits non-zero if the committed file is stale.
+  - `docs/site/docs-search.js` — renders the box, ranks hits (every query term must
+    appear; title matches weigh more), shows a snippet, and handles keyboard
+    (↑/↓/Enter/Esc) and click-away.
+  - The widget + two `<script>` tags in each page's sidebar.
+  - `scripts/check-docs-pages.py` now rebuilds the index in memory and **fails if
+    `search-index.js` is stale**, and validates `src="…"` links (not just `href`).
+- **Scope, stated:** substring/token AND search, title-weighted, top 12, body capped
+  at 3000 chars per section. No stemming/fuzzy matching and no per-term ranking
+  beyond that — enough to find a phrase, not a search engine.
+- **Verified by:** `python3 scripts/check-docs-pages.py` (index up to date; removing
+  `search-index.js` fails the check) and a headless render of the box searching
+  “refund approval”, which returns sections from `agent-flow.html` and
+  `questions.html` with working deep links.
+
 ## Not slices (documented limits)
 
 - **There is exactly one agent, by construction.** One workload, one SPIFFE ID
