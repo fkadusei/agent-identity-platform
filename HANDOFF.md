@@ -189,7 +189,8 @@ End-to-end, on the cluster:
 
 ## Immediate next task
 
-Phases 1–3 are complete, every threat is addressed, and **S1–S22 and S24 are done**.
+Phases 1–3 are complete, every threat is addressed, and **S1–S22, S24 and S25 are
+done**.
 What remains is two open slices and one loose end — all are written up where they
 land:
 
@@ -238,9 +239,10 @@ agent asks for a missing argument instead of refusing), **S19** (the agent
 takes more than one bounded step), **S20** (the agent passes identifiers along
 instead of inventing them), **S21** (a tool's own "no" is reported and
 recorded, instead of a bare "allowed"), **S22** (what the loop keeps and
-re-exposes is written down and accepted, not prevented), and **S24** (a resumed
+re-exposes is written down and accepted, not prevented), **S24** (a resumed
 approval issues one refund, not two — the verified approval id is the idempotency
-key, threaded through the tools to the backend).
+key, threaded through the tools to the backend), and **S25** (a cross-page search
+box on every docs page, backed by a generated index that CI rebuilds and checks).
 
 ## The repository is public
 
@@ -460,8 +462,12 @@ link to `../index.html`, and `docs/index.html` is a **symlink** to
 
 House rules for a page, enforced by `scripts/check-docs-pages.py` (runs in CI):
 
-- **Self-contained.** Inline CSS/JS, no build step, no CDN, no fonts to fetch.
-  It must work from `file://`.
+- **Self-contained.** No build step, no CDN, no fonts to fetch; it must work from
+  `file://`. CSS/JS are inline except a shared, same-directory asset where that
+  earns its keep: the cross-page search uses `docs/site/search-index.js`
+  (generated, never hand-edited) and `docs/site/docs-search.js`. `fetch()` is not
+  an option here — it is blocked on `file://` — which is why the index is a
+  committed script.
 - **Quoted code is quoted.** A code block whose caption names a file must match
   that file line for line. A block that is a sketch must say *illustrative* or
   *commands* in its caption — so a reader can always tell code from a sketch, and

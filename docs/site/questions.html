@@ -146,6 +146,10 @@ ol.steps>li b{color:var(--ink)}
   <div class="tools">
     <button id="expand" type="button">Expand all</button>
   </div>
+  <div class="docsearch">
+    <input class="filter" type="search" placeholder="Search all pages…" aria-label="Search all pages" autocomplete="off" />
+    <div class="ds-results" hidden></div>
+  </div>
   <input class="filter" id="filter" type="search" placeholder="Filter questions…" aria-label="Filter questions" />
   <nav aria-label="Contents">
     <div class="group">
@@ -2888,5 +2892,7 @@ kubectl get nodes      # three kind nodes: one control-plane, two workers</pre>
   });
 })();
 </script>
+<script src="search-index.js"></script>
+<script src="docs-search.js"></script>
 </body>
 </html>

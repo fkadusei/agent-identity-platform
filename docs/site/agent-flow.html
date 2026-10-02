@@ -155,6 +155,10 @@ svg .etext.warn{fill:var(--amber)}
   <div class="tools">
     <button id="expand" type="button">Expand all</button>
   </div>
+  <div class="docsearch">
+    <input class="filter" type="search" placeholder="Search all pages…" aria-label="Search all pages" autocomplete="off" />
+    <div class="ds-results" hidden></div>
+  </div>
   <input class="filter" id="filter" type="search" placeholder="Filter sections…" aria-label="Filter sections" />
   <nav aria-label="Contents">
     <div class="group">
@@ -2171,5 +2175,7 @@ kubectl exec deploy/agent -c agent -- python -m app.agent.evals --live</pre>
   });
 })();
 </script>
+<script src="search-index.js"></script>
+<script src="docs-search.js"></script>
 </body>
 </html>
