@@ -193,6 +193,7 @@ ol.steps>li b{color:var(--ink)}
         <li><a href="#rfc8693">What is RFC 8693, and how does this project use it?</a></li>
         <li><a href="#prometheus">How do I show someone the Prometheus UI?</a></li>
         <li><a href="#inspect">How do I inspect every component?</a></li>
+        <li><a href="#in-cluster">Does everything run in the cluster?</a></li>
       </ol>
     </div>
   </nav>
@@ -2720,6 +2721,59 @@ CredentialComposer "jti" {
     subject. Distinct workloads would be indistinguishable, so the assertion route was chosen
     instead (ADR-0002). The X.509-SVID is not weaker; it is simply the right credential for a
     <i>transport</i>, and the JWT-SVID is the right one for an HTTP <i>client assertion</i>.
+  </div>
+</section>
+
+<section id="in-cluster">
+  <h2><span class="qnum">27</span>Does everything run in the cluster?</h2>
+  <p class="answer">
+    <b>Everything except the model.</b> The synthetic systems, the identity system, policy,
+    the durable database, the observability stack, the mesh and the edge all run inside the
+    kind cluster — three nodes. The model is the one deliberate outside dependency: it runs
+    on the <i>host</i>, and only the gateway can reach it.
+  </p>
+
+  <h3>What runs where</h3>
+  <table>
+    <thead><tr><th>Layer</th><th>In the cluster</th></tr></thead>
+    <tbody>
+      <tr><td>Our services</td><td><code>api</code> · <code>agent</code> · <code>tools</code> · <code>gateway</code> (two each) and <code>sandbox</code></td></tr>
+      <tr><td>Identity</td><td><code>keycloak</code> ×2 (and the realm-import Job), <code>spire-server</code> and <code>spire-agent</code> ×2</td></tr>
+      <tr><td>Policy</td><td><code>opa</code> ×2</td></tr>
+      <tr><td>Data</td><td><code>postgres</code> ×1</td></tr>
+      <tr><td>Observability</td><td><code>otel-collector</code>, <code>prometheus</code>, <code>grafana</code>, <code>jaeger</code>, <code>prometheus-adapter</code></td></tr>
+      <tr><td>Edge</td><td><code>ingress-nginx-controller</code></td></tr>
+      <tr><td>Mesh</td><td>Linkerd control plane (<code>destination</code>, <code>identity</code>, <code>proxy-injector</code>) and <code>linkerd-viz</code></td></tr>
+      <tr><td>Autoscaling meter</td><td><code>metrics-server</code> (kube-system)</td></tr>
+      <tr><td>Cluster plumbing</td><td>coredns, kindnet, kube-proxy, local-path-provisioner, the control plane</td></tr>
+    </tbody>
+  </table>
+  <div class="callout info">
+    <b>The model is the exception, on purpose</b>
+    Ollama runs on the host at <code>http://host.docker.internal:11434</code>
+    (<code>qwen3-warden-ctx16k:latest</code>). The gateway holds the only route to it, which is
+    what lets the platform keep its promise that the model proposes and the platform disposes —
+    and why a local model by default sends nothing off the machine (Q10, Q24).
+  </div>
+
+  <h3>See it yourself</h3>
+  <div class="codeblock">
+    <p class="cap">commands — every pod, in every namespace</p>
+<pre>kubectl get pods -A
+kubectl get nodes      # three kind nodes: one control-plane, two workers</pre>
+  </div>
+  <p>
+    Your browser and the edge's CA (<code>.edge/ca.crt</code>) live on the host too, but those
+    are the client and the trust anchor, not services. The kind nodes themselves are Docker
+    containers on the host — that is the cluster runtime, not a dependency.
+  </p>
+
+  <div class="callout warn">
+    <b>One box the kind cluster leaves out: Kyverno</b>
+    The image-signature admission policy is declared in the repo
+    (<code>deploy/kind/manifests/supply-chain/</code>) and exercised in CI, but the local demo
+    does not install Kyverno, so nothing enforces signatures here. It is the one thing in the
+    architecture that is not running locally.
   </div>
 </section>
 
