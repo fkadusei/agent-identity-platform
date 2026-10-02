@@ -93,6 +93,12 @@ class ToolEnforcer:
             return ToolResult(Outcome.DENIED, tool_name, "unknown tool")
 
         call_args = _clean_args(tool, args)
+        # The verified approval id is the stable key for a resumed action: the
+        # same approval resumed twice must issue one refund, not two (S24). Only
+        # tools that declare themselves idempotent receive it, and only when an
+        # approval is present — an allowed call has no stable key to dedup on.
+        approval_id = args.get("approval_id")
+        idempotency_key = str(approval_id) if (tool.idempotent and approval_id) else None
         # A span carrying the identity, so a trace answers "which agent, for
         # which user, and what did policy decide?" — the same question the audit
         # log answers, but end to end.
@@ -131,7 +137,6 @@ class ToolEnforcer:
             return ToolResult(Outcome.DENIED, tool_name, decision.reason, decision.decision.value)
 
         if decision.decision is Decision.REQUIRE_APPROVAL:
-            approval_id = args.get("approval_id")
             approved = bool(approval_id) and self._approvals.verify(
                 str(approval_id),
                 tool=tool_name,
@@ -159,8 +164,10 @@ class ToolEnforcer:
 
         try:
             # The tenant comes from the identity, never from the caller's args —
-            # so a request cannot name a tenant it does not belong to.
-            result = tool.handler(**call_args, tenant=delegation.tenant)
+            # so a request cannot name a tenant it does not belong to. An
+            # idempotent tool also gets the key, so a repeat does not act twice.
+            extra = {"idempotency_key": idempotency_key} if tool.idempotent else {}
+            result = tool.handler(**call_args, tenant=delegation.tenant, **extra)
         except Exception as exc:  # noqa: BLE001 - report, do not crash the server
             audit(
                 "tool.error",

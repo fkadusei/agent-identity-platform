@@ -118,6 +118,15 @@ def quote_refund(order_id: str, x_tenant: str | None = Header(default=None)) -> 
 
 @app.post("/orders/{order_id}/refunds")
 def issue_refund(order_id: str, body: dict, x_tenant: str | None = Header(default=None)) -> dict:
-    refund = _simulate(lambda: payments.issue_refund(order_id, float(body.get("amount", 0)), _tenant(x_tenant)))
+    refund = _simulate(
+        lambda: payments.issue_refund(
+            order_id,
+            float(body.get("amount", 0)),
+            _tenant(x_tenant),
+            # A resumed approval sends the same key, so the vendor answers with the
+            # refund it already issued instead of issuing a second one (S24).
+            body.get("idempotency_key"),
+        )
+    )
     _persist()
     return refund

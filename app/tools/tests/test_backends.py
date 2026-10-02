@@ -61,6 +61,16 @@ def test_issue_refund_posts_the_amount():
     assert _backend(handler).issue_refund("o-1", 25, ACME)["status"] == "issued"
 
 
+def test_issue_refund_sends_the_idempotency_key_when_given():
+    """A resumed approval carries the key to the vendor (S24)."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert json.loads(request.content) == {"amount": 25.0, "idempotency_key": "a-1"}
+        return httpx.Response(200, json={"id": "r-1", "status": "issued"})
+
+    assert _backend(handler).issue_refund("o-1", 25, ACME, "a-1")["id"] == "r-1"
+
+
 def test_simulator_backend_scopes_by_tenant():
     backend = SimulatorBackend()
     assert backend.get_customer("c-900", ACME) is None
@@ -94,7 +104,7 @@ def test_a_tool_reports_a_missing_record_rather_than_returning_null():
         def draft_reply(self, ticket_id, body, tenant):
             return None
 
-        def issue_refund(self, order_id, amount, tenant):
+        def issue_refund(self, order_id, amount, tenant, idempotency_key=None):
             return None
 
     tools = build_tools(Empty())
