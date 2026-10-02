@@ -22,6 +22,11 @@ class Tool:
     risk: str  # "low" | "high"
     input_schema: dict
     handler: Callable[..., Any] = field(repr=False)
+    #: True when the handler accepts an `idempotency_key` and a repeated call for
+    #: the same action must not act twice — a resumed approval is the case that
+    #: matters (S24). The enforcement core supplies the key; the handler passes it
+    #: straight to the backend.
+    idempotent: bool = False
 
 
 def _customer_id_schema() -> dict:
@@ -100,8 +105,11 @@ def build_tools(backend: Backend | None = None) -> dict[str, Tool]:
                     },
                     "required": ["order_id", "amount"],
                 },
-                handler=lambda order_id, amount, tenant: b.issue_refund(order_id, float(amount), tenant)
+                handler=lambda order_id, amount, tenant, idempotency_key=None: b.issue_refund(
+                    order_id, float(amount), tenant, idempotency_key
+                )
                 or _not_found("order"),
+                idempotent=True,
             ),
             Tool(
                 name="privacy.pii.read",

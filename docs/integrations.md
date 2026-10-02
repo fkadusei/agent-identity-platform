@@ -37,11 +37,19 @@ The HTTP backend speaks exactly this, and nothing else. Every request carries
 | `tickets.read` | `GET /tickets/{id}` |
 | `tickets.reply.draft` | `POST /tickets/{id}/drafts` `{"body": "..."}` |
 | `refunds.quote` | `GET /orders/{id}/refund-quote` |
-| `refunds.issue` | `POST /orders/{id}/refunds` `{"amount": 25}` |
+| `refunds.issue` | `POST /orders/{id}/refunds` `{"amount": 25, "idempotency_key": "…"}` — the key is present only on a resumed, approved call |
 
 A `404` maps to "not found" — the same result the simulator gives — for every
 tool, reads and writes alike; any other non-2xx raises, and the enforcement core
 turns that into a tool error, never a silent success.
+
+**Idempotency (S24).** `refunds.issue` takes an optional `idempotency_key`. When a
+policy-mandated approval is resumed, the enforcement core passes the verified
+approval id as that key, so a second resume answers with the refund already issued
+rather than issuing another. An ordinary allowed refund sends no key — there is no
+stable action id to dedup on — and the simulator falls back to keying the stored
+refund by its own id. The key does not change the authorization: the approval is
+still verified against the exact request first.
 
 That parity is worth stating because it was broken: the two *write* endpoints
 answered `500` for a record that was not there, because the simulator raises for

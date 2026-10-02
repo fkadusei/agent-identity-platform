@@ -88,6 +88,36 @@ def test_high_risk_with_valid_approval_executes():
     assert result.result["status"] == "issued"
 
 
+def test_a_resumed_approval_issues_the_refund_once():
+    """The same action resumed twice acts once (S24).
+
+    A held action can be resumed more than once (a double resume, a retry). The
+    verified approval id is stable across those resumes, so the enforcement core
+    passes it to an idempotent tool as the idempotency key — and the backend
+    answers the second call with the refund it already issued rather than issuing
+    a second one.
+    """
+    from app.simulators import payments
+
+    e = enforcer(decision=Decision.REQUIRE_APPROVAL, approvals=True)
+    args = {"order_id": "o-1001", "amount": 200, "approval_id": "a-1"}
+
+    first = e.call("token", "refunds.issue", args)
+    second = e.call("token", "refunds.issue", args)
+
+    assert first.outcome is Outcome.OK and second.outcome is Outcome.OK
+    assert first.result["id"] == second.result["id"]
+    assert first.result["idempotency_key"] == "a-1"
+    assert len(payments.snapshot()) == 1
+
+
+def test_an_allowed_call_has_no_idempotency_key():
+    # With no approval there is no stable key to dedup on, so nothing is invented.
+    result = enforcer().call("token", "refunds.issue", {"order_id": "o-1001", "amount": 10})
+    assert result.outcome is Outcome.OK
+    assert result.result["idempotency_key"] is None
+
+
 def test_high_risk_with_invalid_approval_is_held():
     e = enforcer(decision=Decision.REQUIRE_APPROVAL, approvals=False)
     result = e.call("token", "refunds.issue", {"order_id": "o-1001", "amount": 200, "approval_id": "bad"})

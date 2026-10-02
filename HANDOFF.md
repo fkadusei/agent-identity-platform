@@ -19,10 +19,10 @@
   missing argument instead of refusing, **S19** lets it take more than one bounded
   step, **S20** stops it inventing an identifier, and **S21** stops "allowed" reading
   as "it happened"; the agent-upgrade work is complete, and **S22** writes down what
-  that loop now keeps and re-exposes. **S17** (cloud providers) is the one open
-  slice.
+  that loop now keeps and re-exposes. **S17** (cloud providers) and **S23** (revoke a
+  rogue agent) remain open; **S24** closed the refund-idempotency gap.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-09-30
+- **Last updated:** 2026-10-02
 
 ## Resuming work in a fresh session
 
@@ -189,8 +189,9 @@ End-to-end, on the cluster:
 
 ## Immediate next task
 
-Phases 1–3 are complete, every threat is addressed, and **S1–S22 are done**. What
-remains is two open slices and one loose end — all are written up where they land:
+Phases 1–3 are complete, every threat is addressed, and **S1–S22 and S24 are done**.
+What remains is two open slices and one loose end — all are written up where they
+land:
 
 1. **S17 — provider-agnostic models.** Two defects in the hosted-provider branch,
    both found by reading it: the forwarder sends no model, and it forwards a JSON hint
@@ -230,8 +231,10 @@ serve an expired SVID), **S16** (a hung process restarts itself), **S18** (the
 agent asks for a missing argument instead of refusing), **S19** (the agent
 takes more than one bounded step), **S20** (the agent passes identifiers along
 instead of inventing them), **S21** (a tool's own "no" is reported and
-recorded, instead of a bare "allowed") and **S22** (what the loop keeps and
-re-exposes is written down and accepted, not prevented).
+recorded, instead of a bare "allowed"), **S22** (what the loop keeps and
+re-exposes is written down and accepted, not prevented), and **S24** (a resumed
+approval issues one refund, not two — the verified approval id is the idempotency
+key, threaded through the tools to the backend).
 
 ## The repository is public
 

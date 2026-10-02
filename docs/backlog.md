@@ -883,6 +883,43 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   call refused, and a test showing a held SVID refused at admission *before* it expires
   — "stop issuing" alone is not the claim.
 
+## S24 — A resumed approval must not refund twice — **done**
+
+- **What:** the refund write is now idempotent end to end. `refunds.issue` carries an
+  optional `idempotency_key` from the tool catalogue through the backend to the
+  sandbox/simulator, and the enforcement core supplies the **verified approval id**
+  as that key. The same approval resumed twice — a double `POST /tasks/resume`, a
+  retry — returns the refund already issued instead of issuing a second one.
+- **Why:** a human approval can resume an agent run more than once, and the refund
+  path is a *write*. The simulator already supported an idempotency key
+  (`app/simulators/payments.py`), but nothing in the live wiring ever passed one — the
+  key was always `null`, and a repeated resume would have issued a second refund. The
+  verified approval id is exactly the stable, per-action key the mechanism was built
+  for: the enforcer already had it (it verifies the approval against six fields) and
+  simply did not forward it, because it strips `approval_id` out of the handler args.
+- **Built:**
+  - `app/tools/catalog.py` — a `Tool.idempotent` flag, set on `refunds.issue`, whose
+    handler forwards the key to the backend.
+  - `app/tools/backends.py` — `issue_refund(..., idempotency_key=None)` on the
+    protocol and both backends; the HTTP backend adds it to the request body only
+    when present, so a plain refund is unchanged.
+  - `app/tools/enforcement.py` — for an idempotent tool, passes
+    `idempotency_key=<verified approval id>`, and only then: an allowed call has no
+    stable key.
+  - `app/sandbox/app.py` — reads `idempotency_key` from the body and passes it to the
+    simulator, whose existing dedup (and S9 snapshot/restore) then applies.
+- **Scope, stated:** this closes the *resumed-approval* duplication — the case the
+  mechanism existed for. It is not a general exactly-once guarantee: a
+  caller-supplied key for allowed writes, or a retry with no approval, would be a
+  wider design. Not claimed here.
+- **Verified by:** `test_a_resumed_approval_issues_the_refund_once` (the same approved
+  call twice yields one refund, with the same id) and
+  `test_an_allowed_call_has_no_idempotency_key` in
+  `app/tools/tests/test_enforcement.py`;
+  `test_issue_refund_sends_the_idempotency_key_when_given` in
+  `app/tools/tests/test_backends.py`; and the simulator-level idempotency tests in
+  `app/tests/test_simulators.py`.
+
 ## Not slices (documented limits)
 
 - **There is exactly one agent, by construction.** One workload, one SPIFFE ID

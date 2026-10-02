@@ -39,7 +39,9 @@ class Backend(Protocol):
     def get_ticket(self, ticket_id: str, tenant: str) -> dict | None: ...
     def draft_reply(self, ticket_id: str, body: str, tenant: str) -> dict | None: ...
     def quote_refund(self, order_id: str, tenant: str) -> dict | None: ...
-    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict | None: ...
+    def issue_refund(
+        self, order_id: str, amount: float, tenant: str, idempotency_key: str | None = None
+    ) -> dict | None: ...
 
 
 class SimulatorBackend:
@@ -72,9 +74,11 @@ class SimulatorBackend:
     def quote_refund(self, order_id: str, tenant: str) -> dict | None:
         return payments.quote_refund(order_id, tenant)
 
-    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict | None:
+    def issue_refund(
+        self, order_id: str, amount: float, tenant: str, idempotency_key: str | None = None
+    ) -> dict | None:
         try:
-            return payments.issue_refund(order_id, float(amount), tenant)
+            return payments.issue_refund(order_id, float(amount), tenant, idempotency_key)
         except NotFound:
             return None
 
@@ -130,10 +134,15 @@ class HttpBackend:
     def quote_refund(self, order_id: str, tenant: str) -> dict | None:
         return self._request("GET", f"/orders/{order_id}/refund-quote", tenant)
 
-    def issue_refund(self, order_id: str, amount: float, tenant: str) -> dict | None:
-        return self._request(
-            "POST", f"/orders/{order_id}/refunds", tenant, json={"amount": float(amount)}
-        )
+    def issue_refund(
+        self, order_id: str, amount: float, tenant: str, idempotency_key: str | None = None
+    ) -> dict | None:
+        body: dict = {"amount": float(amount)}
+        # Omit the key when there is none, so a plain refund keeps the original
+        # request shape (and a real vendor that ignores the field sees no change).
+        if idempotency_key:
+            body["idempotency_key"] = idempotency_key
+        return self._request("POST", f"/orders/{order_id}/refunds", tenant, json=body)
 
 
 def get_backend() -> Backend:
