@@ -52,10 +52,11 @@ sleep 6
 say "3. a task now fails — the agent is refused at admission, before any TTL"
 after="$(run_task "$ALICE")"
 echo "$after" | python3 -c 'import sys,json;d=json.load(sys.stdin);print("   status:",d.get("status"),"| reason:",(d.get("reason") or "")[:140])'
-if printf '%s' "$after" | grep -qi "revoked"; then
-  ok "refused: the tool server named the revocation"
+# The agent reaches the gateway first; the gateway refuses and audits the refusal.
+if kubectl -n agent-platform logs -l app=gateway --tail=200 2>/dev/null | grep -q "revoked_refused"; then
+  ok "refused at the gateway and audited (llm.revoked_refused)"
 else
-  info "refused (see tools/agent logs for 'has been revoked')"
+  info "refused (see the gateway/tools logs for 'revoked')"
 fi
 
 say "4. restore"
