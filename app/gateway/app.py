@@ -150,9 +150,17 @@ def chat(req: ChatRequest, authorization: str | None = Header(default=None)) -> 
     payload["model"] = model
     if _strip_response_format():
         payload.pop("response_format", None)
+    # The key is optional: a keyless provider (the in-cluster stub, a local
+    # vLLM/LiteLLM) needs no Authorization. Sending `Bearer ` with an empty key is
+    # not just useless — httpx rejects the illegal header value, so the call never
+    # leaves the gateway (S17).
+    headers: dict[str, str] = {}
+    api_key = os.environ.get("LLM_API_KEY", "")
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
     resp = httpx.post(
         f"{base}/chat/completions",
-        headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', '')}"},
+        headers=headers,
         json=payload,
         timeout=60,
     )

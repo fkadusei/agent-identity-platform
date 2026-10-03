@@ -184,6 +184,33 @@ def test_hosted_without_a_model_fails_clearly(monkeypatch):
     assert "LLM_MODEL" in resp.json()["detail"]
 
 
+def test_hosted_provider_without_a_key_sends_no_authorization(monkeypatch):
+    """A keyless provider must not receive an empty `Bearer ` (S17).
+
+    Found through the in-cluster stub: with no LLM_API_KEY the gateway still set
+    `Authorization: Bearer `, and httpx refuses the illegal header value — the
+    call failed before it left the gateway.
+    """
+    calls: dict = {}
+
+    def fake_post(url, json=None, headers=None, **kwargs):  # noqa: A002
+        calls["headers"] = headers
+        return _Response({"choices": [{"message": {"role": "assistant", "content": "{}"}}]})
+
+    _as_caller(monkeypatch)
+    monkeypatch.setattr(gw.httpx, "post", fake_post)
+    monkeypatch.setenv("LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("LLM_BASE_URL", "http://provider-stub:8080/v1")
+    monkeypatch.setenv("LLM_MODEL", "stub-model")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    resp = TestClient(app).post(
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert resp.status_code == 200
+    assert "Authorization" not in (calls["headers"] or {})
+
+
 def test_rate_limit_returns_429(monkeypatch):
     _as_caller(monkeypatch)
     monkeypatch.setattr(gw, "LIMITER", Limiter(requests_per_minute=1))
