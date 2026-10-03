@@ -99,7 +99,7 @@ ok "spire-server-jti, spire-agent-nocache"
 # A dirty tree is marked, because "the image matches HEAD" would be a lie.
 GIT_SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 git diff --quiet 2>/dev/null || GIT_SHA="$GIT_SHA-dirty"
-for svc in api tools agent gateway sandbox keycloak; do
+for svc in api tools agent gateway sandbox keycloak provider-stub; do
   docker build -q --build-arg "GIT_SHA=$GIT_SHA" \
     -f "docker/$svc.Dockerfile" -t "agent-platform/$svc:demo" . >/dev/null
   kind load docker-image "agent-platform/$svc:demo" --name agent-platform >/dev/null
@@ -493,8 +493,15 @@ kubectl -n $NS create configmap llm-config \
   --from-literal=LLM_PROVIDER="$LLM_PROVIDER" \
   --from-literal=OLLAMA_URL="$OLLAMA_URL" \
   --from-literal=OLLAMA_MODEL="$OLLAMA_MODEL" \
+  --from-literal=LLM_BASE_URL="${LLM_BASE_URL:-}" \
+  --from-literal=LLM_MODEL="${LLM_MODEL:-}" \
+  --from-literal=LLM_STRIP_RESPONSE_FORMAT="${LLM_STRIP_RESPONSE_FORMAT:-}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-ok "gateway will use $OLLAMA_MODEL via $LLM_PROVIDER at $OLLAMA_URL"
+if [ "$LLM_PROVIDER" = "ollama" ]; then
+  ok "gateway will use $OLLAMA_MODEL via $LLM_PROVIDER at $OLLAMA_URL"
+else
+  ok "gateway will use ${LLM_MODEL:-<unset>} via $LLM_PROVIDER at ${LLM_BASE_URL:-<unset>}"
+fi
 # The optional provider key: only the gateway consumes it.
 if [ -n "${LLM_API_KEY:-}" ]; then
   kubectl -n $NS create secret generic llm-api-key \
@@ -503,10 +510,10 @@ if [ -n "${LLM_API_KEY:-}" ]; then
   ok "llm-api-key secret created (consumed only by the gateway)"
 fi
 kubectl apply -f "$MANIFESTS/apps/" >/dev/null
-kubectl -n $NS rollout restart deploy/api deploy/tools deploy/agent deploy/gateway deploy/sandbox >/dev/null
-kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gateway deploy/sandbox \
+kubectl -n $NS rollout restart deploy/api deploy/tools deploy/agent deploy/gateway deploy/sandbox deploy/provider-stub >/dev/null
+kubectl -n $NS rollout status deploy/api deploy/tools deploy/agent deploy/gateway deploy/sandbox deploy/provider-stub \
   --timeout=240s >/dev/null
-ok "api, tools, agent, gateway, sandbox ready"
+ok "api, tools, agent, gateway, sandbox, provider-stub ready"
 
 # ---------------------------------------------------------------------------
 # The browser edge (S7b). Everything else here is workload-to-workload; this is

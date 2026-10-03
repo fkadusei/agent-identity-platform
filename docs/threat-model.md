@@ -76,13 +76,18 @@ tokens or PII fields.
 
 **Threat.** Personal data is sent to an external model, or the agent reveals data
 the user is not entitled to.
-**Mitigation.** Synthetic data only; local model by default; a SPIFFE-
-authenticated **LLM gateway** (implemented: `app/gateway/`) that is the only
-egress point and holds the provider key, so the agent has no model credential;
-redaction before egress and provider retention controls; PII-tagged tools gated
-by policy.
+**Mitigation.** Synthetic data only; a **local model by default**, so a run that
+reads personal data under an approval sends nothing off the machine; a
+SPIFFE-authenticated **LLM gateway** (`app/gateway/`) that is the only egress
+point and holds the provider key, so the agent has no model credential; redaction
+before egress and provider retention controls; PII-tagged tools gated by policy.
+A **cloud provider is opt-in** (ADR-0013): the gateway cannot see which tool
+produced the prompt, so the fine control — "this tenant or tool may only use a
+local model" — belongs in policy, and is named as future work rather than assumed.
 **Test.** The gateway refuses connections without a client SVID (attack suite
-#6); a policy test asserts PII tools require approval.
+#6); a policy test asserts PII tools require approval; the hosted branch (the
+resolved model is forwarded, `response_format` is strippable) is covered by
+`app/gateway/tests/test_gateway.py` and the in-cluster `provider-stub`.
 
 ## T9 — Cross-tenant data leakage
 
@@ -115,11 +120,12 @@ personal data in Postgres for as long as the run exists — and, once the gatewa
 points at a cloud provider, carries it to that provider on the second step.
 **Mitigation.** **Accepted, bounded, and documented — not prevented.** The data is
 synthetic (ADR-0006); the model is local by default, so nothing leaves the building
-today; the audit records *that* a PII read happened, not what it returned; and a
-run's state lives only as long as the run. The control that would close the cloud
-case is **S17**'s policy question — whether a run that read PII may only continue on
-a local model — which is deliberately not built yet. See [`privacy.md`](privacy.md)
-for the storage and retention answer.
+unless a cloud provider is deliberately configured; the audit records *that* a PII
+read happened, not what it returned; and a run's state lives only as long as the run.
+Since **S17** the cloud case is **opt-in** (ADR-0013): the remaining control — a
+policy rule that a PII-touching run may only continue on a local model — is named as
+future work and not pretended. See [`privacy.md`](privacy.md) for the storage and
+retention answer.
 **Test.** `test_a_second_step_sees_what_the_first_one_returned`
 (`app/agent/tests/test_graph.py`) is the demonstration: the second decision is made
 with the first call's result in hand, which is exactly the exposure being accepted.

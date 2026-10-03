@@ -1066,7 +1066,24 @@ approval_refund_limit := 500   # <= this (and > auto): needs approval; above: de
     end to end on a laptop with nothing in the cloud. If you set a provider key, it is
     consumed by the gateway and by nothing else.
   </p>
+  <p>
+    Hosted providers were finished in <b>S17</b>. The agent deliberately names no model — it asks
+    for an answer, not a vendor — so the gateway now puts the model it resolved into the
+    forwarded request; a provider used to receive none and fail. And because a strict provider
+    may reject the formal JSON hint, <code>LLM_STRIP_RESPONSE_FORMAT=1</code> drops it (the agent
+    also asks for JSON in words, so that is survivable). Both are exercised against a
+    <b>stub OpenAI-compatible provider that runs in-cluster</b> (<code>provider-stub</code>), so
+    the path can be run with nobody's cloud key — <code>LLM_BASE_URL=http://provider-stub:8080/v1</code>.
+  </p>
   <div class="callout warn">
+    <b>What a cloud model may see is a decision, not a default</b>
+    Local-only means a run that reads PII under an approval sends nothing off the machine. A
+    cloud provider changes that: a multi-step run re-exposes an earlier tool result to the model
+    (T11). The platform's answer is that a cloud provider is <b>opt-in</b>, and the finer control
+    belongs in policy — "this tenant, or this tool, may only use a local model" — rather than in
+    the gateway, which cannot see which tool produced the prompt. Recorded in <b>ADR-0013</b>.
+  </div>
+  <div class="callout info">
     <b>The gateway is not on the internet</b>
     It is deliberately absent from the ingress: only the agent should reach it, and only over
     mTLS. Push a conversation through the UI and the path is browser → ingress → api → agent

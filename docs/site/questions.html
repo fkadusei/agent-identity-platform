@@ -696,48 +696,48 @@ tool.reported_error   {"tool": "refunds.issue", "reason": "unknown order"}</pre>
 </section>
 
 <section id="cloud">
-  <h2><span class="qnum">10</span>What is the cloud-provider work?</h2>
+  <h2><span class="qnum">10</span>What was the cloud-provider work?</h2>
   <p class="answer">
-    <b>Letting the platform talk to a model outside the building — and deciding whether it
-    should.</b> The plumbing is in place; two defects in the hosted branch stop it working, and
-    the interesting half is a policy question, not a code one.
+    <b>Making the gateway work with any OpenAI-compatible provider — done (S17).</b> Two defects
+    in the hosted branch stopped it working, and the interesting half was a decision, not a code
+    fix: <i>may a cloud model see the personal data the agent can read under approval?</i> The
+    answer, recorded in ADR-0013, is that a cloud model is <b>opt-in</b> and the fine control
+    belongs in policy.
   </p>
   <p>
-    Today the model runs locally (Ollama), which is a deliberate choice: when the agent reads
-    personal data under an approval, nothing leaves the machine. What is already there:
+    The default is still local (Ollama), deliberately: when the agent reads personal data under an
+    approval, nothing leaves the machine. What the slice changed:
   </p>
-  <ul>
-    <li>the model is named in <b>one</b> place, and <code>./scripts/use-model.sh</code> swaps it without rebuilding;</li>
-    <li>a slot for a provider key already exists, and <b>only the gateway</b> can read it — the agent holds no model credential at all;</li>
-    <li>only the gateway talks to a model; everything else asks it.</li>
-  </ul>
-  <h3>The two defects, both found by reading that path</h3>
   <table>
-    <thead><tr><th>Symptom</th><th>Cause</th></tr></thead>
+    <thead><tr><th>Was</th><th>Now</th></tr></thead>
     <tbody>
       <tr>
-        <td>The request reaches the provider with <b>no model named</b>, and fails</td>
-        <td>The gateway forwards the request it received; the agent deliberately sends no model (it should not care which vendor answers). The gateway works out the model for its own audit but does not put it into the forwarded request.</td>
+        <td>The provider received <b>no model</b> and failed — the gateway forwarded the caller's request, and the agent sends none.</td>
+        <td>The gateway puts the model it resolved (for the audit) into the forwarded request too, and fails clearly when none is configured.</td>
       </tr>
       <tr>
-        <td>A strict provider may reject a <b>"give me JSON" hint</b></td>
-        <td>The agent already asks for JSON in words in the prompt, so dropping the formal hint is survivable — it just needs dropping when the provider does not accept it.</td>
+        <td>A strict provider could reject the <b>formal JSON hint</b> the agent sends.</td>
+        <td><code>LLM_STRIP_RESPONSE_FORMAT=1</code> drops it; the agent also asks for JSON in words, so it still works.</td>
       </tr>
     </tbody>
   </table>
   <div class="callout info">
-    <b>The question that makes it a slice rather than a patch</b>
-    Should a cloud model ever see customer data? Local-only means it cannot. Point the gateway
-    at a provider and an approved PII read would send that data off-site. The platform's style
-    would answer that with <b>policy</b> — a rule such as "this tool, or this tenant, may only
-    use a local model" — and the two defects come along with it. This is <b>S17</b>, and it is
-    the last open slice.
+    <b>Testable without a cloud key</b>
+    <code>setup.sh</code> deploys a <b>stub OpenAI-compatible provider</b> in-cluster
+    (<code>provider-stub</code>). Point the gateway at it —
+    <code>LLM_BASE_URL=http://provider-stub:8080/v1</code> — and a real run goes through the
+    hosted branch; the stub is strict about both defects on purpose. A live run against a real
+    provider is then only a matter of setting the key.
   </div>
-  <p>
-    What "done" looks like: a fake OpenAI-compatible provider running in-cluster (so the path
-    can be tested with nobody's cloud key), tests for those two defects, one live run against a
-    real provider, and a written answer to the data question.
-  </p>
+  <div class="callout warn">
+    <b>The decision: what a cloud model may see</b>
+    Local-only means a run that reads PII under approval cannot send it anywhere. A cloud provider
+    changes that — a multi-step run re-exposes the previous tool result to the model (T11). The
+    platform's answer: a cloud provider is <b>opt-in</b>, and the fine-grained control ("this
+    tenant/tool may only use a local model") belongs in <b>policy</b>, because the gateway cannot
+    see which tool produced the prompt. Documented in ADR-0013; the policy rule itself is left as
+    future work rather than pretended.
+  </div>
 </section>
 
 <section id="multi">

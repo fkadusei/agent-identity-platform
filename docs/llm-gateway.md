@@ -127,5 +127,53 @@ Checking a swap is therefore three commands: the audit line above after any run,
 The suites that do not involve a model (`role-tools.sh`, `attack-tests.sh`,
 `tenancy-tests.sh`) are unaffected and should stay green.
 
-Cloud and native providers are deliberately not wired yet — see **S17** in
-[`backlog.md`](backlog.md) for the two defects that stand between here and there.
+## Hosted / cloud providers (S17)
+
+Any OpenAI-compatible provider works. Set these in `.env`; `setup.sh` renders them
+into the `llm-config` ConfigMap (no manifest edit), and the key is consumed only by
+the gateway:
+
+| Env | Meaning |
+| --- | --- |
+| `LLM_PROVIDER` | `ollama` (default) or `openai-compatible` |
+| `LLM_BASE_URL` | the provider's `/v1` base (e.g. `https://api.openai.com/v1`) |
+| `LLM_MODEL` | the model to request (required for a hosted provider) |
+| `LLM_STRIP_RESPONSE_FORMAT` | `1` drops `response_format` for a provider that rejects it |
+| `LLM_API_KEY` | the provider key (gateway only; never the agent) |
+
+Two defects stood between here and there, both fixed:
+
+- **No model reached the provider.** The agent names no model — it asks for an answer,
+  not a vendor — and the gateway forwarded the caller's request verbatim, so the
+  provider received `model: null` and failed. The gateway now puts the model it
+  already resolves (for the audit) into the forwarded request, and fails with a clear
+  `500` if a hosted provider has no `LLM_MODEL` configured.
+- **`response_format` was forwarded blindly.** A strict provider may reject it; the
+  agent also asks for JSON in words, so `LLM_STRIP_RESPONSE_FORMAT=1` drops it.
+
+### Try it with no cloud key
+
+`setup.sh` deploys a **stub** OpenAI-compatible provider in the cluster:
+
+```bash
+# in .env
+LLM_PROVIDER=openai-compatible
+LLM_BASE_URL=http://provider-stub:8080/v1
+LLM_MODEL=stub-model
+LLM_STRIP_RESPONSE_FORMAT=1
+./scripts/setup.sh
+./scripts/demo.sh          # a real run through the hosted branch
+```
+
+The stub is strict about both defects on purpose: set `STUB_STRICT=1` on its
+deployment to make it reject `response_format`.
+
+### What a cloud model may see — the decision
+
+Local-only means a run that reads PII under an approval keeps it on the machine.
+Point the gateway at a cloud provider and a multi-step run re-exposes the previous
+tool result to that provider (T11). The platform's position (ADR-0013): a cloud
+provider is **opt-in**, and the fine control — "this tenant or tool may only use a
+local model" — belongs in **policy**, because the gateway cannot see which tool
+produced the prompt. The policy rule is left as future work, named rather than
+pretended.

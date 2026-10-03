@@ -625,7 +625,7 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   - Mesh probes still fail correctly through Linkerd's proxy, which is what makes
     these probes meaningful for the injected app tier.
 
-## S17 — Provider-agnostic models (native and cloud)
+## S17 — Provider-agnostic models (native and cloud) — **done**
 
 - **What:** make the gateway work with any OpenAI-compatible provider, not only Ollama.
   The plumbing for this is already in place — the model is named in one place (the
@@ -651,10 +651,24 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   this concrete**: a second step feeds the previous result back into the prompt, so a
   run that read PII as step 1 would send it to whichever model the gateway points at —
   see **S22**, which is the documentation side of the same fact.
-- **Lands in:** `app/gateway/app.py`, `scripts/use-model.sh`, `docs/llm-gateway.md`.
-- **Verified by:** a stub OpenAI-compatible provider in-cluster (so the path can be
-  exercised without anyone's cloud key), unit tests for both defects, and the live evals
-  against a real provider.
+- **Built:**
+  - `app/gateway/app.py` — the forwarded request now carries the resolved model; a
+    hosted provider with no `LLM_MODEL` fails with a clear `500`; and
+    `LLM_STRIP_RESPONSE_FORMAT=1` drops `response_format`.
+  - `app/provider_stub/`, `docker/provider-stub.Dockerfile`,
+    `deploy/kind/manifests/apps/provider-stub.yaml` — an in-cluster stub
+    OpenAI-compatible provider, deployed by `setup.sh`, deliberately strict about both
+    defects (missing model → 400; `STUB_STRICT=1` rejects `response_format`).
+  - `scripts/setup.sh` renders `LLM_BASE_URL` / `LLM_MODEL` / `LLM_STRIP_RESPONSE_FORMAT`
+    into `llm-config` from `.env`; `.env.example` documents the hosted path.
+  - The decision on PII and cloud models is written down — **ADR-0013** — with the
+    threat model (T8, T11), `docs/llm-gateway.md`, and the pages updated.
+- **Verified by:** `app/gateway/tests/test_gateway.py` (the resolved model is forwarded;
+  `response_format` is strippable; no model → a clear error) and
+  `app/tests/test_provider_stub.py`; a live run through the in-cluster stub. A live run
+  against a real cloud provider is left to whoever holds a key — and the policy rule that
+  a PII-touching run may only continue on a local model is named as future work, not
+  pretended.
 
 ## S18 — The agent asks instead of refusing (clarification) — **done**
 
