@@ -94,6 +94,9 @@ def verify(token: str | None, *, expected_audience: str | None = None) -> str:
     from app.common import revocation
 
     if revocation.is_revoked(subject):
+        from agentnhi import audit
+
+        audit("workload.revoked_refused", spiffe_id=subject)
         raise WorkloadRejected(f"{subject} has been revoked")
     return subject
 

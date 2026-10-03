@@ -64,6 +64,7 @@ def caller_id(authorization: str | None) -> str:
     from app.common import revocation
 
     if revocation.is_revoked(subject):
+        audit("llm.revoked_refused", caller=subject)
         raise HTTPException(status_code=403, detail=f"{subject} has been revoked")
     return subject
 
