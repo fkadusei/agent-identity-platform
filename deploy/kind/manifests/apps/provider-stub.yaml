@@ -1,0 +1,84 @@
+# =============================================================================
+# provider-stub — an OpenAI-compatible provider inside the cluster (S17).
+#
+# It exists so the gateway's *hosted* branch can be exercised end to end with
+# nobody's cloud key: point the gateway at it with
+#   LLM_PROVIDER=openai-compatible
+#   LLM_BASE_URL=http://provider-stub:8080/v1
+#   LLM_MODEL=stub-model
+# and run ./scripts/demo.sh. It is a deterministic test double, not a model.
+#
+# STUB_STRICT=1 makes it reject `response_format` the way a strict provider might
+# — which is what the gateway's LLM_STRIP_RESPONSE_FORMAT exists to handle.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: provider-stub
+  namespace: agent-platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: provider-stub
+  template:
+    metadata:
+      labels:
+        app: provider-stub
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provider-stub
+          image: agent-platform/provider-stub:demo
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+            # "1" rejects response_format (prove the strip path); any other value
+            # accepts it. STUB_API_KEY, if set, is required as a bearer.
+            - name: STUB_STRICT
+              value: "0"
+          ports:
+            - containerPort: 8080
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 6
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: provider-stub
+  namespace: agent-platform
+spec:
+  selector:
+    app: provider-stub
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

@@ -73,6 +73,17 @@ def _wants_json(req: ChatRequest) -> bool:
     return (req.response_format or {}).get("type") == "json_object"
 
 
+def _strip_response_format() -> bool:
+    """Whether to drop `response_format` before forwarding to a hosted provider.
+
+    A strict provider may reject a field it does not support; the agent also asks
+    for JSON in words, so dropping it is survivable. Off by default (S17).
+    """
+    return os.environ.get("LLM_STRIP_RESPONSE_FORMAT", "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     return {"ok": True, "provider": os.environ.get("LLM_PROVIDER", "ollama")}
@@ -99,6 +110,10 @@ def chat(req: ChatRequest, authorization: str | None = Header(default=None)) -> 
     # `req.model` recorded an empty string — and "which model decided this?" is the
     # reason the field exists.
     model = req.model or (OLLAMA_MODEL if provider == "ollama" else os.environ.get("LLM_MODEL", ""))
+    if provider != "ollama" and not model:
+        # A hosted provider needs a model named. Fail loudly rather than forward an
+        # empty `model` and let the provider return an opaque error (S17).
+        raise HTTPException(status_code=500, detail="no model configured: set LLM_MODEL")
     audit("llm.call", provider=provider, model=model, messages=len(req.messages), caller=caller)
 
     if provider == "ollama":
@@ -128,10 +143,17 @@ def chat(req: ChatRequest, authorization: str | None = Header(default=None)) -> 
 
     # Hosted, OpenAI-compatible provider. The key lives ONLY here.
     base = os.environ.get("LLM_BASE_URL", "https://api.openai.com/v1").rstrip("/")
+    # The caller usually names no model (the agent asks for an answer, not a
+    # vendor), so forward the model resolved above rather than the caller's empty
+    # `model` — otherwise a hosted provider receives none and fails (S17).
+    payload = req.model_dump(exclude_none=True)
+    payload["model"] = model
+    if _strip_response_format():
+        payload.pop("response_format", None)
     resp = httpx.post(
         f"{base}/chat/completions",
         headers={"Authorization": f"Bearer {os.environ.get('LLM_API_KEY', '')}"},
-        json=req.model_dump(exclude_none=True),
+        json=payload,
         timeout=60,
     )
     resp.raise_for_status()

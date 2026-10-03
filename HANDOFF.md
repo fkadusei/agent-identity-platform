@@ -19,8 +19,10 @@
   missing argument instead of refusing, **S19** lets it take more than one bounded
   step, **S20** stops it inventing an identifier, and **S21** stops "allowed" reading
   as "it happened"; the agent-upgrade work is complete, and **S22** writes down what
-  that loop now keeps and re-exposes. **S17** (cloud providers) and **S23** (revoke a
-  rogue agent) remain open; **S24** closed the refund-idempotency gap.
+  that loop now keeps and re-exposes. **S17** finished the provider-agnostic path
+  (cloud is opt-in; the PII decision is ADR-0013), **S24** closed the refund-idempotency
+  gap, and **S25** added cross-page search. **S23** (revoke a rogue agent) is the one
+  open slice.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-10-03
 
@@ -189,25 +191,17 @@ End-to-end, on the cluster:
 
 ## Immediate next task
 
-Phases 1–3 are complete, every threat is addressed, and **S1–S22, S24 and S25 are
-done**.
-What remains is two open slices and one loose end — all are written up where they
-land:
+Phases 1–3 are complete, every threat is addressed, and **S1–S22 and S24–S25 are
+done**. What remains is one open slice and one loose end — both are written up where
+they land:
 
-1. **S17 — provider-agnostic models.** Two defects in the hosted-provider branch,
-   both found by reading it: the forwarder sends no model, and it forwards a JSON hint
-   a strict provider may reject. The *interesting* half is the policy question: may a
-   cloud model see the personal data the agent can read under approval? Local-only
-   means it cannot, today. **S22** documented the concrete case that turns on — a
-   multi-step run re-exposes a `privacy.pii.read` result to whichever model the
-   gateway points at — and deliberately left the control here.
-2. **S23 — revoke a rogue agent.** Identity is the root of trust, but "turn one off"
+1. **S23 — revoke a rogue agent.** Identity is the root of trust, but "turn one off"
    is a manual runbook (delete the SPIRE entry and the pod) with **no un-issue and no
    central, automated revoke**: a held SVID lives until it expires (JWT 5 m, X.509
    1 h), and the gateway does not name-check callers. Question 21 on the pages has the
    trust points and the gaps; the backlog entry carries the options (a runbook
    wrapper, an admission denylist, or a policy/mesh decision). Deferred on purpose.
-3. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
+2. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
    live key, and documented in [`docs/ha.md`](docs/ha.md) and question 12 of the
    pages. No action unless you want HA identity on by default.
 
@@ -241,8 +235,11 @@ instead of inventing them), **S21** (a tool's own "no" is reported and
 recorded, instead of a bare "allowed"), **S22** (what the loop keeps and
 re-exposes is written down and accepted, not prevented), **S24** (a resumed
 approval issues one refund, not two — the verified approval id is the idempotency
-key, threaded through the tools to the backend), and **S25** (a cross-page search
-box on every docs page, backed by a generated index that CI rebuilds and checks).
+key, threaded through the tools to the backend), **S25** (a cross-page search box on
+every docs page, backed by a generated index that CI rebuilds and checks), and
+**S17** (the provider-agnostic path finished — the model is forwarded, the JSON hint
+is strippable, an in-cluster stub exercises it, and the PII/cloud decision is
+ADR-0013).
 
 ## The repository is public
 
@@ -275,6 +272,7 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 - ADR-0010 Supply-chain signing with cosign (keyless Sigstore)
 - ADR-0011 Self-service enrollment and role administration
 - ADR-0012 Transport identity: SPIFFE for the workloads we own, the mesh for the rest
+- ADR-0013 Provider-agnostic models and what a cloud model may see (cloud is opt-in; the per-tenant/tool rule is left to policy)
 
 ## Governance (as configured)
 

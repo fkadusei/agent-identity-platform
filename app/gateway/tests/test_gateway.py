@@ -108,6 +108,7 @@ def test_hosted_provider_forwards_the_key(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "openai-compatible")
     monkeypatch.setenv("LLM_BASE_URL", "https://api.example/v1")
     monkeypatch.setenv("LLM_API_KEY", "secret-key")
+    monkeypatch.setenv("LLM_MODEL", "gpt-test")
 
     resp = TestClient(app).post(
         "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
@@ -115,6 +116,72 @@ def test_hosted_provider_forwards_the_key(monkeypatch):
     assert resp.status_code == 200
     assert calls["url"] == "https://api.example/v1/chat/completions"
     assert calls["headers"]["Authorization"] == "Bearer secret-key"
+
+
+def test_hosted_provider_receives_the_resolved_model(monkeypatch):
+    """The agent sends no model; the gateway must add the one it resolved (S17).
+
+    Forwarding the caller's request verbatim sent `model: None` straight through,
+    and a hosted provider rejects a request with no model. The resolved model is
+    already computed for the audit — it now goes into the payload too.
+    """
+    calls: dict = {}
+
+    def fake_post(url, json=None, headers=None, **kwargs):  # noqa: A002
+        calls["json"] = json
+        return _Response({"choices": [{"message": {"role": "assistant", "content": "{}"}}]})
+
+    _as_caller(monkeypatch)
+    monkeypatch.setattr(gw.httpx, "post", fake_post)
+    monkeypatch.setenv("LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.example/v1")
+    monkeypatch.setenv("LLM_MODEL", "gpt-test")
+
+    resp = TestClient(app).post(
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert resp.status_code == 200
+    assert calls["json"]["model"] == "gpt-test"
+
+
+def test_hosted_response_format_can_be_stripped(monkeypatch):
+    """A strict provider may reject `response_format`; the field can be dropped (S17)."""
+    calls: dict = {}
+
+    def fake_post(url, json=None, headers=None, **kwargs):  # noqa: A002
+        calls["json"] = json
+        return _Response({"choices": [{"message": {"role": "assistant", "content": "{}"}}]})
+
+    _as_caller(monkeypatch)
+    monkeypatch.setattr(gw.httpx, "post", fake_post)
+    monkeypatch.setenv("LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.example/v1")
+    monkeypatch.setenv("LLM_MODEL", "gpt-test")
+    monkeypatch.setenv("LLM_STRIP_RESPONSE_FORMAT", "1")
+
+    resp = TestClient(app).post(
+        "/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "response_format": {"type": "json_object"},
+        },
+    )
+    assert resp.status_code == 200
+    assert "response_format" not in calls["json"]
+
+
+def test_hosted_without_a_model_fails_clearly(monkeypatch):
+    _as_caller(monkeypatch)
+    monkeypatch.setattr(gw.httpx, "post", lambda *a, **k: _Response({}))
+    monkeypatch.setenv("LLM_PROVIDER", "openai-compatible")
+    monkeypatch.setenv("LLM_BASE_URL", "https://api.example/v1")
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+
+    resp = TestClient(app).post(
+        "/v1/chat/completions", json={"messages": [{"role": "user", "content": "hi"}]}
+    )
+    assert resp.status_code == 500
+    assert "LLM_MODEL" in resp.json()["detail"]
 
 
 def test_rate_limit_returns_429(monkeypatch):
