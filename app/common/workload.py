@@ -89,6 +89,12 @@ def verify(token: str | None, *, expected_audience: str | None = None) -> str:
         # A JWT-SVID always names its workload; without a subject there is nothing
         # to allow, so this is a rejection rather than a pass.
         raise WorkloadRejected("workload token has no subject")
+    # A revoked identity is refused at admission, before its SVID expires (S23).
+    # Imported here so `workload` and `revocation` do not import each other.
+    from app.common import revocation
+
+    if revocation.is_revoked(subject):
+        raise WorkloadRejected(f"{subject} has been revoked")
     return subject
 
 

@@ -55,6 +55,23 @@ class IdentityAdmin:
             method, f"{self._admin_url}{path}", headers=self._headers(), timeout=15, **kwargs
         )
 
+    # -- clients --------------------------------------------------------------
+    def find_client(self, client_id: str) -> dict | None:
+        """The client whose `clientId` is `client_id` (the agent's SPIFFE ID)."""
+        resp = self._request("GET", "/clients", params={"clientId": client_id})
+        resp.raise_for_status()
+        clients = resp.json()
+        return clients[0] if clients else None
+
+    def set_client_enabled(self, client_id: str, enabled: bool) -> bool:
+        """Enable/disable a client. Disabling stops it exchanging tokens (S23)."""
+        client = self.find_client(client_id)
+        if client is None:
+            return False
+        resp = self._request("PUT", f"/clients/{client['id']}", json={"enabled": enabled})
+        resp.raise_for_status()
+        return True
+
     # -- users ----------------------------------------------------------------
     def list_users(self) -> list[dict]:
         resp = self._request("GET", "/users", params={"max": 200})

@@ -211,6 +211,29 @@ def test_hosted_provider_without_a_key_sends_no_authorization(monkeypatch):
     assert "Authorization" not in (calls["headers"] or {})
 
 
+def test_gateway_refuses_a_revoked_workload(monkeypatch):
+    """A revoked agent is refused at the gateway too, before its SVID expires (S23)."""
+    from app.common import revocation
+
+    class Keys:
+        def get_signing_key_from_jwt(self, token):
+            return type("K", (), {"key": "k"})()
+
+    monkeypatch.setattr(gw, "_jwks", Keys())
+    monkeypatch.setattr(gw.jwt, "decode", lambda *a, **k: {"sub": CALLER})
+    revocation.set_source(lambda: {CALLER})
+    try:
+        resp = TestClient(app).post(
+            "/v1/chat/completions",
+            json={"messages": [{"role": "user", "content": "hi"}]},
+            headers={"Authorization": "Bearer x"},
+        )
+        assert resp.status_code == 403
+        assert "revoked" in resp.json()["detail"]
+    finally:
+        revocation.reset()
+
+
 def test_rate_limit_returns_429(monkeypatch):
     _as_caller(monkeypatch)
     monkeypatch.setattr(gw, "LIMITER", Limiter(requests_per_minute=1))

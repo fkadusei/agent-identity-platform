@@ -88,6 +88,10 @@ spec:
               value: https://api:8443
             - name: AUDIT_URL
               value: https://api:8443
+            # The revoked-workload denylist the api serves (S23): a revoked agent
+            # is refused at admission, before its SVID expires.
+            - name: REVOCATION_URL
+              value: https://api:8443
             # Real-integration path: call the sandbox over REST instead of the
             # in-process simulator. Point SANDBOX_BASE_URL at a real sandbox to
             # swap it (docs/integrations.md).

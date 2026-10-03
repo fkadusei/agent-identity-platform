@@ -850,7 +850,7 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   (`app/agent/tests/test_graph.py`); `scripts/check-docs-pages.py` keeps the pages
   and their quoted lines consistent.
 
-## S23 — Revoke a rogue agent
+## S23 — Revoke a rogue agent — **done**
 
 - **What:** a first-class way to cut off a workload identity that should no longer be
   trusted — an agent that was never authorized, or a once-legitimate one that has
@@ -893,9 +893,27 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Lands in:** `scripts/` (runbook/wrapper), `app/common/workload.py` and the api (if
   the denylist path), `policy/authz.rego` (if policy), and `docs/operator-guide.md`
   §5.B plus a `docs/revocation.md`.
-- **Verified by:** an attack-suite case that revokes a live identity and shows its next
-  call refused, and a test showing a held SVID refused at admission *before* it expires
-  — "stop issuing" alone is not the claim.
+- **Built:**
+  - **The admission denylist** (option b). The api is the authority: `app/api/revocations.py`
+    (in-memory | Postgres) with `GET /workloads/revoked` (our services only),
+    `POST /admin/workloads/revoke` and `/restore` (platform_admin, audited). Every hop we
+    own checks it at admission — `app/common/workload.py` (api/tools) and the gateway's
+    `caller_id` — via `app/common/revocation.py`, which fetches the set over a hop we own
+    and caches it for seconds.
+  - **The runbook** (option a): `scripts/revoke-workload.sh` does all four levers — the
+    denylist, the SPIRE entry, the Keycloak client (`scripts/keycloak_client_admin.py`,
+    using the platform-admin service account), and the pods. `--restore` undoes the
+    denylist; `setup.sh` re-registers SPIRE + Keycloak.
+  - `scripts/revocation-tests.sh` — revoke the agent, show the next task refused, restore.
+  - `docs/revocation.md`, `docs/operator-guide.md` §5.B, and question 21 on the pages.
+- **Verified by:** `app/tests/test_revocation.py` (store, client, and a revoked caller
+  refused at admission via `workload.verify`), `app/api/tests/test_revocations.py`
+  (endpoints), and a gateway test; on the cluster, `scripts/revocation-tests.sh` revokes
+  the agent's live identity and shows the next call refused **before its SVID expires**,
+  then restores it. "Stop issuing" alone is not the claim — the denylist is.
+- **Left, and named:** reaping a retired workload's SPIRE entry and Keycloak client is
+  still manual (`setup.sh` restores them); automating that is the deregistration half of
+  Q20's lifecycle gap, not pretended here.
 
 ## S24 — A resumed approval must not refund twice — **done**
 

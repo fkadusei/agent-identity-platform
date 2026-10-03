@@ -86,6 +86,10 @@ spec:
               value: http://spire-oidc-discovery.agent-platform.svc.cluster.local:11080/keys
             - name: LLM_GATEWAY_AUDIENCE
               value: spiffe://acme.com/ns/agent-platform/sa/gateway
+            # The revoked-workload denylist the api serves (S23): a revoked agent
+            # is refused here too, before its SVID expires.
+            - name: REVOCATION_URL
+              value: https://api:8443
             # Per-agent limits (0 = unlimited).
             - name: LLM_RATE_LIMIT_PER_MINUTE
               value: "60"
