@@ -39,10 +39,22 @@ def healthz() -> dict:
     return {"ok": True, "service": "provider-stub"}
 
 
+def _task_text(prompt: str) -> str:
+    """The task from the agent's prompt, not the whole thing.
+
+    The prompt also lists the tool catalogue, which mentions "refund" and friends
+    — deciding on all of it made the stub pick a refund tool for a customer lookup.
+    The agent quotes the task as ``Task: "..."``.
+    """
+    match = re.search(r'Task:\s*"(.+?)"', prompt, re.S)
+    return match.group(1) if match else prompt
+
+
 def _decide(prompt: str) -> dict:
     """A deterministic tool choice, so a run through the stub does something."""
-    p = prompt.lower()
-    ids = re.findall(r"\b(?:o|c|t)-\d{3,4}\b", prompt)
+    task = _task_text(prompt)
+    p = task.lower()
+    ids = re.findall(r"\b(?:o|c|t)-\d{3,4}\b", task)
     order = next((i for i in ids if i.startswith("o-")), None)
     customer = next((i for i in ids if i.startswith("c-")), None)
     ticket = next((i for i in ids if i.startswith("t-")), None)
