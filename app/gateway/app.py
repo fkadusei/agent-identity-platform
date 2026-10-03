@@ -60,6 +60,11 @@ def caller_id(authorization: str | None) -> str:
     subject = claims.get("sub")
     if not subject:
         raise HTTPException(status_code=403, detail="workload token has no subject")
+    # A revoked workload is refused here too — the gateway is a hop we own (S23).
+    from app.common import revocation
+
+    if revocation.is_revoked(subject):
+        raise HTTPException(status_code=403, detail=f"{subject} has been revoked")
     return subject
 
 

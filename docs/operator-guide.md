@@ -245,17 +245,29 @@ curl -s --cacert $CA $API/audit | python3 -c 'import sys,json;print([e for e in 
 
 **B. Compromised or rogue workload**
 
-The workload's identity is its SVID. Remove the registration entry and the SVID
-cannot be renewed:
+One command, and the identity is refused at every hop we own **immediately** —
+before its SVID expires (S23; see [`revocation.md`](revocation.md)):
+
+```bash
+./scripts/revoke-workload.sh spiffe://acme.com/ns/agent-platform/sa/agent --reason "gone rogue"
+```
+
+It does four things, in order of immediacy: the **api denylist** (refused at
+admission now), the **SPIRE registration entry** (no new SVIDs), the **Keycloak
+client** (no new token exchanges), and the **pods** (the held SVID stops being
+presented). The underlying steps, if you prefer to run them by hand:
 
 ```bash
 SPIRE="kubectl -n agent-platform exec spire-server-0 -- /opt/spire/bin/spire-server"
 SOCKET=/run/spire/server/private/api.sock
 $SPIRE entry show  -socketPath $SOCKET -spiffeID <spiffe-id>
 $SPIRE entry delete -socketPath $SOCKET -entryID <entry-id>
-# cut the current SVID immediately:
 kubectl -n agent-platform delete pod -l app=<workload>
 ```
+
+Undo the denylist entry with `--restore`; re-run `./scripts/setup.sh` to
+re-register the SPIRE entry and re-enable the Keycloak client. `scripts/revocation-tests.sh`
+proves the refusal is immediate and reversible.
 
 **C. Leaked client secret or admin credential**
 

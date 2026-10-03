@@ -45,10 +45,11 @@ from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.authz import current_delegation, require_roles, require_workload
 from app.api.roles import router as roles_router
+from app.api.revocations import build_revocations
 from app.audit.store import build_audit_store
 from app.approvals import ApprovalStore
 from app.approvals.store import build_store
-from app.common import hop, metrics, workload
+from app.common import hop, metrics, revocation, workload
 from app.common.telemetry import instrument_fastapi, setup_telemetry
 
 app = FastAPI(title="agent-identity-platform API")
@@ -73,6 +74,11 @@ _store = build_store()
 # oversight view cannot be built on that, so it uses the same durable store the
 # approvals do, and falls back to memory only when there is no database.
 _audit = build_audit_store()
+# The revocation authority (S23): the workload identities cut off at every hop we
+# own. The api is the writer and registers an in-process source, so its own
+# admission check reads the store directly; every other service fetches it.
+_revocations = build_revocations()
+revocation.set_source(lambda: _revocations.ids())
 
 
 @app.middleware("http")
@@ -288,6 +294,52 @@ def decide_approval(
         tool=approval.tool,
     )
     return approval.as_dict()
+
+
+# ---------------------------------------------------------------------------
+# Workload revocation (S23)
+# ---------------------------------------------------------------------------
+@app.get("/workloads/revoked")
+def list_revoked(
+    # Only our own services consult this, and they name themselves (S7).
+    caller: str = Depends(require_workload(workload.AGENT, workload.TOOLS, workload.GATEWAY)),
+) -> dict:
+    """The revoked SPIFFE IDs, for the services that enforce admission."""
+    return {"revoked": sorted(_revocations.ids())}
+
+
+@app.get("/admin/workloads/revoked")
+def list_revoked_admin(
+    delegation: Delegation = Depends(require_roles("platform_admin")),
+) -> list[dict]:
+    return _revocations.all()
+
+
+@app.post("/admin/workloads/revoke")
+def revoke_workload(
+    body: dict,
+    delegation: Delegation = Depends(require_roles("platform_admin")),
+) -> dict:
+    spiffe_id = (body.get("spiffe_id") or "").strip()
+    if not spiffe_id:
+        raise HTTPException(status_code=400, detail="spiffe_id is required")
+    reason = body.get("reason") or ""
+    record = _revocations.revoke(spiffe_id, reason=reason, by=delegation.user)
+    audit("workload.revoked", spiffe_id=spiffe_id, by=delegation.user, reason=reason)
+    return record
+
+
+@app.post("/admin/workloads/restore")
+def restore_workload(
+    body: dict,
+    delegation: Delegation = Depends(require_roles("platform_admin")),
+) -> dict:
+    spiffe_id = (body.get("spiffe_id") or "").strip()
+    if not spiffe_id:
+        raise HTTPException(status_code=400, detail="spiffe_id is required")
+    removed = _revocations.restore(spiffe_id)
+    audit("workload.restored", spiffe_id=spiffe_id, by=delegation.user)
+    return {"spiffe_id": spiffe_id, "restored": removed}
 
 
 # ---------------------------------------------------------------------------

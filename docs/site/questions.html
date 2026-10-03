@@ -1802,11 +1802,12 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
 <section id="revoke">
   <h2><span class="qnum">21</span>Can a rogue agent be revoked?</h2>
   <p class="answer">
-    <b>Yes, but only as "stop issuing and kill the holder" — there is no un-issue.</b> An SVID is
-    a bearer credential with no CRL or OCSP, so a copied one works until it expires. The platform
-    can stop the identity being renewed, can refuse it at every hop, and can kill the process that
-    holds it; it cannot reach out and invalidate a certificate already in someone's hands. Today
-    this is a manual runbook, and a first-class capability is backlogged as <b>S23</b>.
+    <b>Yes — and since S23 it is one command that refuses the identity at admission, now.</b> An
+    SVID is a bearer credential with no CRL or OCSP, so a copied one still works until it expires:
+    the platform cannot reach out and invalidate a certificate already in someone's hands. But it
+    can <b>stop issuing</b> (the SPIRE entry, the Keycloak client), <b>refuse the held one at every
+    hop</b> (an admission denylist the api serves), and <b>kill the process that holds it</b>. The
+    denylist is what makes the refusal immediate rather than TTL-bounded.
   </p>
 
   <h3>First, "rogue" is two different problems</h3>
@@ -1837,10 +1838,9 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
         <td>bounded by the TTL</td>
       </tr>
       <tr>
-        <td>Admission — <code>ALLOWED_WORKLOADS</code> (<code>app/common/workload.py</code>;
-          default: the one agent)</td>
-        <td>remove the SPIFFE ID and restart the service</td>
-        <td>next call, no TTL</td>
+        <td>Admission — the api denylist (<code>app/common/revocation.py</code>; every hop we own checks it)</td>
+        <td><code>POST /admin/workloads/revoke</code> (or <code>revoke-workload.sh</code>)</td>
+        <td>seconds (a short cache), no TTL wait</td>
       </tr>
       <tr>
         <td>Authorization — OPA <code>is_trusted</code> / <code>input.agent</code></td>
@@ -1854,34 +1854,32 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
       </tr>
       <tr>
         <td>Model access — the gateway</td>
-        <td><i>none</i>: it accepts any valid JWT-SVID audienced to it</td>
-        <td>only the 5 m TTL</td>
+        <td>it checks the denylist too, and refuses a revoked caller</td>
+        <td>seconds</td>
       </tr>
     </tbody>
   </table>
 
-  <h3>What the runbook is today</h3>
+  <h3>What the runbook is now</h3>
   <p>
-    <code>docs/operator-guide.md</code> §5.B: delete the registration entry so the SVID cannot be
-    renewed, then delete the pod so the current one stops being presented.
+    One command does all four, in order of immediacy — the denylist, the SPIRE entry, the Keycloak
+    client, and the pods (<code>docs/revocation.md</code>, <code>docs/operator-guide.md</code> §5.B):
   </p>
   <div class="codeblock">
-    <p class="cap">commands — the operator runbook, manual</p>
-    <pre>SPIRE="kubectl -n agent-platform exec spire-server-0 -- /opt/spire/bin/spire-server"
-SOCKET=/run/spire/server/private/api.sock
-$SPIRE entry show   -socketPath $SOCKET -spiffeID &lt;spiffe-id&gt;
-$SPIRE entry delete -socketPath $SOCKET -entryID &lt;entry-id&gt;
-kubectl -n agent-platform delete pod -l app=agent</pre>
+    <p class="cap">commands — the operator runbook</p>
+    <pre>./scripts/revoke-workload.sh spiffe://acme.com/ns/agent-platform/sa/agent --reason "gone rogue"
+./scripts/revocation-tests.sh      # prove the refusal is immediate and reversible</pre>
   </div>
 
   <div class="callout warn">
-    <b>The honest limits</b>
-    No CRL/OCSP, so a copied SVID key lives until it expires. No central or automated revoke —
-    only <i>user</i> revocation is scripted (<code>POST /admin/users/{id}/enabled</code>, revoke a
-    role). The gateway does not name-check callers. And nothing reaps the SPIRE entry or the
-    Keycloak client when a workload is retired (<a href="#agent-lifecycle">Q20</a>'s deregistration gap). Closing these — a
-    runbook wrapper, an admission denylist fed by the api, or a policy/mesh decision — is
-    <b>S23</b> in <code>docs/backlog.md</code>, deliberately deferred.
+    <b>The honest limits that remain</b>
+    <b style="display:inline">·</b> No un-issue: a copied SVID key works until it expires, so
+    revocation is <i>stop issuing + refuse at admission</i>, not "instantly dead everywhere".
+    <b style="display:inline">·</b> The denylist fails open if the api is unreachable and no set
+    was ever fetched — defence in depth, not the only control.
+    <b style="display:inline">·</b> Reaping is still manual: deleting a workload does not remove
+    its SPIRE entry or Keycloak client (<a href="#agent-lifecycle">Q20</a>'s deregistration gap);
+    re-run <code>setup.sh</code> to restore them.
   </div>
 </section>
 

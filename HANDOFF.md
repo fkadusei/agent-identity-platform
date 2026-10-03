@@ -20,9 +20,9 @@
   step, **S20** stops it inventing an identifier, and **S21** stops "allowed" reading
   as "it happened"; the agent-upgrade work is complete, and **S22** writes down what
   that loop now keeps and re-exposes. **S17** finished the provider-agnostic path
-  (cloud is opt-in; the PII decision is ADR-0013), **S24** closed the refund-idempotency
-  gap, and **S25** added cross-page search. **S23** (revoke a rogue agent) is the one
-  open slice.
+  (cloud is opt-in; the PII decision is ADR-0013), **S23** added a revocation denylist
+  and a one-command runbook, **S24** closed the refund-idempotency gap, and **S25**
+  added cross-page search. Every slice is done.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-10-03
 
@@ -191,19 +191,17 @@ End-to-end, on the cluster:
 
 ## Immediate next task
 
-Phases 1–3 are complete, every threat is addressed, and **S1–S22 and S24–S25 are
-done**. What remains is one open slice and one loose end — both are written up where
-they land:
+Phases 1–3 are complete, every threat is addressed, and **every slice is done**
+(S1–S25). What remains is one loose end:
 
-1. **S23 — revoke a rogue agent.** Identity is the root of trust, but "turn one off"
-   is a manual runbook (delete the SPIRE entry and the pod) with **no un-issue and no
-   central, automated revoke**: a held SVID lives until it expires (JWT 5 m, X.509
-   1 h), and the gateway does not name-check callers. Question 21 on the pages has the
-   trust points and the gaps; the backlog entry carries the options (a runbook
-   wrapper, an admission denylist, or a policy/mesh decision). Deferred on purpose.
-2. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
+1. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
    live key, and documented in [`docs/ha.md`](docs/ha.md) and question 12 of the
    pages. No action unless you want HA identity on by default.
+
+**Known, named, not a slice:** reaping a retired workload's SPIRE entry and Keycloak
+client is still manual (S23 revokes at admission; `setup.sh` restores registrations).
+That deregistration half of the lifecycle gap (Q20) is the natural next thing if
+revocation is extended.
 
 Recently closed: **the `demo-roles.sh` cold-start flakiness.** The login helpers in
 the client scripts (`roles`, `demo`, `attack`, `role_tools`, `tenancy`) now use a
@@ -239,7 +237,8 @@ key, threaded through the tools to the backend), **S25** (a cross-page search bo
 every docs page, backed by a generated index that CI rebuilds and checks), and
 **S17** (the provider-agnostic path finished — the model is forwarded, the JSON hint
 is strippable, an in-cluster stub exercises it, and the PII/cloud decision is
-ADR-0013).
+ADR-0013), and **S23** (an admission denylist the api serves, checked at every hop we
+own, plus `revoke-workload.sh` for the SPIRE entry, Keycloak client and pods).
 
 ## The repository is public
 
