@@ -36,6 +36,23 @@ def test_it_returns_a_tool_decision():
     assert '"tool"' in content
 
 
+def test_it_decides_from_the_task_not_the_tool_list():
+    """The prompt lists the tool catalogue too; a "refund" tool there must not
+    steer a customer lookup. The stub reads the quoted `Task:`."""
+    prompt = (
+        "Available tools:\n"
+        "- refunds.issue(order_id, amount): Issue a refund.\n"
+        "- crm.customer.read(customer_id): Read a customer's profile.\n\n"
+        'Task: "Get the profile of customer c-100"\n'
+    )
+    resp = client.post(
+        "/v1/chat/completions", json={"model": "stub", "messages": [{"role": "user", "content": prompt}]}
+    )
+    content = resp.json()["choices"][0]["message"]["content"]
+    assert "crm.customer.read" in content
+    assert "refunds" not in content
+
+
 def test_strict_mode_rejects_response_format(monkeypatch):
     monkeypatch.setenv("STUB_STRICT", "1")
     resp = client.post(
