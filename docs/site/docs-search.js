@@ -20,9 +20,6 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
   }
-  function rxEscape(s) {
-    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  }
 
   // A deliberately light stemmer: enough for plurals and the common suffixes,
   // not a Porter stemmer. `refunds`→`refund`, `approvals`→`approval`,
@@ -43,30 +40,44 @@
   function stemOf(term) {
     return term.length >= 4 ? stem(term) : term;
   }
-  // Match a term (or its stem) as the start of a word: `\brefund\w*`.
-  function matcher(term) {
-    return new RegExp("\\b" + rxEscape(stemOf(term)) + "\\w*", "gi");
-  }
-  function count(text, term) {
-    var m = text.match(matcher(term));
-    return m ? m.length : 0;
-  }
 
   function terms(q) {
     return q.toLowerCase().split(/[^a-z0-9_.]+/).filter(Boolean);
+  }
+  // Words, lowercased. Matching is a prefix test on words — no `new RegExp` from
+  // user input (a ReDoS/injection shape), and faster than a regex per term.
+  function words(text) {
+    return text.toLowerCase().split(/[^a-z0-9_]+/).filter(Boolean);
+  }
+  function countIn(ws, key) {
+    var n = 0;
+    for (var i = 0; i < ws.length; i++) if (ws[i].indexOf(key) === 0) n++;
+    return n;
+  }
+  // The first index in `low` where `key` starts a word (or -1).
+  function firstWordIndex(low, key) {
+    var from = 0;
+    var i = low.indexOf(key, from);
+    while (i !== -1) {
+      if (i === 0 || !/[a-z0-9_]/.test(low.charAt(i - 1))) return i;
+      i = low.indexOf(key, i + 1);
+    }
+    return -1;
   }
 
   // Every term must appear (AND). Title hits weigh most; body hits are capped so
   // one repeated word cannot dominate; an exact phrase and an all-in-title match
   // get a bonus.
   function score(rec, ts, phrase) {
-    var title = (rec.t || "").toLowerCase();
     var body = (rec.x || "").toLowerCase();
+    var tw = words(rec.t || "");
+    var bw = words(rec.x || "");
     var s = 0;
     var allInTitle = true;
     for (var i = 0; i < ts.length; i++) {
-      var tc = count(title, ts[i]);
-      var bc = count(body, ts[i]);
+      var key = stemOf(ts[i]);
+      var tc = countIn(tw, key);
+      var bc = countIn(bw, key);
       if (tc === 0 && bc === 0) return -1;
       s += tc * 12 + Math.min(bc, 6);
       if (tc === 0) allInTitle = false;
@@ -94,7 +105,7 @@
     var low = body.toLowerCase();
     var at = -1;
     for (var i = 0; i < ts.length; i++) {
-      var p = low.search(matcher(ts[i]));
+      var p = firstWordIndex(low, stemOf(ts[i]));
       if (p >= 0 && (at < 0 || p < at)) at = p;
     }
     if (at < 0) at = 0;
