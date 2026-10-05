@@ -58,12 +58,13 @@ else
 fi
 
 say "2. Keycloak client — the delegation client is gone"
-if kubectl -n $NS exec -i deploy/api -- python - delete "$SPIFFE" \
-     < scripts/keycloak_client_admin.py 2>/dev/null | grep -q '^deleted'; then
-  ok "deleted the Keycloak client named by the SPIFFE ID"
-else
-  info "no Keycloak client named $SPIFFE"
-fi
+kc_out="$(kubectl -n $NS exec -i deploy/api -- python - delete "$SPIFFE" \
+  < scripts/keycloak_client_admin.py 2>&1)" || true
+case "$kc_out" in
+  deleted*) ok "deleted the Keycloak client named by the SPIFFE ID" ;;
+  *failed*) info "could not delete the Keycloak client: $(printf '%s' "$kc_out" | grep 'failed' | tail -1)" ;;
+  *)        info "no Keycloak client named $SPIFFE" ;;
+esac
 
 say "3. admission denylist — clear any entry for the id"
 TOKEN="$(curl -s --cacert "$CA" "$API/auth/login" -H 'content-type: application/json' \

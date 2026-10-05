@@ -52,7 +52,9 @@ Each action calls the API (`/admin/users…`), which checks the caller holds
 
 The API does not hold the bootstrap admin credential. It authenticates to
 Keycloak's Admin API as the **`platform-admin` service account**, which holds
-only `manage-users` plus read-roles on the realm (`realm.json.tmpl`). Its secret
+`manage-users`, read-roles, and `manage-clients` on the realm
+(`realm.json.tmpl`) — the last so a retired workload's delegation client can be
+reaped (S26). Its secret
 is generated into the gitignored `.env` and mounted as a Secret
 (`docs/secrets.md`).
 
@@ -73,7 +75,8 @@ Keycloak issued and reads `sub`, the realm roles and the `tenant` attribute from
 it. To confirm that for yourself, ask Keycloak.
 
 From the terminal, one command. It runs inside the API pod and reuses the API's
-own least-privilege client (`platform-admin`: `manage-users` + read-roles), so
+own least-privilege client (`platform-admin`: `manage-users`, read-roles,
+`manage-clients`), so
 there is nothing to set up and no admin password involved:
 
 ```bash

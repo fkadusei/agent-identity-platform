@@ -29,20 +29,24 @@ def main(argv: list[str]) -> int:
     action, client_id = argv[0], argv[1]
     admin = admin_from_env()
 
-    if action == "show":
-        print("found" if admin.find_client(client_id) else "missing")
-        return 0
-    if action == "create":
-        admin.create_client(client_id)
-        print(f"created client {client_id!r}")
-        return 0
-    if action == "delete":
-        ok = admin.delete_client(client_id)
-        print(f"deleted client {client_id!r}" if ok else f"no client named {client_id!r}")
+    try:
+        if action == "show":
+            print("found" if admin.find_client(client_id) else "missing")
+            return 0
+        if action == "create":
+            admin.create_client(client_id)
+            print(f"created client {client_id!r}")
+            return 0
+        if action == "delete":
+            ok = admin.delete_client(client_id)
+            print(f"deleted client {client_id!r}" if ok else f"no client named {client_id!r}")
+            return 0 if ok else 1
+        ok = admin.set_client_enabled(client_id, action == "enable")
+        print(f"{action}d client {client_id!r}" if ok else f"no client named {client_id!r}")
         return 0 if ok else 1
-    ok = admin.set_client_enabled(client_id, action == "enable")
-    print(f"{action}d client {client_id!r}" if ok else f"no client named {client_id!r}")
-    return 0 if ok else 1
+    except Exception as exc:  # noqa: BLE001 - report, do not traceback
+        print(f"keycloak admin call failed: {exc}", file=sys.stderr)
+        return 3
 
 
 if __name__ == "__main__":

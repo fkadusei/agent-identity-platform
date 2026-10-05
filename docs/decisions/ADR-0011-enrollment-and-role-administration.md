@@ -31,7 +31,8 @@ authorization enforced server-side.**
   PKCE in a real deployment; the server-side grant keeps the demo self-contained.)
 - **Administration.** A new `platform_admin` role gates `GET/POST/DELETE
   /admin/users…`. The API calls Keycloak's Admin API with a dedicated
-  `platform-admin` **service account** holding only `manage-users` + read-roles —
+  `platform-admin` **service account** holding `manage-users`, read-roles, and
+  (since S26) `manage-clients` —
   never the bootstrap admin credential. Its secret comes from a Secret.
 - **Server-side role checks.** A `require_roles(...)` dependency is the control;
   the UI hiding a button is convenience only. This closes the earlier gap: the

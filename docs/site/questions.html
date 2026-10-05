@@ -266,7 +266,7 @@ ol.steps>li b{color:var(--ink)}
       <tr><td>Rendered</td><td><code>scripts/render.py</code> fills the client secrets from the gitignored <code>.env</code></td></tr>
       <tr><td>Imported</td><td>A one-shot <code>keycloak-import</code> Job, run before the server starts, with <code>--override=false</code> — a no-op once the realm exists</td></tr>
       <tr><td>Stored at runtime</td><td>Keycloak's own database in Postgres — not the app's</td></tr>
-      <tr><td>Administered</td><td>Keycloak's Admin API, via the least-privilege <code>platform-admin</code> client (<code>manage-users</code> + read-roles, never the bootstrap admin)</td></tr>
+      <tr><td>Administered</td><td>Keycloak's Admin API, via the least-privilege <code>platform-admin</code> client (<code>manage-users</code>, read-roles, <code>manage-clients</code>, never the bootstrap admin)</td></tr>
     </tbody>
   </table>
   <p>
@@ -1428,7 +1428,7 @@ def create_user(body: dict, admin_dep: Delegation = Depends(require_admin)) -> d
   <p>
     Not the master <code>admin</code>. The API authenticates as a least-privilege
     <b><code>platform-admin</code></b> service account over client-credentials — it holds
-    <code>manage-users</code> and read-roles on the realm, and nothing else:
+    <code>manage-users</code>, read-roles, and <code>manage-clients</code> on the realm:
   </p>
   <div class="codeblock">
     <p class="cap">app/api/identity.py</p>
@@ -2265,7 +2265,7 @@ workload = act.get("sub") or claims.get("azp") or "?"</pre>
   <text x="484" y="192" text-anchor="middle" font-size="10" fill="var(--faint)" font-weight="400">client_id=platform-admin · client_secret</text>
   <text x="484" y="225" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--green)" font-weight="700">2</tspan> service-account token</text>
   <text x="420" y="325" text-anchor="middle" font-size="11" fill="var(--ink2)"><tspan fill="var(--violet)" font-weight="700">3</tspan> POST /admin/realms/… — Bearer &lt;token&gt;</text>
-</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">This is the only grant with no person: it is the API managing users and roles in Keycloak (Q16). The service account holds manage-users and read-roles, nothing else.</p></div>
+</svg><p style="margin:.7rem 0 0;font-size:.86rem;color:var(--muted)">This is the only grant with no person: it is the API managing users and roles in Keycloak (Q16). The service account holds manage-users, read-roles, and manage-clients.</p></div>
 
 <div class="card"><h4 style="margin:.1rem 0 .6rem">The delegation — RFC 8693 token exchange</h4><svg viewBox="0 0 980 600" width="100%" role="img" aria-label="The agent exchanges the user's token at Keycloak, authenticating with a JWT-SVID as the client assertion, for a token audienced to the tool server whose subject is the user and whose actor is the agent; it calls the tools, which asks OPA.">
   <defs>
