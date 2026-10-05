@@ -14,6 +14,7 @@ What it verifies, per page in docs/site/:
   3. every relative link (index.html, ...) exists on disk
   4. tags balance
   5. every quoted code block matches its source file, line for line
+  6. index.html's slice table lists every slice the backlog marks done
 
 Rule 5 is the one that matters. A block is checked when its caption names a file
 that exists in the repository; a block whose caption does not is required to say
@@ -33,6 +34,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SITE = ROOT / "docs" / "site"
+BACKLOG = ROOT / "docs" / "backlog.md"
 
 # Elements that never take a closing tag — HTML plus the SVG primitives the
 # diagrams use.
@@ -119,6 +121,43 @@ def check_code(page: str, text: str, problems: list[str]) -> int:
     return checked
 
 
+def _slice_key(s: str) -> tuple[int, str]:
+    return (int(re.sub(r"\D", "", s) or 0), s)
+
+
+def _done_slices() -> set[str]:
+    """Slice IDs the backlog marks done — in the heading (`— **done**`) or the body
+    (`- **Done.**`, which S10 uses)."""
+    done: set[str] = set()
+    for part in re.split(r"^##\s+", BACKLOG.read_text(encoding="utf-8"), flags=re.M)[1:]:
+        match = re.match(r"(S\d+[a-z]?)\b", part)
+        if not match:
+            continue
+        head, _, body = part.partition("\n")
+        if re.search(r"\*\*done\*\*", head, re.I) or re.search(r"-\s*\*\*Done\.\*\*", body, re.I):
+            done.add(match.group(1))
+    return done
+
+
+def check_slice_table(problems: list[str]) -> None:
+    """`index.html`'s slice table must list every slice the backlog marks done.
+
+    The pages' prose is otherwise unchecked, and this drifted once: the table
+    stopped at S16 while the backlog went on to S31.
+    """
+    done = _done_slices()
+    index = SITE / "index.html"
+    if not done or not index.exists():
+        return
+    listed = set(re.findall(r"<td>(S\d+[a-z]?)</td>", index.read_text(encoding="utf-8")))
+    missing = sorted(done - listed, key=_slice_key)
+    extra = sorted(listed - done, key=_slice_key)
+    if missing:
+        problems.append(f"index.html's slice table is missing done slices: {', '.join(missing)}")
+    if extra:
+        problems.append(f"index.html lists slices not marked done: {', '.join(extra)}")
+
+
 def check_page(path: Path) -> tuple[list[str], int]:
     page = path.relative_to(SITE).as_posix()
     text = path.read_text(encoding="utf-8")
@@ -182,6 +221,10 @@ def main() -> int:
             problems.append("search-index.js is stale — run: python3 scripts/search_index.py")
         else:
             print(f"  {'search-index.js':<22} ok")
+
+    # The pages' prose is unchecked, so the one state-y bit that can be verified
+    # mechanically is: index.html's slice table lists every done slice.
+    check_slice_table(problems)
 
     if problems:
         print()
