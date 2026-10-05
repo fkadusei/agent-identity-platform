@@ -71,6 +71,38 @@ def test_issue_refund_sends_the_idempotency_key_when_given():
     assert _backend(handler).issue_refund("o-1", 25, ACME, "a-1")["id"] == "r-1"
 
 
+def test_the_http_backend_sends_a_user_delegated_token(monkeypatch):
+    """Downstream OBO (S28): the vendor gets a token whose subject is the user."""
+    from app.tools import backends
+
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["auth"] = request.headers.get("authorization")
+        return httpx.Response(200, json={"id": "c-100"})
+
+    monkeypatch.setenv("TOOLS_CLIENT_ID", "tools")
+    monkeypatch.setenv("TOOLS_CLIENT_SECRET", "s3cret")
+
+    class FakeExchanger:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def exchange(self, *, subject_token, client_id, client_secret):
+            captured["subject"] = subject_token
+            return "obo-token"
+
+    monkeypatch.setattr(backends, "TokenExchanger", FakeExchanger)
+    handle = backends.set_subject_token("user-token")
+    try:
+        _backend(handler).get_customer("c-100", ACME)
+    finally:
+        backends.reset_subject_token(handle)
+
+    assert captured["subject"] == "user-token"
+    assert captured["auth"] == "Bearer obo-token"
+
+
 def test_simulator_backend_scopes_by_tenant():
     backend = SimulatorBackend()
     assert backend.get_customer("c-900", ACME) is None

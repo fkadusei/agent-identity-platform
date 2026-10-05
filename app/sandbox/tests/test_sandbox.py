@@ -28,6 +28,39 @@ def test_missing_tenant_header_is_400():
     assert client.get("/customers/c-100").status_code == 400
 
 
+# --- downstream on-behalf-of (S28): the vendor sees the user ------------------
+
+def test_the_vendor_uses_the_obo_token_identity(monkeypatch):
+    from app.sandbox import auth
+
+    monkeypatch.setenv("SANDBOX_AUDIENCE", "sandbox")
+    monkeypatch.setattr(
+        auth, "verify", lambda _a: {"tenant": "acme", "preferred_username": "alice"}
+    )
+    # No X-Tenant: the tenant comes from the token, so the vendor sees the user.
+    resp = client.get("/customers/c-100", headers={"Authorization": "Bearer x"})
+    assert resp.status_code == 200
+    assert resp.json()["id"] == "c-100"
+
+
+def test_a_missing_token_is_401_when_obo_is_required(monkeypatch):
+    monkeypatch.setenv("SANDBOX_AUDIENCE", "sandbox")
+    assert client.get("/customers/c-100").status_code == 401
+
+
+def test_an_invalid_token_is_401(monkeypatch):
+    from app.sandbox import auth
+
+    monkeypatch.setenv("SANDBOX_AUDIENCE", "sandbox")
+
+    def boom(_a):
+        raise ValueError("bad token")
+
+    monkeypatch.setattr(auth, "verify", boom)
+    resp = client.get("/customers/c-100", headers={"Authorization": "Bearer x"})
+    assert resp.status_code == 401
+
+
 def test_another_tenants_customer_is_404():
     # globex's customer is invisible to an acme session, and vice versa.
     assert client.get("/customers/c-900", headers=ACME).status_code == 404
