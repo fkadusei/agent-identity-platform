@@ -1047,6 +1047,29 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
 - **Left, named:** no fuzzy/typo tolerance, and the stemmer is deliberately light
   (not a Porter stemmer) — enough for plurals and common suffixes, not everything.
 
+## S28 — Downstream on-behalf-of (a second exchange) — **done**
+
+- **What:** the tool server exchanges the user's token for a **vendor-audienced** one
+  (RFC 8693, client-secret) and sends it to the simulated system, which verifies it and
+  takes the tenant **and the user** from it — so the vendor sees the person, not just a
+  tenant.
+- **Why:** Q28's boundary — the vendor call was tenant-scoped, so "on behalf of the
+  user" stopped at the tool server. A real vendor needs to know the user.
+- **Built:** a `tools` Keycloak client (secret, `standard.token.exchange.enabled`, an
+  `aud-sandbox` mapper) in the realm template and its secret in `setup.sh`;
+  `app/tools/backends.py` (`_downstream_token` exchange, plus a `ContextVar` carrying
+  the inbound token) and `app/tools/enforcement.py` (sets/clears it around the handler);
+  `app/sandbox/auth.py` + a middleware that verifies the token (issuer, `aud=sandbox`)
+  and uses its `tenant`/`sub`; the manifests gain the env. ADR-0014 records the
+  decision.
+- **Verified by:** `app/tools/tests/test_backends.py` (the HTTP backend exchanges and
+  sends the OBO token), `app/sandbox/tests/test_sandbox.py` (the vendor uses the token's
+  identity; a missing or invalid token is a 401), and on the cluster a task whose sandbox
+  log shows `sandbox.call sub=alice`.
+- **Left, named:** one vendor/audience is fixed in the realm; no opaque/reference-token
+  or introspection variant. It **degrades safely** — unconfigured, the call falls back
+  to `X-Tenant`.
+
 ## Not slices (documented limits)
 
 - **There is exactly one agent, by construction.** One workload, one SPIFFE ID

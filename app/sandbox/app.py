@@ -15,11 +15,15 @@ the demo. See `app/sandbox/persistence.py`.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 from collections.abc import AsyncIterator
+from contextvars import ContextVar
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi.responses import JSONResponse
 
+from app.sandbox import auth
 from app.sandbox.persistence import SandboxState
 from app.simulators import crm, orders, payments, tickets
 from app.simulators import restore, snapshot
@@ -38,6 +42,42 @@ async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="sandbox", lifespan=_lifespan)
 
+#: The caller's identity for the current request — from the OBO token when one is
+#: required, else the `X-Tenant` header (S28).
+_ctx: ContextVar[dict] = ContextVar("sandbox_ctx", default={})
+
+
+@app.middleware("http")
+async def _identify(request: Request, call_next):
+    """Resolve who is calling: a bearer token when required, else `X-Tenant`."""
+    ctx: dict = {"tenant": None, "user": None}
+    if auth.enabled() and request.url.path != "/healthz":
+        try:
+            claims = auth.verify(request.headers.get("authorization"))
+        except Exception:  # noqa: BLE001 - any failure is a refusal
+            return JSONResponse(
+                {"detail": "a valid bearer token is required"}, status_code=401
+            )
+        ctx["tenant"] = claims.get("tenant")
+        ctx["user"] = claims.get("preferred_username") or claims.get("sub")
+        # The identity the vendor now sees — synthetic, like the rest of the demo.
+        print(
+            json.dumps(
+                {
+                    "event": "sandbox.call",
+                    "sub": ctx["user"],
+                    "tenant": ctx["tenant"],
+                    "path": request.url.path,
+                }
+            ),
+            flush=True,
+        )
+    handle = _ctx.set(ctx)
+    try:
+        return await call_next(request)
+    finally:
+        _ctx.reset(handle)
+
 
 def _persist() -> None:
     """Snapshot the runtime state after a write. Never fatal."""
@@ -45,9 +85,13 @@ def _persist() -> None:
 
 
 def _tenant(x_tenant: str | None) -> str:
-    if not x_tenant:
-        raise HTTPException(status_code=400, detail="X-Tenant header is required")
-    return x_tenant
+    # The OBO token's tenant wins; the header is the fallback (a local run, tests).
+    tenant = _ctx.get().get("tenant") or x_tenant
+    if not tenant:
+        raise HTTPException(
+            status_code=400, detail="X-Tenant header or a bearer token is required"
+        )
+    return tenant
 
 
 def _simulate(call):

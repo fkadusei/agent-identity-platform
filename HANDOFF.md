@@ -23,9 +23,10 @@
   (cloud is opt-in; the PII decision is ADR-0013), **S23** added a revocation denylist
   and a one-command runbook, **S24** closed the refund-idempotency gap, and **S25**
   added cross-page search, **S26** reaps a retired workload's SPIRE entry and
-  Keycloak client, **S29** hardened revocation (a fail-closed option, and a refusal
-  that names the revocation), and **S31** polished the docs search (stemming,
-  ranking, highlights). Done: **S1–S26, S29, S31**; reserved: **S27–S28, S30**.
+  Keycloak client, **S28** made the vendor call on-behalf-of the user (a second token
+  exchange, ADR-0014), **S29** hardened revocation (a fail-closed option, and a refusal
+  that names the revocation), and **S31** polished the docs search. Done: **S1–S26,
+  S28–S29, S31**; reserved: **S27, S30**.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-10-05
 
@@ -207,8 +208,6 @@ is picked up. Pick by label:
 - **S27 — the PII-to-cloud policy rule.** ADR-0013 named it: *"this tenant, or this
   tool, may only use a local model"* — so a run that read PII cannot continue on a
   cloud model. The last security-relevant gap.
-- **S28 — downstream on-behalf-of (Q28).** A second RFC 8693 exchange so a real
-  vendor sees the *user*, not only the tenant.
 - **S30 — a live cloud-provider run.** S17's one unchecked box; needs a key. The
   in-cluster stub already covers the code path.
 
@@ -250,8 +249,10 @@ ADR-0013), **S23** (an admission denylist the api serves, checked at every hop w
 own, plus `revoke-workload.sh` for the SPIRE entry, Keycloak client and pods), and
 **S26** (`decommission-workload.sh` reaps a retired workload's SPIRE entry and
 Keycloak client), and **S29** (`REVOCATION_FAIL_CLOSED=1` refuses when the denylist
-is unavailable; a revoked agent's run names the revocation, `cause=revoked`), and
-**S31** (the docs search stems, ranks with phrase/title bonuses, and highlights).
+is unavailable; a revoked agent's run names the revocation, `cause=revoked`), **S31**
+(the docs search stems, ranks with phrase/title bonuses, and highlights), and **S28**
+(the tool server exchanges the user's token for a vendor-audienced one — the vendor
+sees the user, ADR-0014).
 
 ## The repository is public
 
@@ -285,6 +286,7 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 - ADR-0011 Self-service enrollment and role administration
 - ADR-0012 Transport identity: SPIFFE for the workloads we own, the mesh for the rest
 - ADR-0013 Provider-agnostic models and what a cloud model may see (cloud is opt-in; the per-tenant/tool rule is left to policy)
+- ADR-0014 Downstream on-behalf-of: the tool server exchanges the user's token for a vendor-audienced one
 
 ## Governance (as configured)
 

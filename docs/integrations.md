@@ -51,6 +51,13 @@ stable action id to dedup on — and the simulator falls back to keying the stor
 refund by its own id. The key does not change the authorization: the approval is
 still verified against the exact request first.
 
+**On-behalf-of (S28).** When it is configured, the tool server exchanges the user's
+token at Keycloak for one audienced to the sandbox and sends it as
+`Authorization: Bearer` — so a real vendor sees the **user** (`sub`), not just
+`X-Tenant`. The sandbox verifies that token (signature, issuer, `aud=sandbox`) and
+takes the tenant from it. Unconfigured — a local run, the tests — the call falls
+back to `X-Tenant`, exactly as before. See ADR-0014.
+
 That parity is worth stating because it was broken: the two *write* endpoints
 answered `500` for a record that was not there, because the simulator raises for
 that case and only the read handlers translated it. Now the simulator raises

@@ -23,6 +23,7 @@ from agentnhi import Decision, PolicyClient, Settings, TokenRejected, TokenVerif
 from app.common.schema import coerce_args
 from app.common.telemetry import span
 from app.common import workload
+from app.tools import backends
 from app.tools.approvals import ApprovalsClient
 from app.tools.catalog import TOOLS, Tool
 
@@ -167,7 +168,13 @@ class ToolEnforcer:
             # so a request cannot name a tenant it does not belong to. An
             # idempotent tool also gets the key, so a repeat does not act twice.
             extra = {"idempotency_key": idempotency_key} if tool.idempotent else {}
-            result = tool.handler(**call_args, tenant=delegation.tenant, **extra)
+            # Make the user's token available to the backend, so it can exchange it
+            # for a vendor-audienced one (downstream OBO, S28).
+            handle = backends.set_subject_token(token)
+            try:
+                result = tool.handler(**call_args, tenant=delegation.tenant, **extra)
+            finally:
+                backends.reset_subject_token(handle)
         except Exception as exc:  # noqa: BLE001 - report, do not crash the server
             audit(
                 "tool.error",

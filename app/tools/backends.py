@@ -17,12 +17,28 @@ above never knows the difference. See `docs/integrations.md`.
 from __future__ import annotations
 
 import os
+from contextvars import ContextVar
 from typing import Any, Protocol
 
 import httpx
 
+from agentnhi import Settings, TokenExchanger
 from app.simulators import crm, orders, payments, tickets
 from app.simulators.errors import NotFound
+
+#: The inbound user token for the current tool call, so the HTTP backend can
+#: exchange it for a vendor-audienced one (downstream on-behalf-of, S28). A
+#: contextvar, not an argument, so the tool-handler signatures do not all grow a
+#: parameter only one backend uses.
+_subject_token: ContextVar[str | None] = ContextVar("subject_token", default=None)
+
+
+def set_subject_token(token: str | None):
+    return _subject_token.set(token)
+
+
+def reset_subject_token(handle) -> None:
+    _subject_token.reset(handle)
 
 
 class Backend(Protocol):
@@ -103,10 +119,32 @@ class HttpBackend:
         self._client = client or httpx.Client()
         self._timeout = timeout
 
+    def _downstream_token(self) -> str | None:
+        """Exchange the inbound user token for a vendor-audienced one (S28).
+
+        On-behalf-of: the vendor then sees the user's subject, not only the tenant.
+        The audience (`sandbox`) comes from the `tools` client's mapper. Returns
+        None — and the caller falls back to the static token / `X-Tenant` — when
+        OBO is unconfigured or the exchange fails, so a plain deployment still works.
+        """
+        subject = _subject_token.get()
+        client_id = os.environ.get("TOOLS_CLIENT_ID", "")
+        client_secret = os.environ.get("TOOLS_CLIENT_SECRET", "")
+        if not subject or not client_id or not client_secret:
+            return None
+        try:
+            return TokenExchanger(Settings.from_env()).exchange(
+                subject_token=subject, client_id=client_id, client_secret=client_secret
+            )
+        except Exception:  # noqa: BLE001 - never fail the call on the exchange
+            return None
+
     def _request(self, method: str, path: str, tenant: str, **kwargs) -> Any:
         headers = {"X-Tenant": tenant}
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+        # Prefer the user-delegated token; fall back to the static sandbox token.
+        bearer = self._downstream_token() or self._token
+        if bearer:
+            headers["Authorization"] = f"Bearer {bearer}"
         resp = self._client.request(
             method, f"{self._base}{path}", headers=headers, timeout=self._timeout, **kwargs
         )

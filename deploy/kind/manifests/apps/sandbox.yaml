@@ -51,6 +51,13 @@ spec:
               value: http://otel-collector:4318
             - name: PYTHONDONTWRITEBYTECODE
               value: "1"
+            # Downstream on-behalf-of (S28): when SANDBOX_AUDIENCE is set, a caller
+            # must present a bearer token audienced to it, and the tenant and user
+            # come from that token — the vendor sees the person, not just a header.
+            - name: KC_ISSUER
+              value: http://keycloak:8080/realms/agent-platform
+            - name: SANDBOX_AUDIENCE
+              value: sandbox
             # Where the simulated systems keep their state between restarts. Unset
             # means in-memory (tests, a local run).
             - name: SANDBOX_STATE_PATH
