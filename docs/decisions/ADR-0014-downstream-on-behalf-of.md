@@ -19,8 +19,10 @@ than asserted.
 the user.**
 
 - The tool server exchanges the user's token at Keycloak for one **audienced to the
-  vendor**, authenticating with a **client secret** (a new `tools` client, token
-  exchange enabled, with an audience mapper) — the SDK's client-secret shape.
+  vendor**, authenticating with a **client secret** (the tool servers' `mcp-tools`
+  client, given token exchange and an audience mapper) — the SDK's client-secret
+  shape. The exchanging client must be *within the subject token's audience*, and
+  the user's token is audienced to `mcp-tools`, so that is the client to use.
 - It sends that token as `Authorization: Bearer`; the vendor verifies it (signature,
   issuer, `aud=sandbox`) and takes the tenant **and the user** from it.
 - It **degrades safely**: with `TOOLS_CLIENT_ID`/`TOOLS_CLIENT_SECRET`/
@@ -32,8 +34,9 @@ the user.**
 - The vendor has cryptographic proof of *which person* the action was for:
   `sub` = the human, `azp` = the tool server, `aud` = the vendor. Audience binding is
   preserved at every hop (T2): a token for the tool server is useless at the vendor.
-- The realm gains one client (`tools`) and a secret; the vendor (the sandbox) becomes
-  a token verifier, so it needs `KC_ISSUER` and its audience.
+- The tool servers' `mcp-tools` client gains token exchange and an audience mapper
+  (its secret already existed); the vendor (the sandbox) becomes a token verifier, so
+  it needs `KC_ISSUER` and its audience.
 - The authorization decision still happens at the **tool server**; the OBO token is
   *proof*, not *permission*. The vendor must not treat a valid token as an allowance.
 - One vendor and one audience are fixed in the realm; multi-vendor would be more

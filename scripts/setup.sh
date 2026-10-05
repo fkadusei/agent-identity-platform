@@ -28,7 +28,7 @@ ENV_FILE=.env
 
 gen_secret() { python3 -c "import secrets; print(secrets.token_hex(16))"; }
 
-REQUIRED_SECRETS="DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET POSTGRES_PASSWORD SPIRE_DB_PASSWORD KEYCLOAK_DB_PASSWORD"
+REQUIRED_SECRETS="DEMO_CLI_SECRET MANAGER_CLI_SECRET MCP_TOOLS_SECRET PORTAL_SECRET ADMIN_CLIENT_SECRET POSTGRES_PASSWORD SPIRE_DB_PASSWORD KEYCLOAK_DB_PASSWORD"
 
 ensure_secrets() {
   if [ ! -f "$ENV_FILE" ]; then
@@ -39,9 +39,6 @@ ensure_secrets() {
 DEMO_CLI_SECRET=$(gen_secret)
 MANAGER_CLI_SECRET=$(gen_secret)
 MCP_TOOLS_SECRET=$(gen_secret)
-# The tool server's client — it exchanges the user's token for a sandbox-audienced
-# one, so the vendor sees the user (S28).
-TOOLS_SECRET=$(gen_secret)
 # The web app's client (login) and the API's least-privilege admin client.
 PORTAL_SECRET=$(gen_secret)
 ADMIN_CLIENT_SECRET=$(gen_secret)
@@ -423,7 +420,7 @@ kubectl -n $NS create secret generic platform-secrets \
   --from-literal=MANAGER_CLI_SECRET="$MANAGER_CLI_SECRET" \
   --from-literal=PORTAL_SECRET="$PORTAL_SECRET" \
   --from-literal=ADMIN_CLIENT_SECRET="$ADMIN_CLIENT_SECRET" \
-  --from-literal=TOOLS_SECRET="$TOOLS_SECRET" \
+  --from-literal=MCP_TOOLS_SECRET="$MCP_TOOLS_SECRET" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 kubectl -n $NS create secret generic keycloak-db \
   --from-literal=password="$KEYCLOAK_DB_PASSWORD" \
