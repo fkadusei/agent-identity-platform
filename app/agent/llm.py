@@ -22,6 +22,15 @@ from agentnhi import audit
 from app.agent.guardrails import check_decision, resolve_identifiers
 
 
+class AgentRevoked(Exception):
+    """The gateway refused this agent's workload identity because it is revoked.
+
+    Kept apart from a transport fault: a revoked agent is a *decision*, not an
+    outage, and reporting it as "the model could not be reached" (S13) hides the
+    real cause (S29).
+    """
+
+
 def _tool_manifest(tools: dict) -> str:
     lines = []
     for tool in tools.values():
@@ -186,6 +195,10 @@ def _chat(prompt: str) -> str:
                 },
                 headers={"Authorization": f"Bearer {_workload_token()}"},
             )
+            # A revoked agent is refused here; name it rather than let the 403
+            # surface as "the model could not be reached" (S29).
+            if resp.status_code == 403 and "revoked" in resp.text.lower():
+                raise AgentRevoked(resp.text.strip()[:200])
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
         finally:
@@ -253,6 +266,12 @@ def decide_tool(
     #    nothing below it has been observed — least of all the model's answer.
     try:
         content = _chat(_prompt(task, tools, unavailable, observations))
+    except AgentRevoked as exc:
+        # A decision, not an outage: this agent's identity was revoked (S29).
+        audit("llm.fallback", cause="revoked", reason=str(exc)[:200])
+        return _no_tool(
+            fallback, "this agent has been revoked — nothing was executed", "revoked"
+        )
     except Exception as exc:  # noqa: BLE001 - never block the run on the model
         audit("llm.fallback", cause="unreachable", reason=str(exc)[:200])
         return _no_tool(

@@ -36,6 +36,34 @@ def test_disabled_without_a_source_or_url():
     assert revocation.revoked_ids() == set()
 
 
+def test_fail_closed_refuses_when_the_set_is_unavailable(monkeypatch):
+    """Opt-in: if the denylist can never be fetched, refuse rather than allow (S29)."""
+    monkeypatch.setenv("REVOCATION_URL", "https://api:8443")
+    monkeypatch.setenv("REVOCATION_FAIL_CLOSED", "1")
+    monkeypatch.setattr(
+        revocation, "_fetch", lambda: (_ for _ in ()).throw(RuntimeError("api down"))
+    )
+    assert revocation.unavailable() is True
+    assert revocation.is_revoked("spiffe://anything") is True
+
+
+def test_fail_open_by_default_when_unavailable(monkeypatch):
+    monkeypatch.setenv("REVOCATION_URL", "https://api:8443")
+    monkeypatch.delenv("REVOCATION_FAIL_CLOSED", raising=False)
+    monkeypatch.setattr(
+        revocation, "_fetch", lambda: (_ for _ in ()).throw(RuntimeError("api down"))
+    )
+    assert revocation.is_revoked("spiffe://anything") is False
+
+
+def test_fail_closed_does_not_refuse_with_a_source(monkeypatch):
+    # The api reads its own store, so the set is always available.
+    monkeypatch.setenv("REVOCATION_FAIL_CLOSED", "1")
+    revocation.set_source(lambda: set())
+    assert revocation.unavailable() is False
+    assert revocation.is_revoked("spiffe://x") is False
+
+
 def test_a_revoked_caller_is_refused_at_admission(monkeypatch):
     """The point of S23: refusal at admission, not at SVID expiry."""
     monkeypatch.setenv("WORKLOAD_AUDIENCE", workload.TOOLS)

@@ -37,6 +37,24 @@ def test_an_allowed_tool_is_chosen(monkeypatch):
     assert got["tool"] == "crm.customer.read"
 
 
+def test_a_revoked_agent_is_named_not_blamed_on_the_model(monkeypatch):
+    """A revoked identity is a decision, not an outage (S29).
+
+    The gateway refuses a revoked agent with 403; that used to surface as "the
+    model could not be reached" (S13's message for a real transport fault),
+    which pointed at the model instead of the revocation.
+    """
+
+    def revoked(_p: str) -> str:
+        raise llm.AgentRevoked("this agent has been revoked")
+
+    monkeypatch.setattr(llm, "_chat", revoked)
+    got = llm.decide_tool("look up c-100", ALLOWED, FORBIDDEN)
+    assert got["tool"] is None
+    assert got["cause"] == "revoked"
+    assert "revoked" in got["reason"]
+
+
 def test_the_prompt_names_the_forbidden_tools(monkeypatch):
     seen: dict = {}
 
