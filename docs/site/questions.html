@@ -1776,17 +1776,20 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     </li>
     <li>
       <b>Retire.</b> Delete the workload and no new SVID is issued — an already-issued one stays
-      valid only until it expires. But nothing removes the <i>registration entry</i>, and nothing
-      removes the Keycloak client whose <code>clientId</code> is the SPIFFE ID. Deregistration is
-      manual: the demo has the create half, not the destroy half.
+      valid only until it expires. Then <b>decommission</b> it: <code>scripts/decommission-workload.sh</code>
+      removes the registration entry and the Keycloak client whose <code>clientId</code> is the
+      SPIFFE ID (S26). The static references — <code>ALLOWED_WORKLOADS</code> and the policy grant —
+      are code/config, so it prints them for a human to edit.
     </li>
   </ol>
 
   <div class="callout warn">
-    <b>That last step is the honest gap</b>
-    Spinning an agent up is four registries (<a href="#multi">Q11</a>); taking one down is not automated at all. A
-    retired agent leaves its entry and its client behind — harmless once the workload is gone, but
-    they are what a real lifecycle would reap.
+    <b>The gap that remains</b>
+    Spinning an agent up is four registries (<a href="#multi">Q11</a>); taking one down is
+    <code>decommission-workload.sh</code>, which reaps the two a workload owns — its SPIRE entry and
+    its Keycloak client (S26). What it cannot edit are the two that are <i>code</i>: the per-service
+    <code>ALLOWED_WORKLOADS</code> and the policy's <code>is_trusted</code>, which it prints. A fully
+    declarative, reviewed registration is the larger piece still open.
   </div>
 
   <h3>The run: a second, shorter lifecycle</h3>

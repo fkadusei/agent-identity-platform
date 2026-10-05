@@ -67,6 +67,22 @@ kubectl -n agent-platform delete pod -l app=<workload>
 re-register the SPIRE entry and re-enable the Keycloak client — deregistration is
 still not automated, which is the remaining gap (see below).
 
+## Decommissioning a retired workload (S26)
+
+Revoking cuts a workload off; **decommissioning** removes the registrations it leaves
+behind. `scripts/decommission-workload.sh` deletes the SPIRE entry and the Keycloak
+client, and clears any denylist entry:
+
+```bash
+./scripts/decommission-workload.sh spiffe://acme.com/ns/agent-platform/sa/agent
+./scripts/reaping-tests.sh      # prove both registries are reaped
+```
+
+It does **not** touch the static references — `ALLOWED_WORKLOADS` and the policy's
+`is_trusted` — because those are code/config; it prints them for a human to edit.
+Making the whole registration declarative and reviewed (Q11's four registries) is the
+larger piece still open.
+
 ## The honest limits
 
 - **No un-issue.** A copied SVID key works until it expires. Revocation is

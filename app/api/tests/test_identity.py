@@ -117,3 +117,43 @@ def test_user_role_names_are_sorted():
         return httpx.Response(200, json=[{"name": "support_rep"}, {"name": "manager"}])
 
     assert _client(handler).user_role_names("abc") == ["manager", "support_rep"]
+
+
+def test_find_client_returns_none_when_absent():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            return _token_ok(request)
+        assert request.url.path.endswith("/clients")
+        return httpx.Response(200, json=[])
+
+    assert _client(handler).find_client("spiffe://x") is None
+
+
+def test_delete_client_deletes_by_internal_id():
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            return _token_ok(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=[{"id": "cid", "clientId": "spiffe://x"}])
+        seen["method"], seen["path"] = request.method, request.url.path
+        return httpx.Response(204)
+
+    assert _client(handler).delete_client("spiffe://x") is True
+    assert seen["method"] == "DELETE"
+    assert seen["path"].endswith("/clients/cid")
+
+
+def test_create_client_posts_a_minimal_openid_client():
+    captured: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            return _token_ok(request)
+        captured.update(json.loads(request.content))
+        return httpx.Response(201)
+
+    _client(handler).create_client("spiffe://x")
+    assert captured["clientId"] == "spiffe://x"
+    assert captured["protocol"] == "openid-connect"
