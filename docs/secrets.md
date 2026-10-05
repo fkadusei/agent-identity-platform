@@ -41,7 +41,8 @@ deploy time.
    `PORTAL_SECRET` (login), and `ADMIN_CLIENT_SECRET` (enrollment + role
    management) from the `platform-secrets` Secret, mounted as environment
    variables. The admin secret is **least privilege**: the service account holds
-   only `manage-users` plus read-roles on the realm — never the bootstrap admin.
+   `manage-users`, read-roles, and `manage-clients` on the realm — never the
+   bootstrap admin.
 4. If `LLM_API_KEY` is set, it is placed in the `llm-api-key` Secret, consumed
    **only** by the gateway.
 5. If `SPIRE_KEY_MANAGER=aws_kms` (S1's shared-KeyManager half, opt-in), the

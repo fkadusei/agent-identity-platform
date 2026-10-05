@@ -118,7 +118,7 @@
       "enabled": true,
       "serviceAccountClientId": "platform-admin",
       "clientRoles": {
-        "realm-management": ["manage-users", "view-users", "query-users", "view-realm"]
+        "realm-management": ["manage-users", "view-users", "query-users", "view-realm", "manage-clients", "view-clients", "query-clients"]
       }
     }
   ],
@@ -184,7 +184,7 @@
     },
     {
       "clientId": "platform-admin",
-      "description": "Service account the API uses to call Keycloak's Admin API for enrollment and role management. Least privilege: manage-users + read roles only. Its service-account roles are declared below.",
+      "description": "The API's admin service account: manage-users, read-roles, manage-clients. Never realm-admin or the bootstrap admin.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,

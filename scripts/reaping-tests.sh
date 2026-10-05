@@ -26,6 +26,11 @@ spire_entries() { spire entry show -socketPath "$SOCKET" -spiffeID "$TEST_ID" 2>
 client() { kubectl -n $NS exec -i deploy/api -- python - "$1" "$TEST_ID" < scripts/keycloak_client_admin.py 2>/dev/null; }
 
 say "1. register a throwaway identity"
+# Start clean: an interrupted earlier run may have left the throwaway behind.
+for e in $(spire entry show -socketPath "$SOCKET" -spiffeID "$TEST_ID" 2>/dev/null | awk '/Entry ID/{print $NF}'); do
+  spire entry delete -socketPath "$SOCKET" -entryID "$e" >/dev/null
+done
+client delete >/dev/null 2>&1 || true
 parent="$(spire agent list -socketPath "$SOCKET" | awk '/SPIFFE ID/{print $NF}' | head -1)"
 [ -n "$parent" ] || die "no attested SPIRE agent to parent an entry to — run ./scripts/setup.sh"
 spire entry create -socketPath "$SOCKET" -spiffeID "$TEST_ID" -parentID "$parent" \

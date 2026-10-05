@@ -83,6 +83,12 @@ It does **not** touch the static references — `ALLOWED_WORKLOADS` and the poli
 Making the whole registration declarative and reviewed (Q11's four registries) is the
 larger piece still open.
 
+The Keycloak step uses the `platform-admin` service account, which holds
+`manage-clients` (added in S26) as well as `manage-users`. Because the realm is
+imported with `--override=false`, a *fresh* cluster gets the permission; an existing
+one does not until the realm (or the `keycloak` database) is reset and re-imported —
+the same durability rule that governs rotating a client secret.
+
 ## The honest limits
 
 - **No un-issue.** A copied SVID key works until it expires. Revocation is

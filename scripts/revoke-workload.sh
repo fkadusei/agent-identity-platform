@@ -83,12 +83,13 @@ else
 fi
 
 say "3. Keycloak client — no new token exchanges"
-if kubectl -n $NS exec -i deploy/api -- python - disable "$SPIFFE" \
-     < scripts/keycloak_client_admin.py 2>/dev/null | grep -q '^disabled'; then
-  ok "disabled the Keycloak client named by the SPIFFE ID"
-else
-  info "no Keycloak client named $SPIFFE (or the api could not disable it)"
-fi
+kc_out="$(kubectl -n $NS exec -i deploy/api -- python - disable "$SPIFFE" \
+  < scripts/keycloak_client_admin.py 2>&1)" || true
+case "$kc_out" in
+  disabled*) ok "disabled the Keycloak client named by the SPIFFE ID" ;;
+  *failed*)  info "could not disable the Keycloak client: $(printf '%s' "$kc_out" | grep 'failed' | tail -1)" ;;
+  *)         info "no Keycloak client named $SPIFFE" ;;
+esac
 
 say "4. the workload's pods — stop presenting the held SVID"
 app="${SPIFFE##*/sa/}"
