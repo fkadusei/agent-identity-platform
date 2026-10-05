@@ -45,6 +45,19 @@ expired. Services fetch the set from the api and cache it for a few seconds
 ./scripts/revoke-workload.sh spiffe://acme.com/ns/agent-platform/sa/agent --restore
 ```
 
+### Fail-closed, if you want it (S29)
+
+By default the denylist **fails open** when the set can never be fetched — it is
+defence in depth, not the only control. Set `REVOCATION_FAIL_CLOSED=1` to refuse
+*every* workload instead when the api is unreachable and no set was ever obtained.
+A last-known set is always kept, so a transient outage *after* a successful fetch
+does not trip it. This is a posture an operator opts into, not one inherited.
+
+And a refusal is **named**: a revoked agent's run reports *"this agent has been
+revoked — nothing was executed"* (audited as `llm.fallback` with `cause=revoked`),
+not the "the model could not be reached" message that a real transport fault
+produces — so the trail points at the revocation, not the model.
+
 ## The runbook
 
 `scripts/revoke-workload.sh` does all four, in order of immediacy:

@@ -22,8 +22,10 @@
   that loop now keeps and re-exposes. **S17** finished the provider-agnostic path
   (cloud is opt-in; the PII decision is ADR-0013), **S23** added a revocation denylist
   and a one-command runbook, **S24** closed the refund-idempotency gap, and **S25**
-  added cross-page search, and **S26** reaps a retired workload's SPIRE entry and
-  Keycloak client. Every slice is done (S1–S26).
+  added cross-page search, **S26** reaps a retired workload's SPIRE entry and
+  Keycloak client, and **S29** hardened revocation (a fail-closed option, and a
+  refusal that names the revocation). Done: **S1–S26, S29**; reserved: **S27–S28,
+  S30–S31**.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-10-03
 
@@ -207,8 +209,6 @@ is picked up. Pick by label:
   cloud model. The last security-relevant gap.
 - **S28 — downstream on-behalf-of (Q28).** A second RFC 8693 exchange so a real
   vendor sees the *user*, not only the tenant.
-- **S29 — revocation hardening.** A fail-closed denylist option, and make the agent
-  report "revoked" rather than "the model could not be reached".
 - **S30 — a live cloud-provider run.** S17's one unchecked box; needs a key. The
   in-cluster stub already covers the code path.
 - **S31 — search polish.** Stemming/ranking for the docs search (S25's stated limits).
@@ -250,7 +250,8 @@ is strippable, an in-cluster stub exercises it, and the PII/cloud decision is
 ADR-0013), **S23** (an admission denylist the api serves, checked at every hop we
 own, plus `revoke-workload.sh` for the SPIRE entry, Keycloak client and pods), and
 **S26** (`decommission-workload.sh` reaps a retired workload's SPIRE entry and
-Keycloak client).
+Keycloak client), and **S29** (`REVOCATION_FAIL_CLOSED=1` refuses when the denylist
+is unavailable; a revoked agent's run names the revocation, `cause=revoked`).
 
 ## The repository is public
 

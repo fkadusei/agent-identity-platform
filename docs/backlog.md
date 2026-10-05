@@ -1013,6 +1013,24 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   MockTransport) and `scripts/reaping-tests.sh` on the cluster — create a SPIRE entry
   and a Keycloak client, decommission, and both are gone.
 
+## S29 — Revocation hardening (fail-closed, and a named refusal) — **done**
+
+- **What:** two refinements to S23's denylist. (1) `REVOCATION_FAIL_CLOSED=1` refuses
+  *every* workload when the denylist can never be fetched — the default stays
+  fail-open, and a last-known set is always kept. (2) The agent now **names** a
+  revocation — *"this agent has been revoked — nothing was executed"* (`cause=revoked`)
+  — instead of reporting the gateway's 403 as "the model could not be reached".
+- **Why:** fail-open on a defence-in-depth control is a fine default but should be an
+  operator's choice; and blaming the model for a revocation is exactly the class of
+  misleading fault S13 set out to end.
+- **Built:** `app/common/revocation.py` (`fail_closed()`, `unavailable()`, and
+  `is_revoked` honouring them); `app/agent/llm.py` (`AgentRevoked`, raised on the
+  gateway's 403-with-`revoked`, mapped to `cause=revoked` in `decide_tool`);
+  `scripts/revocation-tests.sh` asserts the run names it.
+- **Verified by:** `app/tests/test_revocation.py` (fail-closed vs fail-open; a source
+  is always available), `app/agent/tests/test_decide_tool.py` (a revoked agent names
+  it), and `scripts/revocation-tests.sh` on the cluster.
+
 ## Not slices (documented limits)
 
 - **There is exactly one agent, by construction.** One workload, one SPIFFE ID
