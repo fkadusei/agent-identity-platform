@@ -102,12 +102,12 @@ spec:
             # Downstream on-behalf-of (S28): the tool server exchanges the user's
             # token for a sandbox-audienced one, so the vendor sees the user.
             - name: TOOLS_CLIENT_ID
-              value: tools
+              value: mcp-tools
             - name: TOOLS_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
                   name: platform-secrets
-                  key: TOOLS_SECRET
+                  key: MCP_TOOLS_SECRET
             - name: SANDBOX_AUDIENCE
               value: sandbox
             - name: PYTHONDONTWRITEBYTECODE

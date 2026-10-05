@@ -309,23 +309,12 @@
     },
     {
       "clientId": "mcp-tools",
-      "description": "Audience for the tool servers (and the API). Resource servers accept only tokens minted for it.",
+      "description": "The tool servers' client, and the audience resource servers accept. It exchanges the user's token for a sandbox-audienced one (OBO), so the vendor sees the user.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
       "secret": "${MCP_TOOLS_SECRET}",
       "serviceAccountsEnabled": true,
-      "standardFlowEnabled": false,
-      "directAccessGrantsEnabled": false
-    },
-    {
-      "clientId": "tools",
-      "description": "The tool server. Exchanges the user's token for a sandbox-audienced one (OBO), so the vendor sees the user.",
-      "enabled": true,
-      "protocol": "openid-connect",
-      "publicClient": false,
-      "secret": "${TOOLS_SECRET}",
-      "serviceAccountsEnabled": false,
       "standardFlowEnabled": false,
       "directAccessGrantsEnabled": false,
       "attributes": {
@@ -340,6 +329,32 @@
             "included.custom.audience": "sandbox",
             "access.token.claim": "true",
             "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "tenant",
+            "claim.name": "tenant",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "config": {
+            "user.attribute": "username",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
           }
         }
       ]
