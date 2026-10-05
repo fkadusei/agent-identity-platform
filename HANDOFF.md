@@ -486,6 +486,10 @@ House rules for a page, enforced by `scripts/check-docs-pages.py` (runs in CI):
   a sketch cannot drift into looking like code.
 - **Cross-linked.** A new page links back to the page it extends, and that page
   links forward to it.
+- **The state stays true.** `index.html`'s slice table must list every slice the
+  backlog marks done — the checker fails if a done slice is missing from it (or a
+  listed one is not done). This is the one prose bit it can verify; the rest of the
+  pages' prose is on the author, so re-read the page a change touches.
 - **Same visual language.** Dark by default, light one attribute away; sidebar +
   scroll-spy + filter + copy; print styles that drop the chrome.
 - **The check can fail.** Before trusting it, break a nav link and a quoted line
