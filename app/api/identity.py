@@ -72,6 +72,30 @@ class IdentityAdmin:
         resp.raise_for_status()
         return True
 
+    def create_client(self, client_id: str, *, enabled: bool = True) -> bool:
+        """Create a minimal client named by `client_id` (used by the reaping test)."""
+        resp = self._request(
+            "POST",
+            "/clients",
+            json={
+                "clientId": client_id,
+                "enabled": enabled,
+                "protocol": "openid-connect",
+                "publicClient": False,
+            },
+        )
+        resp.raise_for_status()
+        return True
+
+    def delete_client(self, client_id: str) -> bool:
+        """Delete a client by `clientId`. Reaps the delegation client on retire (S26)."""
+        client = self.find_client(client_id)
+        if client is None:
+            return False
+        resp = self._request("DELETE", f"/clients/{client['id']}")
+        resp.raise_for_status()
+        return True
+
     # -- users ----------------------------------------------------------------
     def list_users(self) -> list[dict]:
         resp = self._request("GET", "/users", params={"max": 200})

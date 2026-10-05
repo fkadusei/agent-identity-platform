@@ -269,6 +269,17 @@ Undo the denylist entry with `--restore`; re-run `./scripts/setup.sh` to
 re-register the SPIRE entry and re-enable the Keycloak client. `scripts/revocation-tests.sh`
 proves the refusal is immediate and reversible.
 
+**Retiring the workload for good** — remove its registrations rather than leaving them
+(S26):
+
+```bash
+./scripts/decommission-workload.sh spiffe://acme.com/ns/agent-platform/sa/agent
+```
+
+It deletes the SPIRE entry and the Keycloak client and clears the denylist, then prints
+the static references (`ALLOWED_WORKLOADS`, the policy's `is_trusted`) a human must edit.
+`scripts/reaping-tests.sh` proves both registries are reaped.
+
 **C. Leaked client secret or admin credential**
 
 Rotate (§4). A client secret lives inside the realm, and the import never

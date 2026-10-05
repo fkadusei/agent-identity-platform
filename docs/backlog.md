@@ -987,6 +987,32 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   “refund approval”, which returns sections from `agent-flow.html` and
   `questions.html` with working deep links.
 
+## S26 — Reap a retired workload (deregistration) — **done**
+
+- **What:** when a workload is retired, remove the registrations it owns — the SPIRE
+  entry and the Keycloak client named by its SPIFFE ID — instead of leaving them
+  behind. S23 revokes a workload at admission, but the two registries stayed until a
+  human deleted them (or `setup.sh` restored them).
+- **Why:** identity is the root of trust; a retired workload should leave no identity.
+  This is the deregistration half of the lifecycle gap named in Q20.
+- **Built:**
+  - `scripts/decommission-workload.sh <spiffe-id>` — deletes the SPIRE registration
+    entry, deletes the Keycloak client (`clientId` = the SPIFFE ID), and clears any
+    admission-denylist entry. It prints the **static** references it will not touch —
+    `ALLOWED_WORKLOADS` and the policy's `is_trusted` — because those are code/config,
+    not a registry.
+  - `IdentityAdmin.create_client` / `delete_client`, and `scripts/keycloak_client_admin.py`
+    gained `create` / `delete` / `show` (alongside `enable` / `disable`).
+  - `scripts/reaping-tests.sh` — registers a throwaway identity in both registries,
+    runs decommission, and shows both are gone.
+- **Left, and named:** the allow-list and the policy grant are still per-service env
+  and a Rego file, so decommission *prints* them rather than editing them. Making the
+  whole registration declarative/reviewed (Q11's four registries) is the larger piece,
+  deliberately not attempted here.
+- **Verified by:** `app/api/tests/test_identity.py` (create/delete a client against
+  MockTransport) and `scripts/reaping-tests.sh` on the cluster — create a SPIRE entry
+  and a Keycloak client, decommission, and both are gone.
+
 ## Not slices (documented limits)
 
 - **There is exactly one agent, by construction.** One workload, one SPIFFE ID

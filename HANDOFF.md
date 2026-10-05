@@ -22,7 +22,8 @@
   that loop now keeps and re-exposes. **S17** finished the provider-agnostic path
   (cloud is opt-in; the PII decision is ADR-0013), **S23** added a revocation denylist
   and a one-command runbook, **S24** closed the refund-idempotency gap, and **S25**
-  added cross-page search. Every slice is done.
+  added cross-page search, and **S26** reaps a retired workload's SPIRE entry and
+  Keycloak client. Every slice is done (S1–S26).
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
 - **Last updated:** 2026-10-03
 
@@ -191,17 +192,26 @@ End-to-end, on the cluster:
 
 ## Immediate next task
 
-Phases 1–3 are complete, every threat is addressed, and **every slice is done**
-(S1–S25). What remains is one loose end:
+Phases 1–3 are complete, every threat is addressed, and **every slice is done
+(S1–S26)**. One loose end:
 
-1. **S1's KMS mode is off by default.** It is one line in `.env`, verified against a
-   live key, and documented in [`docs/ha.md`](docs/ha.md) and question 12 of the
-   pages. No action unless you want HA identity on by default.
+- **S1-KMS** — SPIRE's KMS KeyManager is off by default. It is one line in `.env`,
+  verified against a live key, and documented in [`docs/ha.md`](docs/ha.md) and Q12.
+  No action unless you want HA identity on by default.
 
-**Known, named, not a slice:** reaping a retired workload's SPIRE entry and Keycloak
-client is still manual (S23 revokes at admission; `setup.sh` restores registrations).
-That deregistration half of the lifecycle gap (Q20) is the natural next thing if
-revocation is extended.
+**What's next, labeled.** The IDs are reserved; a backlog entry is written when one
+is picked up. Pick by label:
+
+- **S27 — the PII-to-cloud policy rule.** ADR-0013 named it: *"this tenant, or this
+  tool, may only use a local model"* — so a run that read PII cannot continue on a
+  cloud model. The last security-relevant gap.
+- **S28 — downstream on-behalf-of (Q28).** A second RFC 8693 exchange so a real
+  vendor sees the *user*, not only the tenant.
+- **S29 — revocation hardening.** A fail-closed denylist option, and make the agent
+  report "revoked" rather than "the model could not be reached".
+- **S30 — a live cloud-provider run.** S17's one unchecked box; needs a key. The
+  in-cluster stub already covers the code path.
+- **S31 — search polish.** Stemming/ranking for the docs search (S25's stated limits).
 
 Recently closed: **the `demo-roles.sh` cold-start flakiness.** The login helpers in
 the client scripts (`roles`, `demo`, `attack`, `role_tools`, `tenancy`) now use a
@@ -237,8 +247,10 @@ key, threaded through the tools to the backend), **S25** (a cross-page search bo
 every docs page, backed by a generated index that CI rebuilds and checks), and
 **S17** (the provider-agnostic path finished — the model is forwarded, the JSON hint
 is strippable, an in-cluster stub exercises it, and the PII/cloud decision is
-ADR-0013), and **S23** (an admission denylist the api serves, checked at every hop we
-own, plus `revoke-workload.sh` for the SPIRE entry, Keycloak client and pods).
+ADR-0013), **S23** (an admission denylist the api serves, checked at every hop we
+own, plus `revoke-workload.sh` for the SPIRE entry, Keycloak client and pods), and
+**S26** (`decommission-workload.sh` reaps a retired workload's SPIRE entry and
+Keycloak client).
 
 ## The repository is public
 
