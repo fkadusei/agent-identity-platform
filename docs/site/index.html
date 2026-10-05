@@ -1857,6 +1857,18 @@ thinking: '{"tool": "refunds.quote", "args": {} }'   ← correct, and ignored</p
       <tr><td>S14</td><td>The scripts pin their cluster, so setup cannot target the wrong one</td></tr>
       <tr><td>S15</td><td>The gateway must not serve an expired SVID</td></tr>
       <tr><td>S16</td><td>Liveness probes: a hung process must heal itself</td></tr>
+      <tr><td>S17</td><td>Provider-agnostic models: any OpenAI-compatible provider, cloud opt-in, and the PII decision (ADR-0013)</td></tr>
+      <tr><td>S18</td><td>The agent asks for a missing argument instead of refusing</td></tr>
+      <tr><td>S19</td><td>The agent takes more than one bounded step</td></tr>
+      <tr><td>S20</td><td>The model may pass an identifier along, never invent one</td></tr>
+      <tr><td>S21</td><td>"Allowed" must not read as "it happened"</td></tr>
+      <tr><td>S22</td><td>What a multi-step run keeps and re-exposes is written down</td></tr>
+      <tr><td>S23</td><td>Revoke a rogue agent: an admission denylist at every hop, plus a runbook</td></tr>
+      <tr><td>S24</td><td>A resumed approval issues one refund, not two</td></tr>
+      <tr><td>S25</td><td>Cross-page search for the docs, on a generated index</td></tr>
+      <tr><td>S26</td><td>Reap a retired workload's SPIRE entry and Keycloak client</td></tr>
+      <tr><td>S29</td><td>Revocation hardening: a fail-closed option, and a refusal that names the revocation</td></tr>
+      <tr><td>S31</td><td>Docs search polish: stemming, ranking, highlights</td></tr>
     </tbody>
   </table>
 
@@ -1911,6 +1923,8 @@ thinking: '{"tool": "refunds.quote", "args": {} }'   ← correct, and ignored</p
       <tr><td class="mono">privacy.md</td><td>The PII path end to end, including its approval gate</td></tr>
       <tr><td class="mono">tenancy.md · data-stores.md · ha.md · autoscaling.md</td><td>Isolation, durability, redundancy and scaling in detail</td></tr>
       <tr><td class="mono">operator-guide.md</td><td>The runbook, including the traps</td></tr>
+      <tr><td class="mono">llm-gateway.md</td><td>The gateway, identity, limits, and the provider decision</td></tr>
+      <tr><td class="mono">revocation.md</td><td>Cutting off a workload: the denylist, the runbook, and the limits</td></tr>
       <tr><td class="mono">backlog.md</td><td>Every slice, what it was for, and how it was verified</td></tr>
       <tr><td class="mono">glossary.md</td><td>The repository's own glossary, longer than this one</td></tr>
       <tr><td class="mono">HANDOFF.md</td><td>The resume-here document: current state, and the gotchas</td></tr>
