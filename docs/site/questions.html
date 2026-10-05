@@ -508,7 +508,9 @@ for oid in ('o-1001','o-1002','o-2001','o-3001'):
       or denies, optionally with a note. The requester cannot decide their own request.</li>
     <li><b>The run resumes, and is judged again.</b> The requester resumes it; the agent calls
       the tool with the approval id; the tool server <b>verifies</b> that the approval matches
-      this exact request — six fields — and only then executes.</li>
+      this exact request — six fields — and only then executes. A resume is <b>idempotent</b>
+      (S24): the verified approval id travels to the tool as an idempotency key, so resuming
+      twice issues one refund, not two.</li>
   </ol>
   <h3>The queue itself</h3>
   <p>
@@ -1871,7 +1873,8 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
   <div class="codeblock">
     <p class="cap">commands — the operator runbook</p>
     <pre>./scripts/revoke-workload.sh spiffe://acme.com/ns/agent-platform/sa/agent --reason "gone rogue"
-./scripts/revocation-tests.sh      # prove the refusal is immediate and reversible</pre>
+./scripts/revocation-tests.sh        # prove the refusal is immediate and reversible
+./scripts/decommission-workload.sh spiffe://acme.com/ns/agent-platform/sa/agent   # reap for good</pre>
   </div>
 
   <div class="callout warn">
@@ -1879,10 +1882,13 @@ curl -s localhost:8181/v1/data/agentnhi/authz -d '{"input":{
     <b style="display:inline">·</b> No un-issue: a copied SVID key works until it expires, so
     revocation is <i>stop issuing + refuse at admission</i>, not "instantly dead everywhere".
     <b style="display:inline">·</b> The denylist fails open if the api is unreachable and no set
-    was ever fetched — defence in depth, not the only control.
-    <b style="display:inline">·</b> Reaping is still manual: deleting a workload does not remove
-    its SPIRE entry or Keycloak client (<a href="#agent-lifecycle">Q20</a>'s deregistration gap);
-    re-run <code>setup.sh</code> to restore them.
+    was ever fetched — defence in depth, not the only control. Set
+    <code>REVOCATION_FAIL_CLOSED=1</code> to refuse instead, and a revoked run now names it
+    (<i>"this agent has been revoked — nothing was executed"</i>) rather than blaming the model
+    (S29).
+    <b style="display:inline">·</b> Reaping: <code>decommission-workload.sh</code> removes a
+    retired workload's SPIRE entry and Keycloak client (S26); the per-service allow-list and the
+    policy grant are code/config and remain (<a href="#agent-lifecycle">Q20</a>).
   </div>
 </section>
 

@@ -27,7 +27,7 @@
   that names the revocation), and **S31** polished the docs search (stemming,
   ranking, highlights). Done: **S1–S26, S29, S31**; reserved: **S27–S28, S30**.
 - **Repo:** `github.com/fkadusei/agent-identity-platform` — **public**, MIT.
-- **Last updated:** 2026-10-03
+- **Last updated:** 2026-10-05
 
 ## Resuming work in a fresh session
 
