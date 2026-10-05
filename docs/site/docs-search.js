@@ -7,6 +7,10 @@
  * Why not fetch(): the pages are self-contained and must work from `file://`,
  * where fetch() and modules are blocked. The index is a committed script, so a
  * plain <script> tag loads it offline. See S25.
+ *
+ * S31 polished the matching: a light stemmer so `refunds` finds `refund` (and
+ * `revoked` finds `revoke`), a phrase bonus, a title bonus, capped body hits so
+ * one repeated word cannot dominate, and `<mark>` highlights in the snippet.
  */
 (function () {
   var DATA = window.__DOCS_SEARCH || [];
@@ -16,35 +20,87 @@
       return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
     });
   }
+  function rxEscape(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // A deliberately light stemmer: enough for plurals and the common suffixes,
+  // not a Porter stemmer. `refunds`→`refund`, `approvals`→`approval`,
+  // `revoked`/`revoke`→`revok`. Short words are left alone.
+  function stem(w) {
+    w = w.toLowerCase();
+    w = w
+      .replace(/(ations|ation)$/, "at")
+      .replace(/(ings|ing)$/, "")
+      .replace(/(ies)$/, "y")
+      .replace(/(ers|er)$/, "")
+      .replace(/(ed)$/, "")
+      .replace(/(ly)$/, "")
+      .replace(/(es|s)$/, "")
+      .replace(/e$/, "");
+    return w;
+  }
+  function stemOf(term) {
+    return term.length >= 4 ? stem(term) : term;
+  }
+  // Match a term (or its stem) as the start of a word: `\brefund\w*`.
+  function matcher(term) {
+    return new RegExp("\\b" + rxEscape(stemOf(term)) + "\\w*", "gi");
+  }
+  function count(text, term) {
+    var m = text.match(matcher(term));
+    return m ? m.length : 0;
+  }
+
   function terms(q) {
     return q.toLowerCase().split(/[^a-z0-9_.]+/).filter(Boolean);
   }
-  // Every term must appear (AND); title hits weigh more than body hits.
-  function score(rec, ts) {
+
+  // Every term must appear (AND). Title hits weigh most; body hits are capped so
+  // one repeated word cannot dominate; an exact phrase and an all-in-title match
+  // get a bonus.
+  function score(rec, ts, phrase) {
     var title = (rec.t || "").toLowerCase();
     var body = (rec.x || "").toLowerCase();
     var s = 0;
+    var allInTitle = true;
     for (var i = 0; i < ts.length; i++) {
-      var t = ts[i];
-      var inTitle = title.indexOf(t) !== -1;
-      var inBody = body.indexOf(t) !== -1;
-      if (!inTitle && !inBody) return -1;
-      s += (title.split(t).length - 1) * 10 + (body.split(t).length - 1);
+      var tc = count(title, ts[i]);
+      var bc = count(body, ts[i]);
+      if (tc === 0 && bc === 0) return -1;
+      s += tc * 12 + Math.min(bc, 6);
+      if (tc === 0) allInTitle = false;
     }
+    if (allInTitle) s += 20;
+    if (phrase && phrase.length > 2 && body.indexOf(phrase) !== -1) s += 40;
     return s;
   }
+
+  // Wrap matched words in <mark>, escaping first so the tags are ours.
+  function highlight(text, ts) {
+    var keys = ts.map(stemOf);
+    return text
+      .split(/(\s+)/)
+      .map(function (tok) {
+        var bare = tok.toLowerCase().replace(/[^a-z0-9_]/g, "");
+        var hit = bare && keys.some(function (k) { return bare.indexOf(k) === 0; });
+        return hit ? "<mark>" + esc(tok) + "</mark>" : esc(tok);
+      })
+      .join("");
+  }
+
   function snippet(rec, ts) {
     var body = rec.x || "";
     var low = body.toLowerCase();
     var at = -1;
     for (var i = 0; i < ts.length; i++) {
-      var p = low.indexOf(ts[i]);
+      var p = low.search(matcher(ts[i]));
       if (p >= 0 && (at < 0 || p < at)) at = p;
     }
     if (at < 0) at = 0;
-    var start = Math.max(0, at - 40);
-    var end = Math.min(body.length, at + 130);
-    return (start > 0 ? "…" : "") + esc(body.slice(start, end)) + (end < body.length ? "…" : "");
+    var start = Math.max(0, at - 45);
+    var end = Math.min(body.length, at + 140);
+    return (start > 0 ? "…" : "") + highlight(body.slice(start, end), ts) + (end < body.length ? "…" : "");
   }
 
   var CSS =
@@ -58,6 +114,7 @@
     "text-transform:uppercase;color:var(--accent);margin-right:7px}" +
     ".ds-title{font-weight:650;color:var(--ink)}" +
     ".ds-snip{display:block;font-size:.78rem;color:var(--muted);margin-top:2px}" +
+    ".ds-snip mark{background:var(--accent-soft);color:var(--accent2);border-radius:3px;padding:0 2px}" +
     ".ds-empty{padding:8px 10px;color:var(--muted);font-size:.85rem}";
 
   function injectCSS() {
@@ -81,13 +138,14 @@
       var q = input.value.trim();
       if (q.length < 2) return close();
       var ts = terms(q);
+      var phrase = q.toLowerCase().replace(/\s+/g, " ");
       var hits = [];
       for (var i = 0; i < DATA.length; i++) {
-        var sc = score(DATA[i], ts);
+        var sc = score(DATA[i], ts, phrase);
         if (sc >= 0) hits.push([sc, DATA[i]]);
       }
       hits.sort(function (a, b) { return b[0] - a[0]; });
-      hits = hits.slice(0, 12);
+      hits = hits.slice(0, 15);
       results.hidden = false;
       if (!hits.length) {
         results.innerHTML = '<div class="ds-empty">No matches for “' + esc(q) + '”.</div>';

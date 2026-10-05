@@ -1031,6 +1031,22 @@ not infrastructure. The live eval stays deliberately out of CI (S5).
   is always available), `app/agent/tests/test_decide_tool.py` (a revoked agent names
   it), and `scripts/revocation-tests.sh` on the cluster.
 
+## S31 — Docs search polish (stemming, ranking, highlights) — **done**
+
+- **What:** improve the cross-page docs search (S25) beyond substring/token AND: a
+  light stemmer so a plural finds its singular, a phrase bonus, an all-in-title
+  bonus, capped body hits so one repeated word cannot dominate, and `<mark>`
+  highlights in the snippet. Results 12 → 15.
+- **Why:** S25's stated limit — *"no stemming/fuzzy matching"* — meant `refunds`
+  missed `refund`, and ranking was raw occurrence counts.
+- **Built:** `docs/site/docs-search.js` (`stem`/`stemOf`, a word-prefix `matcher`,
+  `score` with the phrase and title bonuses and capped body hits, `highlight`, and
+  the `mark` style). The index generator is unchanged — this is matching only.
+- **Verified by:** a headless render — searching **"refunds"** returns the refund
+  sections, the stem matched and the hits highlighted in the snippet.
+- **Left, named:** no fuzzy/typo tolerance, and the stemmer is deliberately light
+  (not a Porter stemmer) — enough for plurals and common suffixes, not everything.
+
 ## Not slices (documented limits)
 
 - **There is exactly one agent, by construction.** One workload, one SPIFFE ID
