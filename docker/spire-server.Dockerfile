@@ -10,7 +10,7 @@
 #   docker build -f docker/spire-server.Dockerfile -t agent-nhi/spire-server-jti:demo .
 ARG SPIRE_VERSION=1.12.4
 
-FROM golang:1.25 AS build
+FROM golang:1.26 AS build
 ARG TARGETARCH
 WORKDIR /src
 COPY spire-plugin/go.mod spire-plugin/go.sum ./
