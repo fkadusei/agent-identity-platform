@@ -49,6 +49,8 @@ data:
   prometheus.yml: |
     global:
       scrape_interval: 15s
+    rule_files:
+      - /etc/prometheus/rules/*.yml
     scrape_configs:
       - job_name: api
         metrics_path: /metrics
@@ -118,6 +120,9 @@ spec:
             - name: config
               mountPath: /etc/prometheus
               readOnly: true
+            - name: rules
+              mountPath: /etc/prometheus/rules
+              readOnly: true
             - name: data
               mountPath: /prometheus
           readinessProbe:
@@ -140,6 +145,9 @@ spec:
         - name: config
           configMap:
             name: prometheus-config
+        - name: rules
+          configMap:
+            name: prometheus-rules
         - name: data
           emptyDir: {}
 ---

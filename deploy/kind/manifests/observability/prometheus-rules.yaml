@@ -1,0 +1,81 @@
+# =============================================================================
+# Prometheus alert rules — the rules the operator guide describes, actually
+# loaded (prometheus.yml: rule_files: /etc/prometheus/rules/*.yml).
+#
+# `ApiDown` is the one that would have caught the 2026-11-19 outage: the app tier
+# was crash-looping because the SPIRE agent had no valid SVID, and nothing
+# reported it until a user hit a 503. `up{job="api"} == 0` is that symptom; the
+# annotation points at the identity tier and the one-command recovery.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: agent-platform
+  labels:
+    app: prometheus
+data:
+  agent-platform.yml: |
+    groups:
+      - name: agent-platform
+        rules:
+          - alert: ApiDown
+            expr: up{job="api"} == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "The API is not scrapeable — every replica is down or unready"
+              description: >-
+                Check the api pods, and first the identity tier: a missing SVID
+                crash-loops api/tools/agent/gateway. Recovery:
+                ./scripts/repair-spire.sh (operator guide, Troubleshooting).
+
+          - alert: TargetDown
+            expr: up == 0
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Prometheus cannot scrape {{ $labels.job }}"
+              description: "A scrape target has been down for 10 minutes."
+
+          - alert: LoginFailureSpike
+            expr: rate(agent_platform_logins_total{result="failed"}[5m]) > 0.2
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Elevated login failures — possible credential stuffing"
+
+          - alert: PolicyDenialSpike
+            expr: rate(agent_platform_audit_events_total{event="tool.denied"}[5m]) > 0.5
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Policy denials spiking — a misbehaving agent or a bad policy?"
+
+          - alert: ApprovalBacklog
+            expr: agent_platform_approvals_pending > 10
+            for: 30m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Approvals are piling up — is anyone on call?"
+
+          - alert: TraceExportFailing
+            expr: rate(otelcol_exporter_send_failed_spans[5m]) > 0
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Traces are failing to export — observability gap"
+
+          - alert: NoTracesFlowing
+            expr: rate(otelcol_exporter_sent_spans[10m]) == 0
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "No spans exported — is traffic reaching the services?"

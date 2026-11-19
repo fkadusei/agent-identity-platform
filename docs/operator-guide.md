@@ -322,13 +322,26 @@ deploy/gateway`; a client without a valid SVID cannot even connect.
 - **Dashboard** — Grafana: `kubectl -n agent-platform port-forward svc/grafana 3000:3000` (the "Agent Identity Platform" dashboard is provisioned).
 - **Audit** — `GET /audit` (also shown in the UI's Audit tab) is the record of who did what, on whose behalf, and why.
 
-Example Prometheus rules (scrape targets are already configured in
-`deploy/kind/manifests/observability/prometheus.yaml`):
+These rules are **loaded** by Prometheus from the `prometheus-rules` ConfigMap
+(`deploy/kind/manifests/observability/prometheus-rules.yaml`); the scrape targets
+are in `prometheus.yaml`:
 
 ```yaml
 groups:
   - name: agent-platform
     rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "The API is not scrapeable — every replica is down or unready"
+      - alert: TargetDown
+        expr: up == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "A scrape target is down ({{ $labels.job }})"
       - alert: TraceExportFailing
         expr: rate(otelcol_exporter_send_failed_spans[5m]) > 0
         for: 10m
@@ -361,12 +374,15 @@ groups:
           summary: "Approvals are piling up — is anyone on call?"
 ```
 
-Load them into Prometheus with a `rule_files:` entry in the ConfigMap.
+`ApiDown` is the one that matters for an outage: it fires when the whole app
+tier is unreachable — for example the SPIRE agent lost its SVID — so you hear
+about it before a user does.
 
 ## 7. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
+| The app tier is in `CrashLoopBackOff` and the logs say `SPIFFE socket ... does not exist` | the SPIRE agent's state is stale after a CA rotation, so no workload can fetch an SVID | `./scripts/repair-spire.sh` |
 | Login returns `502 login failed` | the realm's client secret and `.env` have drifted — a rotated secret does not reach an existing realm | delete the realm or the `keycloak` database, then re-run `setup.sh` |
 | `invalid token: Not enough segments` | client sent a malformed/absent token | re-login; check the UI is current (rebuild the API image) |
 | `Failed to fetch` in the browser | the edge is unreachable — the cluster is stopped, or the ingress controller is down | `./start.sh` (the edge is a fixed host port to the **ingress**, not the API, so there is no forward to restart). In dev, `npm run dev` proxies to `localhost:8080`, so port-forward the api yourself: `kubectl -n agent-platform port-forward svc/api 8080:8080 &` |

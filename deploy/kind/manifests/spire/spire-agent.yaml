@@ -144,6 +144,14 @@ spec:
               command: ["/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/run/spire/sockets/agent.sock"]
             initialDelaySeconds: 15
             periodSeconds: 30
+          # Readiness tells a broken-but-running agent apart from a healthy one,
+          # so `kubectl get pods` and the alerting see it before workloads do.
+          readinessProbe:
+            exec:
+              command: ["/opt/spire/bin/spire-agent", "healthcheck", "-socketPath", "/run/spire/sockets/agent.sock"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
       volumes:
         - name: spire-config
           configMap:
