@@ -157,6 +157,11 @@ End-to-end, on the cluster:
 - **Adoption guide** (`docs/real-world-adoption.md`).
 
 **Since then (beyond the original plan).**
+- **Download-and-run onboarding** — `scripts/doctor.sh` checks the machine before
+  a 10-minute build; `scripts/use-model.sh` picks a local (Ollama), hosted
+  (any OpenAI-compatible endpoint) or no-model (the in-cluster stub) path
+  (ADR-0015); and `setup.sh` falls back to the stub when no local model is
+  present, so a clone runs without a multi-GB download.
 - **Multi-tenant isolation (threat T9)** and **tenancy depth** — the tenant is an
   identity attribute; policy denies an unscoped caller; every data accessor scopes
   by tenant; approvals are tenant-scoped (`docs/tenancy.md`).
@@ -287,6 +292,7 @@ Recorded as ADRs in [`docs/decisions/`](docs/decisions/):
 - ADR-0012 Transport identity: SPIFFE for the workloads we own, the mesh for the rest
 - ADR-0013 Provider-agnostic models and what a cloud model may see (cloud is opt-in; the per-tenant/tool rule is left to policy)
 - ADR-0014 Downstream on-behalf-of: the tool server exchanges the user's token for a vendor-audienced one
+- ADR-0015 Choosing a model: local-first, any OpenAI-compatible endpoint, or an in-cluster stub
 
 ## Governance (as configured)
 
@@ -419,7 +425,7 @@ gh pr merge --squash --delete-branch     # linear history => squash/rebase only
 | `docs/guides/` | plain-language user guides |
 | `docs/site/` | the living HTML pages — see "Living documentation" below |
 | `docs/visualization/` | HTML diagrams — the 3D architecture (`index.html`), the real run in time (`run-in-time.html`), and the S7 transport plan |
-| `scripts/` | setup, demo, and the verification suites |
+| `scripts/` | setup, doctor, the model chooser, demo, repair, and the verification suites |
 
 ## Living documentation
 

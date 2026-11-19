@@ -27,9 +27,15 @@ answer is deny).
 ## 2. Bring-up
 
 ```bash
+./scripts/doctor.sh            # tools, Docker, port 8443, and the model — say what is missing
 ./scripts/install-hooks.sh     # once: enable the secret-guard pre-commit hook
 ./scripts/setup.sh             # build images, create the cluster, deploy everything
 ```
+
+No model is required: with no Ollama, `setup.sh` points the gateway at the
+in-cluster test double so the demo still runs. Choose later with
+`./scripts/use-model.sh` — local (Ollama), any OpenAI-compatible hosted
+provider, or the stub (see [`llm-gateway.md`](llm-gateway.md)).
 
 `setup.sh` is gated — it will not report success until:
 

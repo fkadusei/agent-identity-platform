@@ -76,20 +76,34 @@ stale count. Old rows are cleaned up opportunistically.
   charges; two calls in flight together can slightly exceed the budget. It is a
   spend guard, not an accounting ledger.
 
-## Swapping models
+## Choosing a model — local, hosted, or none
 
-The model is named in exactly one place, and swapping it does not touch a manifest or
-rebuild an image:
+The model is named in exactly one place, and choosing it never touches a manifest
+or rebuilds an image:
 
 ```bash
-./scripts/use-model.sh qwen3:30b-a3b            # swap
-./scripts/use-model.sh llama3.2:3b              # and back
-./scripts/use-model.sh --eval qwen3:30b-a3b     # swap, then run the live evals
+./scripts/use-model.sh                      # interactive: local / hosted / none
+./scripts/use-model.sh --list               # the local Ollama models
+./scripts/use-model.sh --local llama3.2:3b  # local (the default; stays on this machine)
+./scripts/use-model.sh --hosted https://api.openai.com/v1 gpt-4o-mini
+./scripts/use-model.sh --stub               # the in-cluster test double (no key)
 ```
 
-The script records the choice in `.env` (so re-running `setup.sh` keeps it), re-renders
-the `llm-config` ConfigMap from those values, and restarts the gateway — the config is
-read at startup, so a ConfigMap change on its own would leave the old model running.
+- **Local-first.** Ollama is the default and the only path that keeps the data on
+  this machine.
+- **Hosted is any OpenAI-compatible endpoint** (OpenAI, Groq, Together, vLLM, …) —
+  the standard the gateway already speaks, not a bespoke integration.
+- **The key never reaches the agent.** `use-model.sh` writes it to `.env`
+  (gitignored) and the `llm-api-key` Secret only the gateway mounts.
+- **No model?** `--stub` points the gateway at `app/provider_stub`, a
+  deterministic OpenAI-compatible test double, so the whole demo runs without a
+  download. It is a test double, not a model.
+
+The script records the choice in `.env` (so `setup.sh` keeps it), re-renders the
+`llm-config` ConfigMap, and restarts the gateway — the config is read at startup,
+so a ConfigMap change on its own would leave the old model running.
+
+The decision is recorded in [ADR-0015](decisions/ADR-0015-model-selection.md).
 
 **Which model?** The demo's portable default is `qwen3:30b-a3b`; `llama3.2:3b` is a
 quarter of the size and much quicker if you want a snappier demo. The difference is not

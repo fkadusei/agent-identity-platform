@@ -490,6 +490,29 @@ say "9. platform services"
 LLM_PROVIDER="${LLM_PROVIDER:-ollama}"
 OLLAMA_URL="${OLLAMA_URL:-http://host.docker.internal:11434}"
 OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
+# First-run ergonomics: the default is a local model, but the demo must still run
+# on a machine with no Ollama. Fall back to the in-cluster test double (a
+# deterministic OpenAI-compatible endpoint, not a model) and say so. This is a
+# render-time choice only — .env is untouched, so use-model.sh can point at a real
+# model later.
+if [ "$LLM_PROVIDER" = "ollama" ]; then
+  if ! curl -sf --max-time 3 "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
+    info "no Ollama at $OLLAMA_URL — using the in-cluster test double so the demo runs"
+    info "pick a real model later with ./scripts/use-model.sh"
+    LLM_PROVIDER=openai-compatible
+    LLM_BASE_URL="http://provider-stub:8080/v1"
+    LLM_MODEL="stub"
+    LLM_STRIP_RESPONSE_FORMAT=1
+  else
+    installed="$(curl -sf --max-time 3 "$OLLAMA_URL/api/tags" 2>/dev/null \
+      | python3 -c 'import sys,json; print("\n".join(m["name"] for m in json.load(sys.stdin).get("models",[])))' 2>/dev/null || true)"
+    if [ -n "$installed" ] && ! printf '%s\n' "$installed" | grep -qx "$OLLAMA_MODEL"; then
+      if printf '%s\n' "$installed" | grep -qx "llama3.2:3b"; then picked="llama3.2:3b"; else picked="$(printf '%s\n' "$installed" | head -1)"; fi
+      info "$OLLAMA_MODEL is not installed; using $picked (./scripts/use-model.sh to change)"
+      OLLAMA_MODEL="$picked"
+    fi
+  fi
+fi
 kubectl -n $NS create configmap llm-config \
   --from-literal=LLM_PROVIDER="$LLM_PROVIDER" \
   --from-literal=OLLAMA_URL="$OLLAMA_URL" \
