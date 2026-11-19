@@ -157,6 +157,10 @@ spec:
         # The API server's connection to this aggregated API is not meshed: let it
         # through untouched rather than having the proxy terminate it.
         config.linkerd.io/skip-inbound-ports: "6443"
+        # ...and neither are the adapter's own calls to the API server
+        # (10.96.0.1:443). Intercepting those makes the TLS handshake time out and
+        # the adapter crash-loops; the API server is not a mesh client.
+        config.linkerd.io/skip-outbound-ports: "443"
     spec:
       serviceAccountName: prometheus-adapter
       securityContext:
