@@ -20,6 +20,9 @@ set -euo pipefail
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/scripts/lib.sh"
 cd "$(dirname "$0")"
 
+# Fail early and clearly, rather than ten minutes into a build.
+./scripts/doctor.sh
+
 NS=agent-platform
 CLUSTER=agent-platform
 # The browser reaches the platform over https, terminated at the ingress (S7b),
