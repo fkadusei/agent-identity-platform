@@ -496,21 +496,31 @@ OLLAMA_MODEL="${OLLAMA_MODEL:-qwen3:30b-a3b}"
 # render-time choice only — .env is untouched, so use-model.sh can point at a real
 # model later.
 if [ "$LLM_PROVIDER" = "ollama" ]; then
-  if ! curl -sf --max-time 3 "$OLLAMA_URL/api/tags" >/dev/null 2>&1; then
-    info "no Ollama at $OLLAMA_URL — using the in-cluster test double so the demo runs"
+  # Probe where *this machine* can see Ollama; the gateway uses OLLAMA_URL, which
+  # may be host.docker.internal (Docker Desktop) and not resolvable from the host.
+  OLLAMA_PROBE_URL="${HOST_OLLAMA_URL:-http://localhost:11434}"
+  if ! curl -sf --max-time 3 "$OLLAMA_PROBE_URL/api/tags" >/dev/null 2>&1; then
+    info "no Ollama at $OLLAMA_PROBE_URL — using the in-cluster test double so the demo runs"
     info "pick a real model later with ./scripts/use-model.sh"
     LLM_PROVIDER=openai-compatible
     LLM_BASE_URL="http://provider-stub:8080/v1"
     LLM_MODEL="stub"
     LLM_STRIP_RESPONSE_FORMAT=1
   else
-    installed="$(curl -sf --max-time 3 "$OLLAMA_URL/api/tags" 2>/dev/null \
+    installed="$(curl -sf --max-time 3 "$OLLAMA_PROBE_URL/api/tags" 2>/dev/null \
       | python3 -c 'import sys,json; print("\n".join(m["name"] for m in json.load(sys.stdin).get("models",[])))' 2>/dev/null || true)"
     if [ -n "$installed" ] && ! printf '%s\n' "$installed" | grep -qx "$OLLAMA_MODEL"; then
       if printf '%s\n' "$installed" | grep -qx "llama3.2:3b"; then picked="llama3.2:3b"; else picked="$(printf '%s\n' "$installed" | head -1)"; fi
       info "$OLLAMA_MODEL is not installed; using $picked (./scripts/use-model.sh to change)"
       OLLAMA_MODEL="$picked"
     fi
+    case "$OLLAMA_URL" in
+      *host.docker.internal*)
+        if [ "$(uname -s)" = "Linux" ] && ! grep -qi microsoft /proc/version 2>/dev/null; then
+          info "note: Docker Engine on Linux does not resolve host.docker.internal —"
+          info "      set OLLAMA_URL to a reachable host address (README), or use --stub"
+        fi ;;
+    esac
   fi
 fi
 kubectl -n $NS create configmap llm-config \

@@ -30,12 +30,24 @@ A demo you can drive in a browser, backed by real code:
 
 ## Run it
 
-**Prerequisites:** Docker Desktop (about 8 GB of memory), `git`, and
-`kind`, `kubectl`, `python3`, `curl`, `openssl`. On macOS:
+**Prerequisites:** Docker (Desktop on macOS/Windows, Engine on Linux) with about
+8 GB of memory, `git`, and `kind`, `kubectl`, `python3`, `curl`, `openssl`.
 
-```sh
-brew install kind kubectl python curl openssl   # plus Docker Desktop
-```
+| OS | install the tools |
+| --- | --- |
+| **macOS** | `brew install kind kubectl python curl openssl` + Docker Desktop |
+| **Debian / Ubuntu** | `sudo apt-get install -y python3 curl openssl docker.io` then [kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) and [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/) |
+| **Fedora / RHEL** | `sudo dnf install -y python3 curl openssl docker` then kind and kubectl |
+| **Windows** | WSL2 + Docker Desktop (enable *WSL integration*); run the shell commands inside WSL |
+
+The scripts are bash, so on Windows run them inside **WSL2** (Ubuntu) with Docker
+Desktop's WSL integration on — inside it the Linux steps apply.
+`./scripts/doctor.sh` prints the install hint for your OS.
+
+> **No model is required** (see below). To use a local Ollama on **Linux**, note
+> that Docker Engine does not resolve `host.docker.internal`: set `OLLAMA_URL` to
+> an address the cluster can reach (for example `http://<host-ip>:11434`, with
+> Ollama bound to `0.0.0.0`), or use the stub/hosted path.
 
 ```sh
 git clone https://github.com/fkadusei/agent-identity-platform.git
