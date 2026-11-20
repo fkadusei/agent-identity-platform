@@ -17,8 +17,28 @@ echo "== tools"
 for bin in docker kind kubectl python3 curl openssl; do
   if command -v "$bin" >/dev/null 2>&1; then ok "$bin"; else bad "$bin not found"; fi
 done
-if [ "$fail" = 1 ] && [ "$(uname)" = "Darwin" ]; then
-  echo "     install: brew install kind kubectl python curl openssl   ·   Docker Desktop"
+if [ "$fail" = 1 ]; then
+  case "$(uname -s)" in
+    Darwin)
+      echo "     install: brew install kind kubectl python curl openssl   ·   Docker Desktop" ;;
+    Linux)
+      if grep -qi microsoft /proc/version 2>/dev/null; then
+        echo "     WSL detected — enable Docker Desktop → Settings → Resources → WSL integration"
+      fi
+      if command -v apt-get >/dev/null 2>&1; then
+        echo "     install: sudo apt-get install -y python3 curl openssl docker.io"
+      elif command -v dnf >/dev/null 2>&1; then
+        echo "     install: sudo dnf install -y python3 curl openssl docker"
+      elif command -v pacman >/dev/null 2>&1; then
+        echo "     install: sudo pacman -S python curl openssl docker"
+      fi
+      echo "     kind + kubectl: https://kind.sigs.k8s.io/docs/user/quick-start/#installation"
+      echo "                     https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/" ;;
+    MINGW*|MSYS*|CYGWIN*)
+      echo "     Windows: run this inside WSL2, with Docker Desktop's WSL integration enabled" ;;
+    *)
+      echo "     install docker, kind, kubectl, python3, curl, openssl (see the README)" ;;
+  esac
 fi
 
 echo "== docker"
@@ -51,6 +71,14 @@ if command -v lsof >/dev/null 2>&1; then
     ""|com.docke|docker|kubectl) ok "8443 is free or held by Docker/kind" ;;
     *) warn "8443 is held by '$owner' — stop it, or the edge cannot bind (cluster.yaml maps host 8443)" ;;
   esac
+elif command -v ss >/dev/null 2>&1; then
+  if ss -ltn 2>/dev/null | awk 'NR>1{print $4}' | grep -q ':8443$'; then
+    warn "8443 is in use — stop what holds it, or the edge cannot bind (cluster.yaml maps host 8443)"
+  else
+    ok "8443 is free"
+  fi
+else
+  warn "cannot check port 8443 (no lsof or ss)"
 fi
 
 echo
